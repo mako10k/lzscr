@@ -31,6 +31,9 @@ pub mod ast {
         Bool(bool),
         Record(Vec<(String, Pattern)>), // { k: p, ... }
         As(Box<Pattern>, Box<Pattern>), // p1 @ p2
+    // List patterns
+    List(Vec<Pattern>),            // [p1, p2, ...]
+    Cons(Box<Pattern>, Box<Pattern>), // h : t
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -113,6 +116,13 @@ pub mod pretty {
                 format!("{{{}}}", inner)
             }
             PatternKind::As(a, b) => format!("{} @ {}", print_pattern(a), print_pattern(b)),
+            PatternKind::List(xs) => {
+                format!(
+                    "[{}]",
+                    xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
+                )
+            }
+            PatternKind::Cons(h, t) => format!("{} : {}", print_pattern(h), print_pattern(t)),
         }
     }
     pub fn print_expr(e: &Expr) -> String {

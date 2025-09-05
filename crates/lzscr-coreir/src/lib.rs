@@ -111,6 +111,10 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                         "({})",
                         xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
                     ),
+                    PatternKind::List(xs) => format!(
+                        "[{}]",
+                        xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
+                    ),
                     PatternKind::Ctor { name, args } => {
                         if args.is_empty() {
                             name.clone()
@@ -121,6 +125,9 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                                 args.iter().map(print_pattern).collect::<Vec<_>>().join(" ")
                             )
                         }
+                    }
+                    PatternKind::Cons(h, t) => {
+                        format!("{} : {}", print_pattern(h), print_pattern(t))
                     }
                     PatternKind::Symbol(s) => s.clone(),
                     PatternKind::Int(n) => format!("{}", n),

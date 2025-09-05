@@ -115,6 +115,24 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     fn parse_pat_atom<'c>(i: &mut usize, toks: &'c [lzscr_lexer::Lexed<'c>]) -> Result<Pattern, ParseError> {
                         let t = bump(i, toks).ok_or_else(|| ParseError::Generic("expected pattern".into()))?;
                         Ok(match &t.tok {
+                            Tok::LBracket => {
+                                // [p1, p2, ...] or []
+                                if let Some(nxt) = toks.get(*i) { if matches!(nxt.tok, Tok::RBracket) { let r = bump(i, toks).unwrap(); return Ok(Pattern::new(PatternKind::List(vec![]), Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset))); } }
+                                let mut items = Vec::new();
+                                loop {
+                                    let p = parse_pat(i, toks)?;
+                                    items.push(p);
+                                    let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("] or , expected in list pattern".into()))?;
+                                    match sep.tok {
+                                        Tok::Comma => continue,
+                                        Tok::RBracket => {
+                                            let sp = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset);
+                                            break Pattern::new(PatternKind::List(items), sp);
+                                        }
+                                        _ => return Err(ParseError::Generic("expected , or ] in list pattern".into())),
+                                    }
+                                }
+                            }
                             Tok::Tilde => {
                                 let id = bump(i, toks).ok_or_else(|| ParseError::Generic("expected ident after ~ in pattern".into()))?;
                                 if !matches!(id.tok, Tok::Ident) { return Err(ParseError::Generic("expected ident after ~ in pattern".into())); }
@@ -234,9 +252,21 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             _ => {}
                         }
                     }
-                    // fallback: single atom
-                    // As パターン: atom ('@' pat)?
-                    let left = parse_pat_atom(i, toks)?;
+                    // Pratt-like for cons ':' (right-assoc) with optional '@' suffix for As
+                    let mut left = parse_pat_atom(i, toks)?;
+                    loop {
+                        if let Some(nxt) = toks.get(*i) {
+                            if matches!(nxt.tok, Tok::Colon) {
+                                let _ = bump(i, toks);
+                                let right = parse_pat(i, toks)?; // right-assoc
+                                let sp = Span::new(left.span.offset, right.span.offset + right.span.len - left.span.offset);
+                                left = Pattern::new(PatternKind::Cons(Box::new(left), Box::new(right)), sp);
+                                continue;
+                            }
+                        }
+                        break;
+                    }
+                    // As パターン: ('@' pat)?
                     if let Some(nxt) = toks.get(*i) { if matches!(nxt.tok, Tok::At) { let _ = bump(i, toks); let right = parse_pat(i, toks)?; let sp = Span::new(left.span.offset, right.span.offset + right.span.len - left.span.offset); return Ok(Pattern::new(PatternKind::As(Box::new(left), Box::new(right)), sp)); } }
                     Ok(left)
                 }
@@ -610,5 +640,55 @@ mod tests {
         let r = parse_expr(src).unwrap();
         // We can't easily inspect without eval, but ensure it parses
         let _ = r;
+    }
+
+    #[test]
+    fn pattern_list_vars_parse() {
+        // \[ ~x, ~y ] -> ~x
+        let src = "\\[ ~x, ~y ] -> ~x";
+        let r = parse_expr(src).unwrap();
+        match r.kind {
+            ExprKind::Lambda { param, .. } => match param.kind {
+                PatternKind::List(items) => {
+                    assert_eq!(items.len(), 2);
+                    matches!(items[0].kind, PatternKind::Var(_));
+                    matches!(items[1].kind, PatternKind::Var(_));
+                }
+                other => panic!("expected List pattern, got {:?}", other),
+            },
+            _ => panic!("expected Lambda"),
+        }
+    }
+
+    #[test]
+    fn pattern_list_bare_ident_rejected() {
+        let src = "\\[ x ] -> ~x";
+        let r = parse_expr(src);
+        match r {
+            Err(ParseError::Generic(msg)) => assert!(
+                msg.contains("invalid bare identifier in pattern")
+                    || msg.contains("expected ident after ~ in pattern"),
+                "unexpected msg: {}",
+                msg
+            ),
+            other => panic!("expected Err, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pattern_cons_parse() {
+        // \(~h : ~t) -> ~h
+        let src = "\\( ~h : ~t ) -> ~h";
+        let r = parse_expr(src).unwrap();
+        match r.kind {
+            ExprKind::Lambda { param, .. } => match param.kind {
+                PatternKind::Cons(h, t) => {
+                    matches!(h.kind, PatternKind::Var(_));
+                    matches!(t.kind, PatternKind::Var(_));
+                }
+                other => panic!("expected Cons pattern, got {:?}", other),
+            },
+            _ => panic!("expected Lambda"),
+        }
     }
 }

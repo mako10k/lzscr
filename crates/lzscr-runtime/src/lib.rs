@@ -158,7 +158,7 @@ impl Env {
                     (h, Value::List(tl)) => {
                         let mut v = Vec::with_capacity(tl.len() + 1);
                         v.push(h.clone());
-                        v.extend_from_slice(&tl);
+                        v.extend_from_slice(tl);
                         Ok(Value::List(v))
                     }
                     _ => Err(EvalError::TypeError),
@@ -1011,6 +1011,29 @@ fn match_pattern(
             }
             _ => None,
         },
+        PatternKind::List(ps) => match v {
+            Value::List(xs) if xs.len() == ps.len() => {
+                let mut acc = HashMap::new();
+                for (pi, xi) in ps.iter().zip(xs.iter()) {
+                    let bi = match_pattern(env, pi, xi)?;
+                    acc = merge(acc, bi)?;
+                }
+                Some(acc)
+            }
+            _ => None,
+        },
+        PatternKind::Cons(h, t) => match v {
+            Value::List(xs) if !xs.is_empty() => {
+                let mut acc = HashMap::new();
+                let bi = match_pattern(env, h, &xs[0])?;
+                acc = merge(acc, bi)?;
+                let tail = Value::List(xs[1..].to_vec());
+                let bj = match_pattern(env, t, &tail)?;
+                acc = merge(acc, bj)?;
+                Some(acc)
+            }
+            _ => None,
+        },
         PatternKind::As(a, b) => {
             let m1 = match_pattern(env, a, v)?;
             let m2 = match_pattern(env, b, v)?;
@@ -1627,6 +1650,62 @@ mod tests {
         let env = Env::with_builtins();
         let v = eval(&env, &call).unwrap();
         matches!(v, Value::Unit);
+    }
+
+    #[test]
+    fn lambda_list_pattern_matches() {
+        // (\[ ~x, ~y ] -> ~x) [10, 20] == 10
+        let lam = Expr::new(
+            ExprKind::Lambda {
+                param: Pattern {
+                    kind: PatternKind::List(vec![
+                        Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
+                        Pattern { kind: PatternKind::Var("y".into()), span: Span::new(0, 0) },
+                    ]),
+                    span: Span::new(0, 0),
+                },
+                body: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+            },
+            Span::new(0, 0),
+        );
+        let arg = Expr::new(
+            ExprKind::List(vec![int_expr(10), int_expr(20)]),
+            Span::new(0, 0),
+        );
+        let appl = Expr::new(
+            ExprKind::Apply { func: Box::new(lam), arg: Box::new(arg) },
+            Span::new(0, 0),
+        );
+        let v = eval(&Env::with_builtins(), &appl).unwrap();
+        match v { Value::Int(n) => assert_eq!(n, 10), _ => panic!("expected Int 10") }
+    }
+
+    #[test]
+    fn lambda_cons_pattern_matches() {
+        // (\( ~h : ~t ) -> ~h) [7,8,9] == 7
+        let lam = Expr::new(
+            ExprKind::Lambda {
+                param: Pattern {
+                    kind: PatternKind::Cons(
+                        Box::new(Pattern { kind: PatternKind::Var("h".into()), span: Span::new(0, 0) }),
+                        Box::new(Pattern { kind: PatternKind::Var("t".into()), span: Span::new(0, 0) }),
+                    ),
+                    span: Span::new(0, 0),
+                },
+                body: Box::new(Expr::new(ExprKind::Ref("h".into()), Span::new(0, 0))),
+            },
+            Span::new(0, 0),
+        );
+        let arg = Expr::new(
+            ExprKind::List(vec![int_expr(7), int_expr(8), int_expr(9)]),
+            Span::new(0, 0),
+        );
+        let appl = Expr::new(
+            ExprKind::Apply { func: Box::new(lam), arg: Box::new(arg) },
+            Span::new(0, 0),
+        );
+        let v = eval(&Env::with_builtins(), &appl).unwrap();
+        match v { Value::Int(n) => assert_eq!(n, 7), _ => panic!("expected Int 7") }
     }
 
     #[test]
