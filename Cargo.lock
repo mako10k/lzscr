@@ -348,6 +348,8 @@ dependencies = [
  "lzscr-parser",
  "lzscr-runtime",
  "predicates",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

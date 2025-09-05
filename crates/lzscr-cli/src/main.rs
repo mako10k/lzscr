@@ -5,6 +5,7 @@ use lzscr_analyzer::{
 };
 use lzscr_parser::parse_expr;
 use lzscr_runtime::{eval, Env, Value};
+use serde::Serialize;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -25,6 +26,10 @@ struct Opt {
     #[arg(long = "analyze", default_value_t = false)]
     analyze: bool,
 
+    /// Output format for --analyze: text|json
+    #[arg(long = "format", default_value = "text")]
+    format: String,
+
     /// Duplicate detection: minimum subtree size (nodes)
     #[arg(long = "dup-min-size", default_value_t = 3)]
     dup_min_size: usize,
@@ -39,6 +44,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(code) = opt.eval {
         let ast = parse_expr(&code).map_err(|e| format!("{}", e))?;
         if opt.analyze {
+            #[derive(Serialize)]
+            struct AnalyzeOut<'a> {
+                duplicates: &'a [lzscr_analyzer::DupFinding],
+                unbound_refs: &'a [lzscr_analyzer::UnboundRef],
+                shadowing: &'a [lzscr_analyzer::Shadowing],
+                unused_params: &'a [lzscr_analyzer::UnusedParam],
+            }
             // duplicates
             let dups = analyze_duplicates(
                 &ast,
@@ -47,35 +59,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     min_count: opt.dup_min_count,
                 },
             );
-            for f in &dups {
-                eprintln!(
-                    "duplicate: size={} count={} span=({},{}) repr={}",
-                    f.size, f.count, f.span.offset, f.span.len, f.repr
-                );
-            }
             // unbound refs
             let unb = analyze_unbound_refs(&ast, &default_allowlist());
-            for u in &unb {
-                eprintln!(
-                    "unbound-ref: name={} span=({},{})",
-                    u.name, u.span.offset, u.span.len
-                );
-            }
             // shadowing
             let sh = analyze_shadowing(&ast);
-            for s in &sh {
-                eprintln!(
-                    "shadowing: name={} lambda_span=({},{})",
-                    s.name, s.lambda_span.offset, s.lambda_span.len
-                );
-            }
             // unused params
             let up = analyze_unused_params(&ast);
-            for u in &up {
-                eprintln!(
-                    "unused-param: name={} lambda_span=({},{})",
-                    u.name, u.lambda_span.offset, u.lambda_span.len
-                );
+            if opt.format == "json" {
+                let out = AnalyzeOut { duplicates: &dups, unbound_refs: &unb, shadowing: &sh, unused_params: &up };
+                println!("{}", serde_json::to_string_pretty(&out)?);
+            } else {
+                for f in &dups {
+                    eprintln!(
+                        "duplicate: size={} count={} span=({},{}) repr={}",
+                        f.size, f.count, f.span.offset, f.span.len, f.repr
+                    );
+                }
+                for u in &unb {
+                    eprintln!(
+                        "unbound-ref: name={} span=({},{})",
+                        u.name, u.span.offset, u.span.len
+                    );
+                }
+                for s in &sh {
+                    eprintln!(
+                        "shadowing: name={} lambda_span=({},{})",
+                        s.name, s.lambda_span.offset, s.lambda_span.len
+                    );
+                }
+                for u in &up {
+                    eprintln!(
+                        "unused-param: name={} lambda_span=({},{})",
+                        u.name, u.lambda_span.offset, u.lambda_span.len
+                    );
+                }
             }
             return Ok(());
         }

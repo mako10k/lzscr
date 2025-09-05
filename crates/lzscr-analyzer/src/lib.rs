@@ -3,7 +3,7 @@ use lzscr_ast::ast::*;
 use lzscr_ast::span::Span;
 use std::collections::HashSet;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DupFinding {
     pub span: lzscr_ast::span::Span,
     pub count: usize,
@@ -72,19 +72,19 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
     out
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct UnboundRef {
     pub name: String,
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Shadowing {
     pub name: String,
     pub lambda_span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct UnusedParam {
     pub name: String,
     pub lambda_span: Span,
