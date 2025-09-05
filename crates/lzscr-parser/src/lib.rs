@@ -131,7 +131,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 }
                             }
                             Tok::LBrace => {
-                                // record pattern: { k: pat, ... }
+                                // record pattern: { k: pat, ... } （キーは ident のみ）
                                 // empty {}
                                 if let Some(nxt) = toks.get(*i) {
                                     if matches!(nxt.tok, Tok::RBrace) {
@@ -143,7 +143,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 loop {
                                     // key (ident or string)
                                     let k = bump(i, toks).ok_or_else(|| ParseError::Generic("expected key in record pattern".into()))?;
-                                    let key = match &k.tok { Tok::Ident => k.text.to_string(), Tok::Str(s) => s.clone(), _ => return Err(ParseError::Generic("expected ident or string key in record pattern".into())) };
+                                    let key = match &k.tok { Tok::Ident => k.text.to_string(), _ => return Err(ParseError::Generic("expected ident key in record pattern".into())) };
                                     // ':'
                                     let col = bump(i, toks).ok_or_else(|| ParseError::Generic("expected : in record pattern".into()))?;
                                     if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected in record pattern".into())); }
@@ -276,7 +276,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 }
             }
             Tok::LBrace => {
-                // record literal: { k: v, ... } → (.Record (., (.KV "k" v) ...)) の糖衣
+                // record literal: { k: v, ... } → (.Record (., (.KV "k" v) ...)) の糖衣（キーは ident のみ）
                 // 空 {} はブロックの空ではないため特別扱い：Record 空にする
         if let Some(nxt) = peek(*i, toks) {
                     if matches!(nxt.tok, Tok::RBrace) {
@@ -290,7 +290,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 loop {
                     // key
                     let k = bump(i, toks).ok_or_else(|| ParseError::Generic("expected key".into()))?;
-                    let key = match &k.tok { Tok::Ident => k.text.to_string(), Tok::Str(s) => s.clone(), _ => return Err(ParseError::Generic("expected ident or string key".into())) };
+                    let key = match &k.tok { Tok::Ident => k.text.to_string(), _ => return Err(ParseError::Generic("expected ident key".into())) };
                     // :
                     let col = bump(i, toks).ok_or_else(|| ParseError::Generic("expected :".into()))?;
                     if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected".into())); }
@@ -367,15 +367,26 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 _ => (0, None),
             };
             if let Some(op) = op_kind {
-                if op_bp < bp { break; }
+                if op_bp < bp {
+                    break;
+                }
                 // consume op
                 let _ = bump(i, toks);
                 // special case: '^|' should be parsed as a single operator token sequence '^' '|' when used infix
                 if op == "|" {
                     // parse RHS normally
                     let rhs = parse_expr_bp(i, toks, op_bp + 1)?;
-                    let span = Span::new(lhs.span.offset, rhs.span.offset + rhs.span.len - lhs.span.offset);
-                    lhs = Expr::new(ExprKind::OrElse { left: Box::new(lhs), right: Box::new(rhs) }, span);
+                    let span = Span::new(
+                        lhs.span.offset,
+                        rhs.span.offset + rhs.span.len - lhs.span.offset,
+                    );
+                    lhs = Expr::new(
+                        ExprKind::OrElse {
+                            left: Box::new(lhs),
+                            right: Box::new(rhs),
+                        },
+                        span,
+                    );
                     continue;
                 }
                 let rhs = parse_expr_bp(i, toks, op_bp + 1)?;
@@ -401,9 +412,24 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     ".>=" => Expr::new(ExprKind::Ref("fge".into()), nxt.span),
                     _ => unreachable!(),
                 };
-                let span = Span::new(lhs.span.offset, rhs.span.offset + rhs.span.len - lhs.span.offset);
-                let app1 = Expr::new(ExprKind::Apply { func: Box::new(callee), arg: Box::new(lhs) }, span);
-                lhs = Expr::new(ExprKind::Apply { func: Box::new(app1), arg: Box::new(rhs) }, span);
+                let span = Span::new(
+                    lhs.span.offset,
+                    rhs.span.offset + rhs.span.len - lhs.span.offset,
+                );
+                let app1 = Expr::new(
+                    ExprKind::Apply {
+                        func: Box::new(callee),
+                        arg: Box::new(lhs),
+                    },
+                    span,
+                );
+                lhs = Expr::new(
+                    ExprKind::Apply {
+                        func: Box::new(app1),
+                        arg: Box::new(rhs),
+                    },
+                    span,
+                );
                 continue;
             }
             // parse '^|' as infix catch ONLY when the next token after '^' is '|'
@@ -413,8 +439,17 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         let _ = bump(i, toks); // consume '^'
                         let _ = bump(i, toks); // consume '|'
                         let rhs = parse_expr_bp(i, toks, 2)?; // precedence slightly above '|'
-                        let span = Span::new(lhs.span.offset, rhs.span.offset + rhs.span.len - lhs.span.offset);
-                        lhs = Expr::new(ExprKind::Catch { left: Box::new(lhs), right: Box::new(rhs) }, span);
+                        let span = Span::new(
+                            lhs.span.offset,
+                            rhs.span.offset + rhs.span.len - lhs.span.offset,
+                        );
+                        lhs = Expr::new(
+                            ExprKind::Catch {
+                                left: Box::new(lhs),
+                                right: Box::new(rhs),
+                            },
+                            span,
+                        );
                         continue;
                     }
                 }
@@ -438,8 +473,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     );
                     // sugar: true() / false()  =>  ~true / ~false
                     if let ExprKind::Symbol(name) = &lhs.kind {
-                        if matches!(arg.kind, ExprKind::Unit)
-                            && (name == "true" || name == "false")
+                        if matches!(arg.kind, ExprKind::Unit) && (name == "true" || name == "false")
                         {
                             lhs = Expr::new(ExprKind::Ref(name.clone()), span);
                             continue;
@@ -461,4 +495,44 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
 
     let expr = parse_expr_bp(&mut i, &tokens, 0)?;
     Ok(expr)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_literal_ident_key_ok() {
+        let src = "{a:1, b:2}";
+        let r = parse_expr(src);
+        assert!(r.is_ok(), "expected Ok, got {:?}", r);
+    }
+
+    #[test]
+    fn record_literal_string_key_rejected() {
+        let src = "{\"a\":1}";
+        let r = parse_expr(src);
+        match r {
+            Err(ParseError::Generic(msg)) => assert!(
+                msg.contains("expected ident key"),
+                "unexpected msg: {}",
+                msg
+            ),
+            other => panic!("expected Err(ParseError::Generic), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn record_pattern_string_key_rejected() {
+        let src = "\\{ \"a\": ~x } -> ~x";
+        let r = parse_expr(src);
+        match r {
+            Err(ParseError::Generic(msg)) => assert!(
+                msg.contains("expected ident key in record pattern"),
+                "unexpected msg: {}",
+                msg
+            ),
+            other => panic!("expected Err(ParseError::Generic), got {:?}", other),
+        }
+    }
 }

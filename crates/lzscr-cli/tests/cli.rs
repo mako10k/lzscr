@@ -1,6 +1,6 @@
 use assert_cmd::prelude::*;
-use predicates::str::contains;
 use predicates::prelude::PredicateBooleanExt;
+use predicates::str::contains;
 use std::process::Command;
 
 #[test]
@@ -39,5 +39,7 @@ fn dump_coreir_text_outputs_seq() {
 fn dump_coreir_json_outputs_term() {
     let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
     cmd.args(["-e", "(~seq 1 (~add 2 3))", "--dump-coreir-json"]);
-    cmd.assert().success().stdout(contains("{\n").and(contains("\"Seq\"")));
+    cmd.assert()
+        .success()
+        .stdout(contains("{\n").and(contains("\"Seq\"")));
 }

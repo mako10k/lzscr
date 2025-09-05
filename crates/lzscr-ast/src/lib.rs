@@ -19,18 +19,18 @@ pub mod ast {
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum PatternKind {
-        Wildcard,                 // _
-    Var(String),              // ~x（パース時は ~ident で生成）
-        Unit,                     // ()
-        Tuple(Vec<Pattern>),      // (p1, p2, ...)
+        Wildcard,                                  // _
+        Var(String),                               // ~x（パース時は ~ident で生成）
+        Unit,                                      // ()
+        Tuple(Vec<Pattern>),                       // (p1, p2, ...)
         Ctor { name: String, args: Vec<Pattern> }, // Foo p1 p2 / .Foo p1 p2
-    Symbol(String),           // シンボル値に一致（foo, .bar など）
-    Int(i64),
-    Float(f64),
-    Str(String),
-    Bool(bool),
-    Record(Vec<(String, Pattern)>), // { k: p, ... }
-    As(Box<Pattern>, Box<Pattern>), // p1 @ p2
+        Symbol(String),                            // シンボル値に一致（foo, .bar など）
+        Int(i64),
+        Float(f64),
+        Str(String),
+        Bool(bool),
+        Record(Vec<(String, Pattern)>), // { k: p, ... }
+        As(Box<Pattern>, Box<Pattern>), // p1 @ p2
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -39,24 +39,26 @@ pub mod ast {
         pub span: Span,
     }
     impl Pattern {
-        pub fn new(kind: PatternKind, span: Span) -> Self { Self { kind, span } }
+        pub fn new(kind: PatternKind, span: Span) -> Self {
+            Self { kind, span }
+        }
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum ExprKind {
         Unit,
         Int(i64),
-    Float(f64),
+        Float(f64),
         Str(String),
         Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
         Lambda { param: Pattern, body: Box<Expr> },
         Apply { func: Box<Expr>, arg: Box<Expr> },
         Block(Box<Expr>),
-    // Exceptions / control
-    Raise(Box<Expr>),            // ^(Expr)
-    OrElse { left: Box<Expr>, right: Box<Expr> }, // a | b
-    Catch { left: Box<Expr>, right: Box<Expr> },  // a ^| b
+        // Exceptions / control
+        Raise(Box<Expr>),                             // ^(Expr)
+        OrElse { left: Box<Expr>, right: Box<Expr> }, // a | b
+        Catch { left: Box<Expr>, right: Box<Expr> },  // a ^| b
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -78,9 +80,22 @@ pub mod pretty {
             PatternKind::Wildcard => "_".into(),
             PatternKind::Var(n) => format!("~{}", n),
             PatternKind::Unit => "()".into(),
-            PatternKind::Tuple(xs) => format!("({})", xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")),
+            PatternKind::Tuple(xs) => {
+                format!(
+                    "({})",
+                    xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
+                )
+            }
             PatternKind::Ctor { name, args } => {
-                if args.is_empty() { name.clone() } else { format!("{} {}", name, args.iter().map(print_pattern).collect::<Vec<_>>().join(" ")) }
+                if args.is_empty() {
+                    name.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        name,
+                        args.iter().map(print_pattern).collect::<Vec<_>>().join(" ")
+                    )
+                }
             }
             PatternKind::Symbol(s) => s.clone(),
             PatternKind::Int(n) => format!("{}", n),
@@ -88,7 +103,11 @@ pub mod pretty {
             PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
             PatternKind::Bool(b) => format!("{}", b),
             PatternKind::Record(fields) => {
-                let inner = fields.iter().map(|(k, v)| format!("{}: {}", k, print_pattern(v))).collect::<Vec<_>>().join(", ");
+                let inner = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, print_pattern(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 format!("{{{}}}", inner)
             }
             PatternKind::As(a, b) => format!("{} @ {}", print_pattern(a), print_pattern(b)),
@@ -102,12 +121,20 @@ pub mod pretty {
             ExprKind::Str(s) => format!("\"{}\"", s.escape_default()),
             ExprKind::Ref(n) => format!("~{n}"),
             ExprKind::Symbol(s) => s.clone(),
-            ExprKind::Lambda { param, body } => format!("\\{} -> {}", print_pattern(param), print_expr(body)),
-            ExprKind::Apply { func, arg } => format!("({} {})", print_expr(func), print_expr(arg)),
+            ExprKind::Lambda { param, body } => {
+                format!("\\{} -> {}", print_pattern(param), print_expr(body))
+            }
+            ExprKind::Apply { func, arg } => {
+                format!("({} {})", print_expr(func), print_expr(arg))
+            }
             ExprKind::Block(inner) => format!("{{ {} }}", print_expr(inner)),
             ExprKind::Raise(inner) => format!("^({})", print_expr(inner)),
-            ExprKind::OrElse { left, right } => format!("({} | {})", print_expr(left), print_expr(right)),
-            ExprKind::Catch { left, right } => format!("({} ^| {})", print_expr(left), print_expr(right)),
+            ExprKind::OrElse { left, right } => {
+                format!("({} | {})", print_expr(left), print_expr(right))
+            }
+            ExprKind::Catch { left, right } => {
+                format!("({} ^| {})", print_expr(left), print_expr(right))
+            }
         }
     }
 }
