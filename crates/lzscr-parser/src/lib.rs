@@ -104,23 +104,79 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         ));
                     }
                 }
-                let inner = parse_expr_bp(i, toks, 0)?;
-                let r = bump(i, toks).ok_or_else(|| ParseError::Generic("expected )".into()))?;
-                if !matches!(r.tok, Tok::RParen) {
-                    return Err(ParseError::Generic(") expected".into()));
+                // tuple literal: (a, b, c) → (.Tuple a b c) の糖衣にする（Ctor と同等の扱い）
+                // まず 1 個目を読む
+                let first = parse_expr_bp(i, toks, 0)?;
+                let mut items = vec![first];
+                // 続く , expr を吸う
+                loop {
+                    let Some(nxt) = peek(*i, toks) else { return Err(ParseError::Generic(") expected".into())); };
+                    match nxt.tok {
+                        Tok::Comma => {
+                            let _ = bump(i, toks);
+                            let e = parse_expr_bp(i, toks, 0)?;
+                            items.push(e);
+                        }
+                        Tok::RParen => {
+                            let r = bump(i, toks).unwrap();
+                            let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset);
+                            if items.len() == 1 {
+                                // 単一は括弧の意味（関数適用の優先付け）。
+                                return Ok(Expr::new(items.pop().unwrap().kind, span_all));
+                            }
+                            // (.Tuple item1) item2 ... へ糖衣
+                            let mut expr = Expr::new(ExprKind::Symbol(".Tuple".into()), t.span);
+                            for it in items {
+                                let sp = Span::new(expr.span.offset, span_all.offset + span_all.len - expr.span.offset);
+                                expr = Expr::new(ExprKind::Apply { func: Box::new(expr), arg: Box::new(it) }, sp);
+                            }
+                            return Ok(expr);
+                        }
+                        _ => return Err(ParseError::Generic("expected , or )".into())),
+                    }
                 }
-                inner
             }
             Tok::LBrace => {
-                let inner = parse_expr_bp(i, toks, 0)?;
-                let r = bump(i, toks).ok_or_else(|| ParseError::Generic("expected }".into()))?;
-                if !matches!(r.tok, Tok::RBrace) {
-                    return Err(ParseError::Generic("} expected".into()));
+                // record literal: { k: v, ... } → (.Record (.KV "k" v) ...) の糖衣
+                // 空 {} はブロックの空ではないため特別扱い：Record 空にする
+                if let Some(nxt) = peek(*i, toks) {
+                    if matches!(nxt.tok, Tok::RBrace) {
+                        let r = bump(i, toks).unwrap();
+                        let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset);
+                        // (.Record) 空適用
+                        return Ok(Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Symbol(".Record".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Unit, r.span)) }, span_all));
+                    }
                 }
-                Expr::new(
-                    ExprKind::Block(Box::new(inner.clone())),
-                    Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset),
-                )
+                let mut pairs: Vec<(String, Expr)> = Vec::new();
+                loop {
+                    // key
+                    let k = bump(i, toks).ok_or_else(|| ParseError::Generic("expected key".into()))?;
+                    let key = match &k.tok { Tok::Ident => k.text.to_string(), Tok::Str(s) => s.clone(), _ => return Err(ParseError::Generic("expected ident or string key".into())) };
+                    // :
+                    let col = bump(i, toks).ok_or_else(|| ParseError::Generic("expected :".into()))?;
+                    if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected".into())); }
+                    // value
+                    let val = parse_expr_bp(i, toks, 0)?;
+                    pairs.push((key, val));
+                    // , or }
+                    let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("expected , or }".into()))?;
+                    match sep.tok {
+                        Tok::Comma => continue,
+                        Tok::RBrace => {
+                            let span_all = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset);
+                            // (.Record (.KV "k" v) ...)
+                            let mut expr = Expr::new(ExprKind::Symbol(".Record".into()), t.span);
+                            for (k, v) in pairs {
+                                let kv = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Symbol(".KV".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Str(k), t.span)) }, t.span);
+                                let kv2 = Expr::new(ExprKind::Apply { func: Box::new(kv), arg: Box::new(v) }, t.span);
+                                let sp = Span::new(expr.span.offset, span_all.offset + span_all.len - expr.span.offset);
+                                expr = Expr::new(ExprKind::Apply { func: Box::new(expr), arg: Box::new(kv2) }, sp);
+                            }
+                            return Ok(expr);
+                        }
+                        _ => return Err(ParseError::Generic("expected , or }".into())),
+                    }
+                }
             }
             Tok::Ident => Expr::new(ExprKind::Symbol(t.text.to_string()), t.span),
             _ => {

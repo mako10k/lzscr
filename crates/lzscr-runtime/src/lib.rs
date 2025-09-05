@@ -324,6 +324,80 @@ impl Env {
             },
         );
 
+        // Tuple/Record constructors used by parser sugar
+        e.vars.insert(
+            "Tuple".into(),
+            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
+                Value::Unit => Ok(Value::Tuple(vec![])),
+                v => Ok(Value::Tuple(vec![v.clone()])),
+            } },
+        );
+        e.vars.insert(
+            "Record".into(),
+            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
+                Value::Unit => Ok(Value::Record(std::collections::BTreeMap::new())),
+                Value::Tuple(kvs) => {
+                    let mut map = std::collections::BTreeMap::new();
+                    for kv in kvs {
+                        match kv {
+                            Value::Tuple(xs) if xs.len() == 2 => {
+                                if let Value::Str(k) = &xs[0] {
+                                    map.insert(k.clone(), xs[1].clone());
+                                } else { return Err(EvalError::TypeError); }
+                            }
+                            _ => return Err(EvalError::TypeError),
+                        }
+                    }
+                    Ok(Value::Record(map))
+                }
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        e.vars.insert(
+            "KV".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) {
+                (Value::Str(k), v) => Ok(Value::Tuple(vec![Value::Str(k.clone()), v.clone()])),
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+
+        // logical ops: and/or/not. Accept Bool or Symbol("True"|"False"). Return Symbol("True"|"False").
+        e.vars.insert(
+            "and".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (as_bool(&args[0])?, as_bool(&args[1])?) { (true, true) => Ok(sym_true()), _ => Ok(sym_false()) } }
+        );
+        e.vars.insert(
+            "or".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (as_bool(&args[0])?, as_bool(&args[1])?) { (false, false) => Ok(sym_false()), _ => Ok(sym_true()) } }
+        );
+        e.vars.insert(
+            "not".into(),
+            Value::Native { arity: 1, args: vec![], f: |_env, args| { Ok(if as_bool(&args[0])? { sym_false() } else { sym_true() }) } }
+        );
+
+        // if : cond then else
+        // cond: Bool or Symbol("True"|"False")
+        // then/else: 値そのもの、Closure、または arity=0 の Native。Closure は Unit を渡して呼び出し、その他はそのまま返す。
+        e.vars.insert(
+            "if".into(),
+            Value::Native {
+                arity: 3,
+                args: vec![],
+                f: |env, args| {
+                    let cond = as_bool(&args[0])?;
+                    let branch = if cond { &args[1] } else { &args[2] };
+                    match branch.clone() {
+                        Value::Native { arity: 0, f, args } if args.is_empty() => f(env, &[]),
+                        Value::Closure { param, body, mut env } => {
+                            env.vars.insert(param, Value::Unit);
+                            eval(&env, &body)
+                        }
+                        other => Ok(other),
+                    }
+                },
+            },
+        );
+
         e
     }
 }
@@ -350,6 +424,18 @@ fn to_str_like(v: &Value) -> String {
             format!("{{{}}}", inner)
         }
         Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
+    }
+}
+
+fn sym_true() -> Value { Value::Symbol("True".into()) }
+fn sym_false() -> Value { Value::Symbol("False".into()) }
+
+fn as_bool(v: &Value) -> Result<bool, EvalError> {
+    match v {
+        Value::Bool(b) => Ok(*b),
+        Value::Symbol(s) if s == "True" => Ok(true),
+        Value::Symbol(s) if s == "False" => Ok(false),
+        _ => Err(EvalError::TypeError),
     }
 }
 

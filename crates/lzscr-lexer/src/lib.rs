@@ -17,6 +17,8 @@ pub enum Tok {
     RParen,
     #[token(",")]
     Comma,
+    #[token(":")]
+    Colon,
     #[token("->")]
     Arrow,
     #[token("!")]
