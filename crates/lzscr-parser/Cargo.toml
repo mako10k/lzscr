@@ -1,0 +1,11 @@
+[package]
+name = "lzscr-parser"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+chumsky = { version = "1.0.0-alpha.7", features = ["label"] }
+lzscr-ast = { path = "../lzscr-ast" }
+lzscr-lexer = { path = "../lzscr-lexer" }
+thiserror = "1"

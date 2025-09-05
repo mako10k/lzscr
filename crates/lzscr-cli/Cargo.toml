@@ -1,0 +1,11 @@
+[package]
+name = "lzscr-cli"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+lzscr-ast = { path = "../lzscr-ast" }
+lzscr-parser = { path = "../lzscr-parser" }
+lzscr-runtime = { path = "../lzscr-runtime" }

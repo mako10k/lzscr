@@ -1,0 +1,23 @@
+# Rust/Cargo
+/target/
+**/*.rs.bk
+
+# Editors/IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.venv/
+
+# Dynamic libs (prelude plugins, etc.)
+*.so
+*.dylib
+*.dll
+
+# Logs
+*.log

@@ -1,0 +1,14 @@
+[workspace]
+members = [
+  "crates/lzscr-ast",
+  "crates/lzscr-lexer",
+  "crates/lzscr-parser",
+  "crates/lzscr-runtime",
+  "crates/lzscr-cli",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+authors = ["lzscr contributors"]
