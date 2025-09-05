@@ -93,11 +93,77 @@ pub struct UnusedParam {
 }
 
 pub fn default_allowlist() -> HashSet<String> {
-    // Builtins available via ~name
-    ["to_str", "add", "sub", "eq", "lt", "seq", "effects"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
+    // Builtins available via ~name (keep in sync with runtime)
+    [
+        "to_str",
+        // arithmetic
+        "add", "sub", "mul", "div",
+        "fadd", "fsub", "fmul", "fdiv",
+        // compare/equality
+        "lt", "le", "gt", "ge", "eq", "ne",
+        "flt", "fle", "fgt", "fge",
+        // logic/branch
+        "and", "or", "not", "if",
+        // seq/effects
+        "seq", "effects",
+        // tuple/record sugar
+        "Tuple", "Record", "KV",
+        // Bool ctor
+        "Bool",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CtorArityIssue {
+    pub name: String,
+    pub expected: usize,
+    pub got: usize,
+    pub span: Span,
+    pub kind: String, // "over" | "zero-arity-applied"
+}
+
+pub fn analyze_ctor_arity(
+    expr: &Expr,
+    arities: &std::collections::HashMap<String, usize>,
+) -> Vec<CtorArityIssue> {
+    fn head_and_args<'a>(e: &'a Expr) -> Option<(&'a Expr, Vec<&'a Expr>)> {
+        let mut args = Vec::new();
+        let mut cur = e;
+        while let ExprKind::Apply { func, arg } = &cur.kind {
+            args.push(arg.as_ref());
+            cur = func.as_ref();
+        }
+        args.reverse();
+        Some((cur, args))
+    }
+    fn check(e: &Expr, arities: &std::collections::HashMap<String, usize>, out: &mut Vec<CtorArityIssue>) {
+        if let Some((head, args)) = head_and_args(e) {
+            if let ExprKind::Symbol(name) = &head.kind {
+                let key_a = name.clone();
+                let key_b = if name.starts_with('.') { name.clone() } else { format!(".{name}") };
+                if let Some(&exp) = arities.get(&key_a).or_else(|| arities.get(&key_b)) {
+                    let got = args.len();
+                    if exp == 0 && got > 0 {
+                        out.push(CtorArityIssue { name: name.clone(), expected: exp, got, span: e.span, kind: "zero-arity-applied".into() });
+                    } else if got > exp {
+                        out.push(CtorArityIssue { name: name.clone(), expected: exp, got, span: e.span, kind: "over".into() });
+                    }
+                }
+            }
+        }
+        match &e.kind {
+            ExprKind::Lambda { body, .. } => check(body, arities, out),
+            ExprKind::Apply { func, arg } => { check(func, arities, out); check(arg, arities, out); }
+            ExprKind::Block(inner) => check(inner, arities, out),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    check(expr, arities, &mut out);
+    out
 }
 
 pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<UnboundRef> {

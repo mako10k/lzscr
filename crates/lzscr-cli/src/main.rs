@@ -1,7 +1,7 @@
 use clap::Parser;
 use lzscr_analyzer::{
-    analyze_duplicates, analyze_shadowing, analyze_unbound_refs, analyze_unused_params,
-    default_allowlist, AnalyzeOptions,
+    analyze_ctor_arity, analyze_duplicates, analyze_shadowing, analyze_unbound_refs,
+    analyze_unused_params, default_allowlist, AnalyzeOptions,
 };
 use lzscr_parser::parse_expr;
 use lzscr_runtime::{eval, Env, Value};
@@ -73,6 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 unbound_refs: &'a [lzscr_analyzer::UnboundRef],
                 shadowing: &'a [lzscr_analyzer::Shadowing],
                 unused_params: &'a [lzscr_analyzer::UnusedParam],
+                ctor_arity: Vec<lzscr_analyzer::CtorArityIssue>,
             }
             // duplicates
             let dups = analyze_duplicates(
@@ -88,8 +89,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let sh = analyze_shadowing(&ast);
             // unused params
             let up = analyze_unused_params(&ast);
+            let arities = {
+                let mut m = std::collections::HashMap::new();
+                if let Some(spec) = &opt.ctor_arity {
+                    for item in spec.split(',').filter(|s| !s.is_empty()) {
+                        if let Some((name, n)) = item.split_once('=') {
+                            if let Ok(k) = n.parse::<usize>() { m.insert(name.to_string(), k); }
+                        }
+                    }
+                }
+                m
+            };
+            let ca = analyze_ctor_arity(&ast, &arities);
             if opt.format == "json" {
-                let out = AnalyzeOut { duplicates: &dups, unbound_refs: &unb, shadowing: &sh, unused_params: &up };
+                let out = AnalyzeOut { duplicates: &dups, unbound_refs: &unb, shadowing: &sh, unused_params: &up, ctor_arity: ca };
                 println!("{}", serde_json::to_string_pretty(&out)?);
             } else {
                 for f in &dups {
@@ -114,6 +127,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!(
                         "unused-param: name={} lambda_span=({},{})",
                         u.name, u.lambda_span.offset, u.lambda_span.len
+                    );
+                }
+                for c in &ca {
+                    eprintln!(
+                        "ctor-arity: name={} expected={} got={} span=({}, {}) kind={}",
+                        c.name, c.expected, c.got, c.span.offset, c.span.len, c.kind
                     );
                 }
             }
