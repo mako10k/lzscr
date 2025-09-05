@@ -345,11 +345,20 @@ dependencies = [
  "clap",
  "lzscr-analyzer",
  "lzscr-ast",
+ "lzscr-coreir",
  "lzscr-parser",
  "lzscr-runtime",
  "predicates",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lzscr-coreir"
+version = "0.1.0"
+dependencies = [
+ "lzscr-ast",
+ "serde",
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
 use assert_cmd::prelude::*;
 use predicates::str::contains;
+use predicates::prelude::PredicateBooleanExt;
 use std::process::Command;
 
 #[test]
@@ -22,4 +23,21 @@ fn strict_effects_allows_effect_with_seq() {
     let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
     cmd.args(["-e", "(~seq () (!println \"x\"))", "-s"]);
     cmd.assert().success();
+}
+
+#[test]
+fn dump_coreir_text_outputs_seq() {
+    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    cmd.args(["-e", "(~seq 1 (~add 2 3))", "--dump-coreir"]);
+    // expect a textual (~seq ...) in the output
+    cmd.assert()
+        .success()
+        .stdout(contains("(~seq 1 ((~add 2) 3))\n"));
+}
+
+#[test]
+fn dump_coreir_json_outputs_term() {
+    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    cmd.args(["-e", "(~seq 1 (~add 2 3))", "--dump-coreir-json"]);
+    cmd.assert().success().stdout(contains("{\n").and(contains("\"Seq\"")));
 }

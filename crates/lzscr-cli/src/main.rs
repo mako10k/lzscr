@@ -6,6 +6,7 @@ use lzscr_analyzer::{
 use lzscr_parser::parse_expr;
 use lzscr_runtime::{eval, Env, Value};
 use serde::Serialize;
+use lzscr_coreir::{lower_expr_to_core, print_term};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -26,6 +27,14 @@ struct Opt {
     #[arg(long = "analyze", default_value_t = false)]
     analyze: bool,
 
+    /// Dump Core IR (text)
+    #[arg(long = "dump-coreir", default_value_t = false)]
+    dump_coreir: bool,
+
+    /// Dump Core IR as JSON
+    #[arg(long = "dump-coreir-json", default_value_t = false)]
+    dump_coreir_json: bool,
+
     /// Output format for --analyze: text|json
     #[arg(long = "format", default_value = "text")]
     format: String,
@@ -43,6 +52,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
     if let Some(code) = opt.eval {
         let ast = parse_expr(&code).map_err(|e| format!("{}", e))?;
+        // Core IR dump modes take precedence over analyze/execute
+        if opt.dump_coreir || opt.dump_coreir_json {
+            let term = lower_expr_to_core(&ast);
+            if opt.dump_coreir_json {
+                println!("{}", serde_json::to_string_pretty(&term)?);
+            } else {
+                println!("{}", print_term(&term));
+            }
+            return Ok(());
+        }
         if opt.analyze {
             #[derive(Serialize)]
             struct AnalyzeOut<'a> {
