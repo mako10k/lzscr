@@ -52,7 +52,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             ExprKind::List(xs) => 1 + xs.iter().map(|x| walk(x, tbl)).sum::<usize>(),
         };
         // very simple structural repr (not fully unique but works for heuristic)
-    let repr = match &e.kind {
+        let repr = match &e.kind {
             ExprKind::Unit => "()".to_string(),
             ExprKind::Int(n) => format!("i:{n}"),
             ExprKind::Float(f) => format!("f:{}", f),
@@ -159,9 +159,9 @@ pub struct UnusedParam {
 pub fn default_allowlist() -> HashSet<String> {
     // Builtins available via ~name (keep in sync with runtime)
     [
-    "to_str", "add", "sub", "mul", "div", "fadd", "fsub", "fmul", "fdiv", "lt", "le", "gt",
+        "to_str", "add", "sub", "mul", "div", "fadd", "fsub", "fmul", "fdiv", "lt", "le", "gt",
         "ge", "eq", "ne", "flt", "fle", "fgt", "fge", "and", "or", "not", "if", "seq", "effects",
-    "Tuple", "Record", "KV", "Bool", "cons",
+        "Tuple", "Record", "KV", "Bool", "cons",
     ]
     .iter()
     .map(|s| s.to_string())

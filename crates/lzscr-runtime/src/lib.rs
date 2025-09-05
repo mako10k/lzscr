@@ -55,8 +55,15 @@ pub enum Value {
 
 #[derive(Debug, Clone)]
 pub enum ThunkKind {
-    Expr { expr: Expr, env: Env },
-    Project { src: Box<Value>, pattern: Pattern, var: String },
+    Expr {
+        expr: Expr,
+        env: Env,
+    },
+    Project {
+        src: Box<Value>,
+        pattern: Pattern,
+        var: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -697,9 +704,9 @@ fn to_str_like(env: &Env, v: &Value) -> String {
                 .join(", ");
             format!("{{{}}}", inner)
         }
-    Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
-    // Thunk は上で force 済みのはずだが、安全のため
-    _ => "<thunk>".into(),
+        Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
+        // Thunk は上で force 済みのはずだが、安全のため
+        _ => "<thunk>".into(),
     }
 }
 
@@ -1046,7 +1053,7 @@ fn match_pattern(
             }
             _ => None,
         },
-    PatternKind::List(ps) => match &v {
+        PatternKind::List(ps) => match &v {
             Value::List(xs) if xs.len() == ps.len() => {
                 let mut acc = HashMap::new();
                 for (pi, xi) in ps.iter().zip(xs.iter()) {
@@ -1057,7 +1064,7 @@ fn match_pattern(
             }
             _ => None,
         },
-    PatternKind::Cons(h, t) => match &v {
+        PatternKind::Cons(h, t) => match &v {
             Value::List(xs) if !xs.is_empty() => {
                 let mut acc = HashMap::new();
                 let bi = match_pattern(env, h, &xs[0])?;
@@ -1587,8 +1594,14 @@ mod tests {
     #[test]
     fn eval_let_group_basic() {
         // ( ~x = 1; ~x; ~y = 2; ) => 1
-        let x_pat = Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) };
-        let y_pat = Pattern { kind: PatternKind::Var("y".into()), span: Span::new(0, 0) };
+        let x_pat = Pattern {
+            kind: PatternKind::Var("x".into()),
+            span: Span::new(0, 0),
+        };
+        let y_pat = Pattern {
+            kind: PatternKind::Var("y".into()),
+            span: Span::new(0, 0),
+        };
         let e = Expr::new(
             ExprKind::LetGroup {
                 bindings: vec![
@@ -1820,8 +1833,14 @@ mod tests {
             ExprKind::Lambda {
                 param: Pattern {
                     kind: PatternKind::List(vec![
-                        Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
-                        Pattern { kind: PatternKind::Var("y".into()), span: Span::new(0, 0) },
+                        Pattern {
+                            kind: PatternKind::Var("x".into()),
+                            span: Span::new(0, 0),
+                        },
+                        Pattern {
+                            kind: PatternKind::Var("y".into()),
+                            span: Span::new(0, 0),
+                        },
                     ]),
                     span: Span::new(0, 0),
                 },
@@ -1834,11 +1853,17 @@ mod tests {
             Span::new(0, 0),
         );
         let appl = Expr::new(
-            ExprKind::Apply { func: Box::new(lam), arg: Box::new(arg) },
+            ExprKind::Apply {
+                func: Box::new(lam),
+                arg: Box::new(arg),
+            },
             Span::new(0, 0),
         );
         let v = eval(&Env::with_builtins(), &appl).unwrap();
-        match v { Value::Int(n) => assert_eq!(n, 10), _ => panic!("expected Int 10") }
+        match v {
+            Value::Int(n) => assert_eq!(n, 10),
+            _ => panic!("expected Int 10"),
+        }
     }
 
     #[test]
@@ -1848,8 +1873,14 @@ mod tests {
             ExprKind::Lambda {
                 param: Pattern {
                     kind: PatternKind::Cons(
-                        Box::new(Pattern { kind: PatternKind::Var("h".into()), span: Span::new(0, 0) }),
-                        Box::new(Pattern { kind: PatternKind::Var("t".into()), span: Span::new(0, 0) }),
+                        Box::new(Pattern {
+                            kind: PatternKind::Var("h".into()),
+                            span: Span::new(0, 0),
+                        }),
+                        Box::new(Pattern {
+                            kind: PatternKind::Var("t".into()),
+                            span: Span::new(0, 0),
+                        }),
                     ),
                     span: Span::new(0, 0),
                 },
@@ -1862,11 +1893,17 @@ mod tests {
             Span::new(0, 0),
         );
         let appl = Expr::new(
-            ExprKind::Apply { func: Box::new(lam), arg: Box::new(arg) },
+            ExprKind::Apply {
+                func: Box::new(lam),
+                arg: Box::new(arg),
+            },
             Span::new(0, 0),
         );
         let v = eval(&Env::with_builtins(), &appl).unwrap();
-        match v { Value::Int(n) => assert_eq!(n, 7), _ => panic!("expected Int 7") }
+        match v {
+            Value::Int(n) => assert_eq!(n, 7),
+            _ => panic!("expected Int 7"),
+        }
     }
 
     #[test]

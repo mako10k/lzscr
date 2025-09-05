@@ -31,9 +31,9 @@ pub mod ast {
         Bool(bool),
         Record(Vec<(String, Pattern)>), // { k: p, ... }
         As(Box<Pattern>, Box<Pattern>), // p1 @ p2
-    // List patterns
-    List(Vec<Pattern>),            // [p1, p2, ...]
-    Cons(Box<Pattern>, Box<Pattern>), // h : t
+        // List patterns
+        List(Vec<Pattern>),               // [p1, p2, ...]
+        Cons(Box<Pattern>, Box<Pattern>), // h : t
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -55,8 +55,14 @@ pub mod ast {
         Str(String),
         Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
-        Lambda { param: Pattern, body: Box<Expr> },
-        Apply { func: Box<Expr>, arg: Box<Expr> },
+        Lambda {
+            param: Pattern,
+            body: Box<Expr>,
+        },
+        Apply {
+            func: Box<Expr>,
+            arg: Box<Expr>,
+        },
         Block(Box<Expr>),
         // List literal: [e1, e2, ...]
         List(Vec<Expr>),
@@ -67,9 +73,15 @@ pub mod ast {
             body: Box<Expr>,
         },
         // Exceptions / control
-        Raise(Box<Expr>),                             // ^(Expr)
-        OrElse { left: Box<Expr>, right: Box<Expr> }, // a | b
-        Catch { left: Box<Expr>, right: Box<Expr> },  // a ^| b
+        Raise(Box<Expr>), // ^(Expr)
+        OrElse {
+            left: Box<Expr>,
+            right: Box<Expr>,
+        }, // a | b
+        Catch {
+            left: Box<Expr>,
+            right: Box<Expr>,
+        }, // a ^| b
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

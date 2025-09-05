@@ -248,12 +248,10 @@ mod tests {
         // ( ~x = 1; ~x; )
         let e = Expr::new(
             ExprKind::LetGroup {
-                bindings: vec![
-                    (
-                        Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
-                        Expr::new(ExprKind::Int(1), Span::new(0, 0)),
-                    ),
-                ],
+                bindings: vec![(
+                    Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
+                    Expr::new(ExprKind::Int(1), Span::new(0, 0)),
+                )],
                 body: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
             },
             Span::new(0, 0),

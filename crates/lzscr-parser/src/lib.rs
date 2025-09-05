@@ -51,7 +51,10 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             let r = bump(i, toks).unwrap();
                             return Ok(Pattern::new(
                                 PatternKind::List(vec![]),
-                                Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset),
+                                Span::new(
+                                    t.span.offset,
+                                    r.span.offset + r.span.len - t.span.offset,
+                                ),
                             ));
                         }
                     }
@@ -59,8 +62,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     loop {
                         let p = parse_pattern(i, toks)?;
                         items.push(p);
-                        let sep = bump(i, toks)
-                            .ok_or_else(|| ParseError::Generic("] or , expected in list pattern".into()))?;
+                        let sep = bump(i, toks).ok_or_else(|| {
+                            ParseError::Generic("] or , expected in list pattern".into())
+                        })?;
                         match sep.tok {
                             Tok::Comma => continue,
                             Tok::RBracket => {
@@ -79,8 +83,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     }
                 }
                 Tok::Tilde => {
-                    let id = bump(i, toks)
-                        .ok_or_else(|| ParseError::Generic("expected ident after ~ in pattern".into()))?;
+                    let id = bump(i, toks).ok_or_else(|| {
+                        ParseError::Generic("expected ident after ~ in pattern".into())
+                    })?;
                     if !matches!(id.tok, Tok::Ident) {
                         return Err(ParseError::Generic(
                             "expected ident after ~ in pattern".into(),
@@ -119,7 +124,10 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             let r = bump(i, toks).unwrap();
                             return Ok(Pattern::new(
                                 PatternKind::Unit,
-                                Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset),
+                                Span::new(
+                                    t.span.offset,
+                                    r.span.offset + r.span.len - t.span.offset,
+                                ),
                             ));
                         }
                     }
@@ -164,15 +172,19 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             let r = bump(i, toks).unwrap();
                             return Ok(Pattern::new(
                                 PatternKind::Record(vec![]),
-                                Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset),
+                                Span::new(
+                                    t.span.offset,
+                                    r.span.offset + r.span.len - t.span.offset,
+                                ),
                             ));
                         }
                     }
                     let mut fields: Vec<(String, Pattern)> = Vec::new();
                     loop {
                         // key (ident)
-                        let k = bump(i, toks)
-                            .ok_or_else(|| ParseError::Generic("expected key in record pattern".into()))?;
+                        let k = bump(i, toks).ok_or_else(|| {
+                            ParseError::Generic("expected key in record pattern".into())
+                        })?;
                         let key = match &k.tok {
                             Tok::Ident => k.text.to_string(),
                             _ => {
@@ -182,18 +194,18 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             }
                         };
                         // ':'
-                        let col = bump(i, toks)
-                            .ok_or_else(|| ParseError::Generic("expected : in record pattern".into()))?;
+                        let col = bump(i, toks).ok_or_else(|| {
+                            ParseError::Generic("expected : in record pattern".into())
+                        })?;
                         if !matches!(col.tok, Tok::Colon) {
-                            return Err(ParseError::Generic(
-                                ": expected in record pattern".into(),
-                            ));
+                            return Err(ParseError::Generic(": expected in record pattern".into()));
                         }
                         // value pattern
                         let pv = parse_pattern(i, toks)?;
                         fields.push((key, pv));
-                        let sep = bump(i, toks)
-                            .ok_or_else(|| ParseError::Generic("expected , or } in record pattern".into()))?;
+                        let sep = bump(i, toks).ok_or_else(|| {
+                            ParseError::Generic("expected , or } in record pattern".into())
+                        })?;
                         match sep.tok {
                             Tok::Comma => continue,
                             Tok::RBrace => {
@@ -227,7 +239,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     loop {
                         let Some(nxt) = toks.get(*i) else { break };
                         match nxt.tok {
-                            Tok::Arrow | Tok::RParen | Tok::Comma | Tok::Eq | Tok::Semicolon => break,
+                            Tok::Arrow | Tok::RParen | Tok::Comma | Tok::Eq | Tok::Semicolon => {
+                                break
+                            }
                             Tok::Ident | Tok::Member(_) | Tok::LParen => {
                                 let a = parse_pat_atom(i, toks)?;
                                 args.push(a);
@@ -255,7 +269,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     loop {
                         let Some(nxt) = toks.get(*i) else { break };
                         match nxt.tok {
-                            Tok::Arrow | Tok::RParen | Tok::Comma | Tok::Eq | Tok::Semicolon => break,
+                            Tok::Arrow | Tok::RParen | Tok::Comma | Tok::Eq | Tok::Semicolon => {
+                                break
+                            }
                             Tok::Tilde
                             | Tok::Ident
                             | Tok::Member(_)
@@ -297,10 +313,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         left.span.offset,
                         right.span.offset + right.span.len - left.span.offset,
                     );
-                    left = Pattern::new(
-                        PatternKind::Cons(Box::new(left), Box::new(right)),
-                        sp,
-                    );
+                    left = Pattern::new(PatternKind::Cons(Box::new(left), Box::new(right)), sp);
                     continue;
                 }
             }
@@ -701,11 +714,17 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     // desugar (h : t) => ((~cons h) t)
                     let callee = Expr::new(ExprKind::Ref("cons".into()), nxt.span);
                     let app1 = Expr::new(
-                        ExprKind::Apply { func: Box::new(callee), arg: Box::new(lhs) },
+                        ExprKind::Apply {
+                            func: Box::new(callee),
+                            arg: Box::new(lhs),
+                        },
                         span,
                     );
                     lhs = Expr::new(
-                        ExprKind::Apply { func: Box::new(app1), arg: Box::new(rhs) },
+                        ExprKind::Apply {
+                            func: Box::new(app1),
+                            arg: Box::new(rhs),
+                        },
                         span,
                     );
                     continue;
