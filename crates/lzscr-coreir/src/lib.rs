@@ -53,6 +53,22 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Str(s) => Term::new(Op::Str(s.clone())),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
+        ExprKind::List(xs) => {
+            // Lower to foldr cons []
+            let mut tail = Term::new(Op::Symbol("[]".into()));
+            for x in xs.iter().rev() {
+                let cons = Term::new(Op::Ref("cons".into()));
+                let app1 = Term::new(Op::App {
+                    func: Box::new(cons),
+                    arg: Box::new(lower_expr_to_core(x)),
+                });
+                tail = Term::new(Op::App {
+                    func: Box::new(app1),
+                    arg: Box::new(tail),
+                });
+            }
+            tail
+        }
         ExprKind::Raise(inner) => {
             // 暫定: 表示用に Symbol("^(") + inner + Symbol(")") にせず、App で (~raise inner) 相当の形にすることも考えたが
             // PoC 段階なので単純に Symbol("RAISE") と引数の App に落とす

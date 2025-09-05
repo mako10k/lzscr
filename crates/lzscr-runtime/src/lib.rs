@@ -150,6 +150,23 @@ impl Env {
 
         // add : (Int|Float) -> (Int|Float) -> same
         e.vars.insert(
+            "cons".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (h, Value::List(tl)) => {
+                        let mut v = Vec::with_capacity(tl.len() + 1);
+                        v.push(h.clone());
+                        v.extend_from_slice(&tl);
+                        Ok(Value::List(v))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+
+        e.vars.insert(
             "add".into(),
             Value::Native {
                 arity: 2,
@@ -1129,6 +1146,17 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Int(n) => Ok(Value::Int(*n)),
         ExprKind::Str(s) => Ok(Value::Str(s.clone())),
         ExprKind::Float(f) => Ok(Value::Float(*f)),
+        ExprKind::List(xs) => {
+            let mut out = Vec::with_capacity(xs.len());
+            for ex in xs {
+                let v = eval(env, ex)?;
+                if let Value::Raised(_) = v {
+                    return Ok(v);
+                }
+                out.push(v);
+            }
+            Ok(Value::List(out))
+        }
         ExprKind::Raise(inner) => {
             // Evaluate payload and wrap into Raised value
             let v = eval(env, inner)?;
@@ -1664,5 +1692,55 @@ mod tests {
         env.strict_effects = true;
         let v = eval(&env, &expr).unwrap();
         matches!(v, Value::Unit);
+    }
+
+    #[test]
+    fn eval_list_literal() {
+        let env = Env::with_builtins();
+        let e = Expr::new(
+            ExprKind::List(vec![int_expr(1), int_expr(2), int_expr(3)]),
+            Span::new(0, 0),
+        );
+        let v = eval(&env, &e).unwrap();
+        match v {
+            Value::List(xs) => assert_eq!(xs.len(), 3),
+            _ => panic!("expected List"),
+        }
+    }
+
+    #[test]
+    fn eval_cons_builds_list() {
+        // ((~cons 1) [2,3]) => [1,2,3]
+        let env = Env::with_builtins();
+        let cons_ref = ref_expr("cons");
+        let app1 = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(cons_ref),
+                arg: Box::new(int_expr(1)),
+            },
+            Span::new(0, 0),
+        );
+        let list = Expr::new(
+            ExprKind::List(vec![int_expr(2), int_expr(3)]),
+            Span::new(0, 0),
+        );
+        let whole = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(app1),
+                arg: Box::new(list),
+            },
+            Span::new(0, 0),
+        );
+        let v = eval(&env, &whole).unwrap();
+        match v {
+            Value::List(xs) => {
+                assert_eq!(xs.len(), 3);
+                match (&xs[0], &xs[1], &xs[2]) {
+                    (Value::Int(1), Value::Int(2), Value::Int(3)) => {}
+                    _ => panic!("unexpected list contents: {:?}", xs),
+                }
+            }
+            _ => panic!("expected List"),
+        }
     }
 }

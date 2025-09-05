@@ -55,6 +55,8 @@ pub mod ast {
         Lambda { param: Pattern, body: Box<Expr> },
         Apply { func: Box<Expr>, arg: Box<Expr> },
         Block(Box<Expr>),
+    // List literal: [e1, e2, ...]
+    List(Vec<Expr>),
         // Exceptions / control
         Raise(Box<Expr>),                             // ^(Expr)
         OrElse { left: Box<Expr>, right: Box<Expr> }, // a | b
@@ -128,6 +130,12 @@ pub mod pretty {
                 format!("({} {})", print_expr(func), print_expr(arg))
             }
             ExprKind::Block(inner) => format!("{{ {} }}", print_expr(inner)),
+            ExprKind::List(xs) => {
+                format!(
+                    "[{}]",
+                    xs.iter().map(print_expr).collect::<Vec<_>>().join(", ")
+                )
+            }
             ExprKind::Raise(inner) => format!("^({})", print_expr(inner)),
             ExprKind::OrElse { left, right } => {
                 format!("({} | {})", print_expr(left), print_expr(right))

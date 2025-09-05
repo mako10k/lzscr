@@ -68,7 +68,9 @@
 - プラグイン ABI: `#[no_mangle] extern "C" fn ls_prelude_register(env: *mut Env) -> i32`（原版互換）を想定。`libloading` で動的解決。
 
 補足（原版との差分の明示）:
-- 原版では List 構文は AST/パーサ未実装（計画）。lzscr は初期からデシュガでリストリテラルを導入（`[a,b]` → `:(a, :(b, []))`）。
+- List 構文を実装済み: リストリテラル `[a, b, ...]`、空リスト `[]`、cons 演算子 `h : t`（右結合）。
+	- デシュガ: `h : t` → `((~cons h) t)`、`[a,b,c]` → `(~cons a (~cons b (~cons c [])))`。
+	- `cons : a -> List a -> List a` はビルトイン関数。
 
 ### 1.1) 用語の整理（名称の変更）
 

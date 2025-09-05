@@ -42,6 +42,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             ExprKind::Lambda { body, .. } => 1 + walk(body, tbl),
             ExprKind::Apply { func, arg } => 1 + walk(func, tbl) + walk(arg, tbl),
             ExprKind::Block(inner) => 1 + walk(inner, tbl),
+            ExprKind::List(xs) => 1 + xs.iter().map(|x| walk(x, tbl)).sum::<usize>(),
         };
         // very simple structural repr (not fully unique but works for heuristic)
         let repr = match &e.kind {
@@ -98,6 +99,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             }
             ExprKind::Apply { func, arg } => format!("ap({},{})", func.span.len, arg.span.len),
             ExprKind::Block(inner) => format!("blk({})", inner.span.len),
+            ExprKind::List(xs) => format!("list({})", xs.len()),
         };
         let entry = tbl.entry(repr).or_insert((0, e.span, size));
         entry.0 += 1;
@@ -142,9 +144,9 @@ pub struct UnusedParam {
 pub fn default_allowlist() -> HashSet<String> {
     // Builtins available via ~name (keep in sync with runtime)
     [
-        "to_str", "add", "sub", "mul", "div", "fadd", "fsub", "fmul", "fdiv", "lt", "le", "gt",
+    "to_str", "add", "sub", "mul", "div", "fadd", "fsub", "fmul", "fdiv", "lt", "le", "gt",
         "ge", "eq", "ne", "flt", "fle", "fgt", "fge", "and", "or", "not", "if", "seq", "effects",
-        "Tuple", "Record", "KV", "Bool",
+    "Tuple", "Record", "KV", "Bool", "cons",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -238,6 +240,11 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
             | ExprKind::Float(_)
             | ExprKind::Str(_)
             | ExprKind::Symbol(_) => {}
+            ExprKind::List(xs) => {
+                for x in xs {
+                    walk(x, scopes, allow, out);
+                }
+            }
             ExprKind::Raise(inner) => walk(inner, scopes, allow, out),
             ExprKind::OrElse { left, right } => {
                 walk(left, scopes, allow, out);
@@ -373,6 +380,11 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                 walk(func, scopes, out);
                 walk(arg, scopes, out);
             }
+            ExprKind::List(xs) => {
+                for x in xs {
+                    walk(x, scopes, out);
+                }
+            }
             ExprKind::Raise(inner) => walk(inner, scopes, out),
             ExprKind::OrElse { left, right } => {
                 walk(left, scopes, out);
@@ -400,6 +412,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
                 used_in(body, target) && !binds_param(param, target)
             }
             ExprKind::Apply { func, arg } => used_in(func, target) || used_in(arg, target),
+            ExprKind::List(xs) => xs.iter().any(|x| used_in(x, target)),
             ExprKind::Raise(inner) => used_in(inner, target),
             ExprKind::OrElse { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::Catch { left, right } => used_in(left, target) || used_in(right, target),
@@ -473,6 +486,11 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             ExprKind::Apply { func, arg } => {
                 walk(func, out);
                 walk(arg, out);
+            }
+            ExprKind::List(xs) => {
+                for x in xs {
+                    walk(x, out);
+                }
             }
             ExprKind::Raise(inner) => walk(inner, out),
             ExprKind::OrElse { left, right } => {

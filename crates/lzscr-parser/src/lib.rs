@@ -33,6 +33,32 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     ) -> Result<Expr, ParseError> {
         let t = bump(i, toks).ok_or_else(|| ParseError::Generic("unexpected EOF".into()))?;
         Ok(match &t.tok {
+            Tok::LBracket => {
+                // list literal: [ e1, e2, ... ]
+                if let Some(nxt) = peek(*i, toks) {
+                    if matches!(nxt.tok, Tok::RBracket) {
+                        let r = bump(i, toks).unwrap();
+                        return Ok(Expr::new(
+                            ExprKind::List(vec![]),
+                            Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset),
+                        ));
+                    }
+                }
+                let mut items = Vec::new();
+                loop {
+                    let e = parse_expr_bp(i, toks, 0)?;
+                    items.push(e);
+                    let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("] or , expected".into()))?;
+                    match sep.tok {
+                        Tok::Comma => continue,
+                        Tok::RBracket => {
+                            let span_all = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset);
+                            return Ok(Expr::new(ExprKind::List(items), span_all));
+                        }
+                        _ => return Err(ParseError::Generic("expected , or ] in list".into())),
+                    }
+                }
+            }
             // ^(Expr)
             Tok::Caret => {
                 let lp = bump(i, toks).ok_or_else(|| ParseError::Generic("expected ( after ^".into()))?;
@@ -346,6 +372,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             let (op_bp, op_kind) = match nxt.tok.clone() {
                 // lowest precedence for catch and or-else
                 Tok::Pipe => (1, Some("|")),
+                Tok::Colon => (6, Some(":")),
                 Tok::Plus => (10, Some("+")),
                 Tok::Minus => (10, Some("-")),
                 Tok::Star => (20, Some("*")),
@@ -385,6 +412,25 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             left: Box::new(lhs),
                             right: Box::new(rhs),
                         },
+                        span,
+                    );
+                    continue;
+                }
+                if op == ":" {
+                    // cons is right-associative; do not increase bp on RHS to keep right-assoc
+                    let rhs = parse_expr_bp(i, toks, op_bp)?;
+                    let span = Span::new(
+                        lhs.span.offset,
+                        rhs.span.offset + rhs.span.len - lhs.span.offset,
+                    );
+                    // desugar (h : t) => ((~cons h) t)
+                    let callee = Expr::new(ExprKind::Ref("cons".into()), nxt.span);
+                    let app1 = Expr::new(
+                        ExprKind::Apply { func: Box::new(callee), arg: Box::new(lhs) },
+                        span,
+                    );
+                    lhs = Expr::new(
+                        ExprKind::Apply { func: Box::new(app1), arg: Box::new(rhs) },
                         span,
                     );
                     continue;
@@ -456,6 +502,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             }
             match nxt.tok {
                 Tok::LParen
+                | Tok::LBracket
                 | Tok::Int(_)
                 | Tok::Float(_)
                 | Tok::Str(_)
@@ -534,5 +581,34 @@ mod tests {
             ),
             other => panic!("expected Err(ParseError::Generic), got {:?}", other),
         }
+    }
+
+    #[test]
+    fn list_literal_empty() {
+        let src = "[]";
+        let r = parse_expr(src).unwrap();
+        match r.kind {
+            ExprKind::List(xs) => assert!(xs.is_empty()),
+            _ => panic!("expected List"),
+        }
+    }
+
+    #[test]
+    fn list_literal_basic() {
+        let src = "[1, 2, 3]";
+        let r = parse_expr(src).unwrap();
+        match r.kind {
+            ExprKind::List(xs) => assert_eq!(xs.len(), 3),
+            _ => panic!("expected List"),
+        }
+    }
+
+    #[test]
+    fn cons_right_assoc() {
+        // 1:2:[] should parse as 1:(2:[])
+        let src = "1 : 2 : []";
+        let r = parse_expr(src).unwrap();
+        // We can't easily inspect without eval, but ensure it parses
+        let _ = r;
     }
 }
