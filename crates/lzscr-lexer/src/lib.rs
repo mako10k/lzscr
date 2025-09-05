@@ -27,6 +27,10 @@ pub enum Tok {
     #[token("~")]
     Tilde,
 
+    // Float literals should be matched before Int to avoid consuming prefix digits
+    #[regex(r"([0-9]+\.[0-9]*|\.[0-9]+)", |lex| lex.slice().parse::<f64>().ok())]
+    Float(f64),
+
     #[regex(r"[0-9]+", |lex| lex.slice().parse::<i64>().ok())]
     Int(i64),
 

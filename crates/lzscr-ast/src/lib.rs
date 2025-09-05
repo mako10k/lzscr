@@ -21,6 +21,7 @@ pub mod ast {
     pub enum ExprKind {
         Unit,
         Int(i64),
+    Float(f64),
         Str(String),
         Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
@@ -47,6 +48,7 @@ pub mod pretty {
         match &e.kind {
             ExprKind::Unit => "()".to_string(),
             ExprKind::Int(n) => format!("{n}"),
+            ExprKind::Float(f) => format!("{}", f),
             ExprKind::Str(s) => format!("\"{}\"", s.escape_default()),
             ExprKind::Ref(n) => format!("~{n}"),
             ExprKind::Symbol(s) => s.clone(),

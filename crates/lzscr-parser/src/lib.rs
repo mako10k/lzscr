@@ -34,6 +34,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         let t = bump(i, toks).ok_or_else(|| ParseError::Generic("unexpected EOF".into()))?;
         Ok(match &t.tok {
             Tok::Int(n) => Expr::new(ExprKind::Int(*n), t.span),
+            Tok::Float(f) => Expr::new(ExprKind::Float(*f), t.span),
             Tok::Str(s) => Expr::new(ExprKind::Str(s.clone()), t.span),
             Tok::Member(name) => Expr::new(ExprKind::Symbol(name.clone()), t.span),
             Tok::Tilde => {
@@ -154,6 +155,15 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         lhs.span.offset,
                         arg.span.offset + arg.span.len - lhs.span.offset,
                     );
+                    // sugar: true() / false()  =>  ~true / ~false
+                    if let ExprKind::Symbol(name) = &lhs.kind {
+                        if matches!(arg.kind, ExprKind::Unit)
+                            && (name == "true" || name == "false")
+                        {
+                            lhs = Expr::new(ExprKind::Ref(name.clone()), span);
+                            continue;
+                        }
+                    }
                     lhs = Expr::new(
                         ExprKind::Apply {
                             func: Box::new(lhs),

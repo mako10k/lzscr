@@ -18,7 +18,15 @@ pub enum EvalError {
 pub enum Value {
     Unit,
     Int(i64),
+    Float(f64),
+    Bool(bool),
     Str(String),
+    // Simple immutable containers (PoC)
+    List(Vec<Value>),
+    Tuple(Vec<Value>),
+    Record(std::collections::BTreeMap<String, Value>),
+    // Constructor value: tag name with payload args (order-significant)
+    Ctor { name: String, args: Vec<Value> },
     Native {
         arity: usize,
         f: fn(&Env, &[Value]) -> Result<Value, EvalError>,
@@ -49,6 +57,24 @@ impl Env {
     pub fn with_builtins() -> Self {
         let mut e = Env::new();
 
+    // Inject ~true / ~false as references
+    e.vars.insert("true".into(), Value::Bool(true));
+    e.vars.insert("false".into(), Value::Bool(false));
+
+        // Bool constructor: (.true|.false) -> Bool
+        e.vars.insert(
+            "Bool".into(),
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |_env, args| match &args[0] {
+                    Value::Symbol(s) if s == ".true" => Ok(Value::Bool(true)),
+                    Value::Symbol(s) if s == ".false" => Ok(Value::Bool(false)),
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+
         // to_str : a -> Str
         e.vars.insert(
             "to_str".into(),
@@ -60,7 +86,24 @@ impl Env {
                     Ok(Value::Str(match v.clone() {
                         Value::Unit => "()".into(),
                         Value::Int(n) => n.to_string(),
+                        Value::Float(f) => f.to_string(),
+                        Value::Bool(b) => b.to_string(),
                         Value::Str(s) => s,
+                        Value::Ctor { name, args } => {
+                            if args.is_empty() { name } else { format!("{}({})", name, args.into_iter().map(|x| to_str_like(&x)).collect::<Vec<_>>().join(", ")) }
+                        }
+                        Value::List(xs) => {
+                            let inner = xs.iter().map(|x| match to_str_like(x) { s => s }).collect::<Vec<_>>().join(", ");
+                            format!("[{}]", inner)
+                        }
+                        Value::Tuple(xs) => {
+                            let inner = xs.iter().map(|x| match to_str_like(x) { s => s }).collect::<Vec<_>>().join(", ");
+                            format!("({})", inner)
+                        }
+                        Value::Record(map) => {
+                            let inner = map.iter().map(|(k,v)| format!("{}: {}", k, to_str_like(v))).collect::<Vec<_>>().join(", ");
+                            format!("{{{}}}", inner)
+                        }
                         Value::Symbol(s) => s,
                         Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
                     }))
@@ -100,44 +143,30 @@ impl Env {
             },
         );
 
-        // eq : Int|Str|Unit|Symbol -> same -> Symbol("True"|"False")
+        // eq : Int|Float|Bool|Str|Unit|Symbol -> same -> Symbol("True"|"False")
         e.vars.insert(
             "eq".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| {
-                    let res = match (&args[0], &args[1]) {
-                        (Value::Int(a), Value::Int(b)) => a == b,
-                        (Value::Str(a), Value::Str(b)) => a == b,
-                        (Value::Unit, Value::Unit) => true,
-                        (Value::Symbol(a), Value::Symbol(b)) => a == b,
-                        _ => false,
-                    };
-                    Ok(Value::Symbol(if res {
-                        "True".into()
-                    } else {
-                        "False".into()
-                    }))
+                    let res = v_equal(&args[0], &args[1]);
+                    Ok(Value::Symbol(if res { "True".into() } else { "False".into() }))
                 },
             },
         );
 
-        // lt : Int -> Int -> Symbol("True"|"False")
+        // lt : Int|Float -> Int|Float -> Symbol("True"|"False")
         e.vars.insert(
             "lt".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| {
-                    if let (Value::Int(a), Value::Int(b)) = (&args[0], &args[1]) {
-                        Ok(Value::Symbol(if a < b {
-                            "True".into()
-                        } else {
-                            "False".into()
-                        }))
-                    } else {
-                        Err(EvalError::TypeError)
+                    match (&args[0], &args[1]) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Symbol(if a < b { "True".into() } else { "False".into() })),
+                        (Value::Float(a), Value::Float(b)) => Ok(Value::Symbol(if a < b { "True".into() } else { "False".into() })),
+                        _ => Err(EvalError::TypeError),
                     }
                 },
             },
@@ -182,6 +211,31 @@ impl Env {
     }
 }
 
+fn to_str_like(v: &Value) -> String {
+    match v {
+        Value::Unit => "()".into(),
+        Value::Int(n) => n.to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Str(s) => s.clone(),
+        Value::Symbol(s) => s.clone(),
+        Value::Ctor { name, args } => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                format!("{}({})", name, args.iter().map(to_str_like).collect::<Vec<_>>().join(", "))
+            }
+        }
+        Value::List(xs) => format!("[{}]", xs.iter().map(to_str_like).collect::<Vec<_>>().join(", ")),
+        Value::Tuple(xs) => format!("({})", xs.iter().map(to_str_like).collect::<Vec<_>>().join(", ")),
+        Value::Record(map) => {
+            let inner = map.iter().map(|(k,v)| format!("{}: {}", k, to_str_like(v))).collect::<Vec<_>>().join(", ");
+            format!("{{{}}}", inner)
+        }
+        Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
+    }
+}
+
 fn eff_guard(env: &Env) -> Result<(), EvalError> {
     if env.strict_effects && !env.in_effect_context {
         Err(EvalError::EffectNotAllowed)
@@ -206,8 +260,25 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 print!("{}", n);
                 Ok(Value::Unit)
             }
+            Value::Float(f) => { print!("{}", f); Ok(Value::Unit) }
+            Value::Bool(b) => { print!("{}", b); Ok(Value::Unit) }
             Value::Symbol(sym) => {
                 print!("{}", sym);
+                Ok(Value::Unit)
+            }
+            Value::Ctor { name, args } => {
+                if args.is_empty() {
+                    print!("{}", name);
+                } else {
+                    print!("{}({})", name, args.iter().map(to_str_like).collect::<Vec<_>>().join(", "));
+                }
+                Ok(Value::Unit)
+            }
+            Value::List(xs) => { print!("[{}]", xs.iter().map(to_str_like).collect::<Vec<_>>().join(", ")); Ok(Value::Unit) }
+            Value::Tuple(xs) => { print!("({})", xs.iter().map(to_str_like).collect::<Vec<_>>().join(", ")); Ok(Value::Unit) }
+            Value::Record(map) => {
+                let inner = map.iter().map(|(k,v)| format!("{}: {}", k, to_str_like(v))).collect::<Vec<_>>().join(", ");
+                print!("{{{}}}", inner);
                 Ok(Value::Unit)
             }
             Value::Native { .. } | Value::Closure { .. } => {
@@ -235,8 +306,25 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 println!("{}", n);
                 Ok(Value::Unit)
             }
+            Value::Float(f) => { println!("{}", f); Ok(Value::Unit) }
+            Value::Bool(b) => { println!("{}", b); Ok(Value::Unit) }
             Value::Symbol(sym) => {
                 println!("{}", sym);
+                Ok(Value::Unit)
+            }
+            Value::Ctor { name, args } => {
+                if args.is_empty() {
+                    println!("{}", name);
+                } else {
+                    println!("{}({})", name, args.iter().map(to_str_like).collect::<Vec<_>>().join(", "));
+                }
+                Ok(Value::Unit)
+            }
+            Value::List(xs) => { println!("[{}]", xs.iter().map(to_str_like).collect::<Vec<_>>().join(", ")); Ok(Value::Unit) }
+            Value::Tuple(xs) => { println!("({})", xs.iter().map(to_str_like).collect::<Vec<_>>().join(", ")); Ok(Value::Unit) }
+            Value::Record(map) => {
+                let inner = map.iter().map(|(k,v)| format!("{}: {}", k, to_str_like(v))).collect::<Vec<_>>().join(", ");
+                println!("{{{}}}", inner);
                 Ok(Value::Unit)
             }
             Value::Native { .. } | Value::Closure { .. } => {
@@ -248,11 +336,36 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
     }
 }
 
+fn v_equal(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Unit, Value::Unit) => true,
+        (Value::Int(x), Value::Int(y)) => x == y,
+        (Value::Float(x), Value::Float(y)) => x == y,
+        (Value::Bool(x), Value::Bool(y)) => x == y,
+        (Value::Str(x), Value::Str(y)) => x == y,
+        (Value::Symbol(x), Value::Symbol(y)) => x == y,
+        (Value::Ctor { name: na, args: aa }, Value::Ctor { name: nb, args: ab }) => {
+            na == nb && aa.len() == ab.len() && aa.iter().zip(ab.iter()).all(|(x, y)| v_equal(x, y))
+        }
+        (Value::List(xs), Value::List(ys)) => xs.len() == ys.len() && xs.iter().zip(ys.iter()).all(|(x, y)| v_equal(x, y)),
+        (Value::Tuple(xs), Value::Tuple(ys)) => xs.len() == ys.len() && xs.iter().zip(ys.iter()).all(|(x, y)| v_equal(x, y)),
+        (Value::Record(xm), Value::Record(ym)) => {
+            if xm.len() != ym.len() { return false; }
+            xm.iter().zip(ym.iter()).all(|((kx, vx), (ky, vy))| kx == ky && v_equal(vx, vy))
+        }
+        // Functions are not comparable structurally in this simple eq
+        (Value::Native { .. }, Value::Native { .. }) => false,
+        (Value::Closure { .. }, Value::Closure { .. }) => false,
+        _ => false,
+    }
+}
+
 pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
     match &e.kind {
         ExprKind::Unit => Ok(Value::Unit),
         ExprKind::Int(n) => Ok(Value::Int(*n)),
-        ExprKind::Str(s) => Ok(Value::Str(s.clone())),
+    ExprKind::Str(s) => Ok(Value::Str(s.clone())),
+    ExprKind::Float(f) => Ok(Value::Float(*f)),
         ExprKind::Ref(n) => env
             .vars
             .get(n)
@@ -284,10 +397,11 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             let f = eval(env, func)?;
             let a = eval(env, arg)?;
             match f {
-                // Constructor variable: accumulate args as an unapplied function-like value
-                Value::Symbol(_name) => {
-                    let args = vec![a];
-                    Ok(Value::Native { arity: usize::MAX, f: |_env, _args| Err(EvalError::NotFunc), args })
+                // Constructor variable: build constructor value accumulating payload args
+                Value::Symbol(name) => Ok(Value::Ctor { name, args: vec![a] }),
+                Value::Ctor { name, mut args } => {
+                    args.push(a);
+                    Ok(Value::Ctor { name, args })
                 }
                 Value::Native { arity, f, mut args } => {
                     args.push(a);
@@ -354,6 +468,32 @@ mod tests {
     }
     fn sym_expr(s: &str) -> Expr {
         Expr::new(ExprKind::Symbol(s.into()), Span::new(0, 0))
+    }
+
+    #[test]
+    fn ctor_equality() {
+        // (~eq (Foo 1 2) (Foo 1 2)) => True
+        // Build ((~eq (Foo 1 2)) (Foo 1 2))
+        let eq_ref = ref_expr("eq");
+        // Foo 1 2
+        let foo_sym = sym_expr("Foo");
+        let foo1 = Expr::new(ExprKind::Apply { func: Box::new(foo_sym.clone()), arg: Box::new(int_expr(1)) }, Span::new(0,0));
+        let foo12 = Expr::new(ExprKind::Apply { func: Box::new(foo1), arg: Box::new(int_expr(2)) }, Span::new(0,0));
+
+        let left_app = Expr::new(ExprKind::Apply { func: Box::new(eq_ref), arg: Box::new(foo12.clone()) }, Span::new(0,0));
+        let whole = Expr::new(ExprKind::Apply { func: Box::new(left_app), arg: Box::new(foo12) }, Span::new(0,0));
+
+        let env = Env::with_builtins();
+        let v = eval(&env, &whole).unwrap();
+        match v { Value::Symbol(s) => assert_eq!(s, "True"), _ => panic!("expected Symbol True") }
+
+        // Different tag
+        let bar_sym = sym_expr("Bar");
+        let bar1 = Expr::new(ExprKind::Apply { func: Box::new(bar_sym), arg: Box::new(int_expr(1)) }, Span::new(0,0));
+        let left_app = Expr::new(ExprKind::Apply { func: Box::new(ref_expr("eq")), arg: Box::new(bar1) }, Span::new(0,0));
+        let whole = Expr::new(ExprKind::Apply { func: Box::new(left_app), arg: Box::new(sym_expr("Foo")) }, Span::new(0,0));
+        let v = eval(&Env::with_builtins(), &whole).unwrap();
+        match v { Value::Symbol(s) => assert_eq!(s, "False"), _ => panic!("expected Symbol False") }
     }
 
     #[test]

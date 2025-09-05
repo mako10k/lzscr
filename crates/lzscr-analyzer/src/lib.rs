@@ -32,6 +32,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
         let size = match &e.kind {
             ExprKind::Unit
             | ExprKind::Int(_)
+            | ExprKind::Float(_)
             | ExprKind::Str(_)
             | ExprKind::Ref(_)
             | ExprKind::Symbol(_) => 1,
@@ -43,6 +44,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
         let repr = match &e.kind {
             ExprKind::Unit => "()".to_string(),
             ExprKind::Int(n) => format!("i:{n}"),
+            ExprKind::Float(f) => format!("f:{}", f),
             ExprKind::Str(s) => format!("s:\"{}\"", s),
             ExprKind::Ref(n) => format!("r:{n}"),
             ExprKind::Symbol(s) => format!("y:{s}"),
@@ -107,7 +109,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
         out: &mut Vec<UnboundRef>,
     ) {
         match &e.kind {
-            ExprKind::Unit | ExprKind::Int(_) | ExprKind::Str(_) | ExprKind::Symbol(_) => {}
+            ExprKind::Unit | ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Str(_) | ExprKind::Symbol(_) => {}
             ExprKind::Ref(n) => {
                 let mut bound = allow.contains(n);
                 if !bound {

@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub enum Ty {
     Unit,
     Int,
+    Float,
+    Bool,
     Str,
     Fun(Box<Ty>, Box<Ty>),
     Dyn, // unknown/placeholder at PoC stage
@@ -18,6 +20,8 @@ pub enum Op {
     Ref(String),      // reference to name (pre-resolve)
     Symbol(String),   // bare symbol
     Int(i64),
+    Float(f64),
+    Bool(bool),
     Str(String),
     Unit,
     Lam { param: String, body: Box<Term> },
@@ -43,6 +47,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
     match &e.kind {
         ExprKind::Unit => Term::new(Op::Unit),
         ExprKind::Int(n) => Term::new(Op::Int(*n)),
+    ExprKind::Float(f) => Term::new(Op::Float(*f)),
         ExprKind::Str(s) => Term::new(Op::Str(s.clone())),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
@@ -66,6 +71,8 @@ pub fn print_term(t: &Term) -> String {
     match &t.op {
         Op::Unit => "()".into(),
         Op::Int(n) => format!("{n}"),
+    Op::Float(f) => format!("{}", f),
+    Op::Bool(b) => format!("{}", b),
         Op::Str(s) => format!("\"{}\"", s.escape_default()),
         Op::Ref(n) => format!("~{n}"),
         Op::Symbol(s) => s.clone(),

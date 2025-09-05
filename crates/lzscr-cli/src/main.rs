@@ -120,13 +120,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             env.strict_effects = true;
         }
         let val = eval(&env, &ast).map_err(|e| format!("{e}"))?;
-        let out = match val {
-            Value::Unit => "()".to_string(),
-            Value::Int(n) => n.to_string(),
-            Value::Str(s) => s,
-            Value::Symbol(s) => s,
-            Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
-        };
+        fn val_to_string(v: &Value) -> String {
+            match v {
+                Value::Unit => "()".into(),
+                Value::Int(n) => n.to_string(),
+                Value::Float(f) => f.to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::Str(s) => s.clone(),
+                Value::Symbol(s) => s.clone(),
+                Value::Ctor { name, args } => {
+                    if args.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{}({})", name, args.iter().map(val_to_string).collect::<Vec<_>>().join(", "))
+                    }
+                }
+                Value::List(xs) => format!("[{}]", xs.iter().map(val_to_string).collect::<Vec<_>>().join(", ")),
+                Value::Tuple(xs) => format!("({})", xs.iter().map(val_to_string).collect::<Vec<_>>().join(", ")),
+                Value::Record(map) => {
+                    let inner = map.iter().map(|(k,v)| format!("{}: {}", k, val_to_string(v))).collect::<Vec<_>>().join(", ");
+                    format!("{{{}}}", inner)
+                }
+                Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
+            }
+        }
+        let out = val_to_string(&val);
         println!("{out}");
         return Ok(());
     }

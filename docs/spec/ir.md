@@ -3,7 +3,7 @@
 定義: `crates/lzscr-coreir`
 
 - 型 `Ty`:
-  - `Unit | Int | Str | Fun(Box<Ty>, Box<Ty>) | Dyn`
+  - `Unit | Int | Float | Bool | Str | Fun(Box<Ty>, Box<Ty>) | Dyn`
 - 項 `Op` と `Term`:
   - `Unit | Int(i64) | Str(String)`
   - `Ref(String) | Symbol(String)`
