@@ -35,6 +35,10 @@ struct Opt {
     #[arg(long = "dump-coreir-json", default_value_t = false)]
     dump_coreir_json: bool,
 
+    /// Declare constructor arities (e.g., Foo=2,Bar=0). Comma-separated.
+    #[arg(long = "ctor-arity")]
+    ctor_arity: Option<String>,
+
     /// Output format for --analyze: text|json
     #[arg(long = "format", default_value = "text")]
     format: String,
@@ -116,6 +120,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         let mut env = Env::with_builtins();
+        if let Some(spec) = &opt.ctor_arity {
+            for item in spec.split(',').filter(|s| !s.is_empty()) {
+                if let Some((name, n)) = item.split_once('=') {
+                    if let Ok(k) = n.parse::<usize>() {
+                        env.declare_ctor_arity(name.trim(), k);
+                    }
+                }
+            }
+        }
         if opt.strict_effects {
             env.strict_effects = true;
         }
