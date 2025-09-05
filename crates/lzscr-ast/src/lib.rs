@@ -7,20 +7,22 @@ pub mod span {
         pub len: usize,
     }
     impl Span {
-        pub fn new(offset: usize, len: usize) -> Self { Self { offset, len } }
+        pub fn new(offset: usize, len: usize) -> Self {
+            Self { offset, len }
+        }
     }
 }
 
 pub mod ast {
-    use serde::{Deserialize, Serialize};
     use crate::span::Span;
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum ExprKind {
-    Unit,
+        Unit,
         Int(i64),
         Str(String),
-        Ref(String), // ~name
+        Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
         Lambda { param: String, body: Box<Expr> },
         Apply { func: Box<Expr>, arg: Box<Expr> },
@@ -33,7 +35,9 @@ pub mod ast {
         pub span: Span,
     }
     impl Expr {
-        pub fn new(kind: ExprKind, span: Span) -> Self { Self { kind, span } }
+        pub fn new(kind: ExprKind, span: Span) -> Self {
+            Self { kind, span }
+        }
     }
 }
 

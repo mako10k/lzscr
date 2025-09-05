@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  schedule:
+    - cron: '0 3 * * 1' # weekly sanity (audit/deny)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Cargo fmt
+        run: cargo fmt --all -- --check
+      - name: Cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Cargo test
+        run: cargo test --all --locked
+
+  audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (minimal)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run cargo audit
+        run: cargo audit -q
+
+  deny:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+
+  coverage:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Run coverage (tarpaulin)
+        run: cargo tarpaulin --workspace --out Xml
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+            name: coverage-xml
+            path: cobertura.xml
+
+  udeps:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install cargo-udeps
+        run: cargo install cargo-udeps
+      - name: Run cargo udeps
+        run: cargo udeps --all-targets

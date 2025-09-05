@@ -1,0 +1,11 @@
+[package]
+name = "lzscr-analyzer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+lzscr-ast = { path = "../lzscr-ast" }
+lzscr-parser = { path = "../lzscr-parser" }
+ahash = "0.8"
+serde = { version = "1", features = ["derive"] }

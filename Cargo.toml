@@ -4,6 +4,7 @@ members = [
   "crates/lzscr-lexer",
   "crates/lzscr-parser",
   "crates/lzscr-runtime",
+  "crates/lzscr-analyzer",
   "crates/lzscr-cli",
 ]
 resolver = "2"
@@ -12,3 +13,4 @@ resolver = "2"
 edition = "2021"
 license = "MIT"
 authors = ["lzscr contributors"]
+rust-version = "1.75"

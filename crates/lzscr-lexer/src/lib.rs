@@ -4,19 +4,28 @@ use lzscr_ast::span::Span;
 #[derive(Debug, Logos, PartialEq, Clone)]
 pub enum Tok {
     #[regex(r"[ \t\r\n]+", logos::skip)]
-
     #[regex(r"#[^\n]*", logos::skip)]
     CommentLine,
 
-    #[token("{")] LBrace,
-    #[token("}")] RBrace,
-    #[token("(")] LParen,
-    #[token(")")] RParen,
-    #[token(",")] Comma,
-    #[token("->")] Arrow,
-    #[token("\\")] Backslash,
+    #[token("{")]
+    LBrace,
+    #[token("}")]
+    RBrace,
+    #[token("(")]
+    LParen,
+    #[token(")")]
+    RParen,
+    #[token(",")]
+    Comma,
+    #[token("->")]
+    Arrow,
+    #[token("!")]
+    Bang,
+    #[token("\\")]
+    Backslash,
 
-    #[token("~")] Tilde,
+    #[token("~")]
+    Tilde,
 
     #[regex(r"[0-9]+", |lex| lex.slice().parse::<i64>().ok())]
     Int(i64),
@@ -26,17 +35,27 @@ pub enum Tok {
 
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident,
+
+    // Member-ish symbol like .println or .env
+    #[regex(r"\.[a-zA-Z_][a-zA-Z0-9_]*", |lex| Some(lex.slice().to_string()))]
+    Member(String),
 }
 
 fn parse_string(lex: &mut Lexer<Tok>) -> Option<String> {
     let s = lex.slice();
-    let inner = &s[1..s.len()-1];
+    let inner = &s[1..s.len() - 1];
     let mut out = String::new();
     let mut chars = inner.chars();
     while let Some(c) = chars.next() {
         if c == '\\' {
-            if let Some(n) = chars.next() { out.push(n); } else { break; }
-        } else { out.push(c); }
+            if let Some(n) = chars.next() {
+                out.push(n);
+            } else {
+                break;
+            }
+        } else {
+            out.push(c);
+        }
     }
     Some(out)
 }
@@ -54,7 +73,11 @@ pub fn lex(input: &str) -> Vec<Lexed<'_>> {
     while let Some(res) = l.next() {
         let range = l.span();
         if let Ok(tok) = res {
-            out.push(Lexed{ tok, span: Span::new(range.start, range.len()), text: &input[range.clone()] });
+            out.push(Lexed {
+                tok,
+                span: Span::new(range.start, range.len()),
+                text: &input[range.clone()],
+            });
         }
     }
     out
