@@ -24,9 +24,23 @@ pub enum Op {
     Bool(bool),
     Str(String),
     Unit,
-    Lam { param: String, body: Box<Term> },
-    App { func: Box<Term>, arg: Box<Term> },
-    Seq { first: Box<Term>, second: Box<Term> },
+    Lam {
+        param: String,
+        body: Box<Term>,
+    },
+    App {
+        func: Box<Term>,
+        arg: Box<Term>,
+    },
+    Seq {
+        first: Box<Term>,
+        second: Box<Term>,
+    },
+    // Recursive let-group to reflect lazy, mutually recursive semantics
+    LetRec {
+        bindings: Vec<(String, Term)>,
+        body: Box<Term>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -46,6 +60,47 @@ pub struct Module {
 }
 
 pub fn lower_expr_to_core(e: &Expr) -> Term {
+    fn print_pattern(p: &Pattern) -> String {
+        match &p.kind {
+            PatternKind::Wildcard => "_".into(),
+            PatternKind::Var(n) => format!("~{}", n),
+            PatternKind::Unit => "()".into(),
+            PatternKind::Tuple(xs) => format!(
+                "({})",
+                xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
+            ),
+            PatternKind::List(xs) => format!(
+                "[{}]",
+                xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
+            ),
+            PatternKind::Ctor { name, args } => {
+                if args.is_empty() {
+                    name.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        name,
+                        args.iter().map(print_pattern).collect::<Vec<_>>().join(" ")
+                    )
+                }
+            }
+            PatternKind::Cons(h, t) => format!("{} : {}", print_pattern(h), print_pattern(t)),
+            PatternKind::Symbol(s) => s.clone(),
+            PatternKind::Int(n) => format!("{}", n),
+            PatternKind::Float(f) => format!("{}", f),
+            PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
+            PatternKind::Bool(b) => format!("{}", b),
+            PatternKind::Record(fields) => {
+                let inner = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, print_pattern(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", inner)
+            }
+            PatternKind::As(a, b) => format!("{} @ {}", print_pattern(a), print_pattern(b)),
+        }
+    }
     match &e.kind {
         ExprKind::Unit => Term::new(Op::Unit),
         ExprKind::Int(n) => Term::new(Op::Int(*n)),
@@ -54,16 +109,14 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
         ExprKind::LetGroup { bindings, body } => {
-            // 暫定 lowering: すべてのバインディング式を順に Seq で評価し、最後に body。
-            // パターンや束縛は Core IR では保持しない簡易版。
-            let mut term = lower_expr_to_core(body);
-            for (_p, ex) in bindings.iter().rev() {
-                term = Term::new(Op::Seq {
-                    first: Box::new(lower_expr_to_core(ex)),
-                    second: Box::new(term),
-                });
-            }
-            term
+            let bs: Vec<(String, Term)> = bindings
+                .iter()
+                .map(|(p, ex)| (print_pattern(p), lower_expr_to_core(ex)))
+                .collect();
+            Term::new(Op::LetRec {
+                bindings: bs,
+                body: Box::new(lower_expr_to_core(body)),
+            })
         }
         ExprKind::List(xs) => {
             // Lower to foldr cons []
@@ -114,49 +167,6 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             })
         }
         ExprKind::Lambda { param, body } => {
-            fn print_pattern(p: &Pattern) -> String {
-                match &p.kind {
-                    PatternKind::Wildcard => "_".into(),
-                    PatternKind::Var(n) => format!("~{}", n),
-                    PatternKind::Unit => "()".into(),
-                    PatternKind::Tuple(xs) => format!(
-                        "({})",
-                        xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
-                    ),
-                    PatternKind::List(xs) => format!(
-                        "[{}]",
-                        xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
-                    ),
-                    PatternKind::Ctor { name, args } => {
-                        if args.is_empty() {
-                            name.clone()
-                        } else {
-                            format!(
-                                "{} {}",
-                                name,
-                                args.iter().map(print_pattern).collect::<Vec<_>>().join(" ")
-                            )
-                        }
-                    }
-                    PatternKind::Cons(h, t) => {
-                        format!("{} : {}", print_pattern(h), print_pattern(t))
-                    }
-                    PatternKind::Symbol(s) => s.clone(),
-                    PatternKind::Int(n) => format!("{}", n),
-                    PatternKind::Float(f) => format!("{}", f),
-                    PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
-                    PatternKind::Bool(b) => format!("{}", b),
-                    PatternKind::Record(fields) => {
-                        let inner = fields
-                            .iter()
-                            .map(|(k, v)| format!("{}: {}", k, print_pattern(v)))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        format!("{{{}}}", inner)
-                    }
-                    PatternKind::As(a, b) => format!("{} @ {}", print_pattern(a), print_pattern(b)),
-                }
-            }
             let param_str = print_pattern(param);
             Term::new(Op::Lam {
                 param: param_str,
@@ -200,6 +210,14 @@ pub fn print_term(t: &Term) -> String {
         Op::Lam { param, body } => format!("\\{} -> {}", param, print_term(body)),
         Op::App { func, arg } => format!("({} {})", print_term(func), print_term(arg)),
         Op::Seq { first, second } => format!("(~seq {} {})", print_term(first), print_term(second)),
+        Op::LetRec { bindings, body } => {
+            let inner = bindings
+                .iter()
+                .map(|(p, e)| format!("{} = {}", p, print_term(e)))
+                .collect::<Vec<_>>()
+                .join("; ");
+            format!("(letrec {{ {}; }} {})", inner, print_term(body))
+        }
     }
 }
 
@@ -258,6 +276,6 @@ mod tests {
         );
         let t = lower_expr_to_core(&e);
         let s = print_term(&t);
-        assert!(s.contains("~seq"));
+        assert!(s.contains("letrec"));
     }
 }
