@@ -300,6 +300,25 @@ IR 影響:
 - 参照: 実体（値）への参照は `~name`。ビルトイン呼び出しは `(~add 1 2)` のように書く。
 - 0 引数コンストラクタ: あいまいさ回避のため `S()` を必須とする。
 
+補足（現状仕様の要点）:
+- 中値演算子: `+ - * /`（Int）、`.+ .- .* ./`（Float）、比較 `< <= > >=` と `== !=`、Float 比較は `. < .<= .> .>=`。
+- タプル/レコード糖衣: `(a,b,...)` → `(.Tuple a b ...)`、`{k:v,...}` → `(.Record (.KV "k" v) ...)`。
+- Bool: `true()`/`false()` は `~true`/`~false` に展開。`(~Bool .true)`/`(~Bool .false)` でも構築可能。
+- Ctor アリティ: CLI で `--ctor-arity 'Foo=2,Bar=0'` のように宣言。実行時の誤用をエラー化、`--analyze` と併用で静的検出（over/zero-arity-applied）も可。
+
+CLI 例:
+
+```
+# 解析（テキスト）
+cargo run -p lzscr-cli -- -e '.Foo 1 2' --analyze --ctor-arity 'Foo=1'
+
+# 解析（JSON）
+cargo run -p lzscr-cli -- -e '.Foo 1 2' --analyze --format json --ctor-arity 'Foo=1'
+
+# 実行時エラー例（過剰適用）
+cargo run -p lzscr-cli -- -e '.Bar 1 2' --ctor-arity 'Bar=1'
+```
+
 暫定実装の挙動:
 - パーサ: `Ident` は `Symbol`（コンストラクタ変数）として AST 化し、`~Ident` は `Ref`。
 - 評価器: `Symbol` は適用されたときに引数列を蓄積する未解決構成値として扱い、将来の型/解決段で具体化する。現段階では `S()`, `S a`, `S a b` などは値として構築途中の `<fun>` 表示になる（意味付けは型/IR 実装後に確定）。

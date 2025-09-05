@@ -7,6 +7,33 @@ use lzscr_parser::parse_expr;
 use lzscr_runtime::{eval, Env, Value};
 use serde::Serialize;
 use lzscr_coreir::{lower_expr_to_core, print_term};
+use std::collections::HashMap;
+
+fn parse_ctor_arity_spec(spec: &str) -> (HashMap<String, usize>, Vec<String>) {
+    let mut map = HashMap::new();
+    let mut warnings = Vec::new();
+    for raw in spec.split(',') {
+        let item = raw.trim();
+        if item.is_empty() { continue; }
+        let Some((name_raw, n_raw)) = item.split_once('=') else {
+            warnings.push(format!("ignored ctor-arity entry (missing '='): '{}'", item));
+            continue;
+        };
+        let name = name_raw.trim();
+        let n_str = n_raw.trim();
+        match n_str.parse::<usize>() {
+            Ok(k) => {
+                if name.is_empty() {
+                    warnings.push(format!("ignored ctor-arity entry (empty name): '{}'", item));
+                } else {
+                    map.insert(name.to_string(), k);
+                }
+            }
+            Err(_) => warnings.push(format!("ignored ctor-arity entry (invalid number '{}'): '{}'", n_str, item)),
+        }
+    }
+    (map, warnings)
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -90,13 +117,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // unused params
             let up = analyze_unused_params(&ast);
             let arities = {
-                let mut m = std::collections::HashMap::new();
+                let mut m = HashMap::new();
                 if let Some(spec) = &opt.ctor_arity {
-                    for item in spec.split(',').filter(|s| !s.is_empty()) {
-                        if let Some((name, n)) = item.split_once('=') {
-                            if let Ok(k) = n.parse::<usize>() { m.insert(name.to_string(), k); }
-                        }
-                    }
+                    let (parsed, warns) = parse_ctor_arity_spec(spec);
+                    for w in warns { eprintln!("warning: {}", w); }
+                    m = parsed;
                 }
                 m
             };
@@ -140,13 +165,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let mut env = Env::with_builtins();
         if let Some(spec) = &opt.ctor_arity {
-            for item in spec.split(',').filter(|s| !s.is_empty()) {
-                if let Some((name, n)) = item.split_once('=') {
-                    if let Ok(k) = n.parse::<usize>() {
-                        env.declare_ctor_arity(name.trim(), k);
-                    }
-                }
-            }
+            let (parsed, warns) = parse_ctor_arity_spec(spec);
+            for w in warns { eprintln!("warning: {}", w); }
+            for (name, k) in parsed { env.declare_ctor_arity(name.trim(), k); }
         }
         if opt.strict_effects {
             env.strict_effects = true;
