@@ -29,6 +29,7 @@ pub mod ast {
     Float(f64),
     Str(String),
     Bool(bool),
+    Record(Vec<(String, Pattern)>), // { k: p, ... }
     As(Box<Pattern>, Box<Pattern>), // p1 @ p2
     }
 
@@ -86,6 +87,10 @@ pub mod pretty {
             PatternKind::Float(f) => format!("{}", f),
             PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
             PatternKind::Bool(b) => format!("{}", b),
+            PatternKind::Record(fields) => {
+                let inner = fields.iter().map(|(k, v)| format!("{}: {}", k, print_pattern(v))).collect::<Vec<_>>().join(", ");
+                format!("{{{}}}", inner)
+            }
             PatternKind::As(a, b) => format!("{} @ {}", print_pattern(a), print_pattern(b)),
         }
     }

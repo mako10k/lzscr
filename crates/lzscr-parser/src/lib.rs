@@ -130,6 +130,37 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                     }
                                 }
                             }
+                            Tok::LBrace => {
+                                // record pattern: { k: pat, ... }
+                                // empty {}
+                                if let Some(nxt) = toks.get(*i) {
+                                    if matches!(nxt.tok, Tok::RBrace) {
+                                        let r = bump(i, toks).unwrap();
+                                        return Ok(Pattern::new(PatternKind::Record(vec![]), Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset)));
+                                    }
+                                }
+                                let mut fields: Vec<(String, Pattern)> = Vec::new();
+                                loop {
+                                    // key (ident or string)
+                                    let k = bump(i, toks).ok_or_else(|| ParseError::Generic("expected key in record pattern".into()))?;
+                                    let key = match &k.tok { Tok::Ident => k.text.to_string(), Tok::Str(s) => s.clone(), _ => return Err(ParseError::Generic("expected ident or string key in record pattern".into())) };
+                                    // ':'
+                                    let col = bump(i, toks).ok_or_else(|| ParseError::Generic("expected : in record pattern".into()))?;
+                                    if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected in record pattern".into())); }
+                                    // value pattern
+                                    let pv = parse_pat(i, toks)?;
+                                    fields.push((key, pv));
+                                    let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("expected , or } in record pattern".into()))?;
+                                    match sep.tok {
+                                        Tok::Comma => continue,
+                                        Tok::RBrace => {
+                                            let span = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset);
+                                            return Ok(Pattern::new(PatternKind::Record(fields), span));
+                                        }
+                                        _ => return Err(ParseError::Generic("expected , or } in record pattern".into()))
+                                    }
+                                }
+                            }
                             Tok::Int(n) => Pattern::new(PatternKind::Int(*n), t.span),
                             Tok::Float(f) => Pattern::new(PatternKind::Float(*f), t.span),
                             Tok::Str(s) => Pattern::new(PatternKind::Str(s.clone()), t.span),
@@ -245,14 +276,14 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 }
             }
             Tok::LBrace => {
-                // record literal: { k: v, ... } → (.Record (.KV "k" v) ...) の糖衣
+                // record literal: { k: v, ... } → (.Record (., (.KV "k" v) ...)) の糖衣
                 // 空 {} はブロックの空ではないため特別扱い：Record 空にする
-                if let Some(nxt) = peek(*i, toks) {
+        if let Some(nxt) = peek(*i, toks) {
                     if matches!(nxt.tok, Tok::RBrace) {
                         let r = bump(i, toks).unwrap();
                         let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset);
                         // (.Record) 空適用
-                        return Ok(Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Symbol(".Record".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Unit, r.span)) }, span_all));
+            return Ok(Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Ref("Record".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Unit, r.span)) }, span_all));
                     }
                 }
                 let mut pairs: Vec<(String, Expr)> = Vec::new();
@@ -272,14 +303,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         Tok::Comma => continue,
                         Tok::RBrace => {
                             let span_all = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset);
-                            // (.Record (.KV "k" v) ...)
-                            let mut expr = Expr::new(ExprKind::Symbol(".Record".into()), t.span);
+                            // (., (.KV "k" v) ...)
+                            let mut tuple_expr = Expr::new(ExprKind::Symbol(".,".into()), t.span);
                             for (k, v) in pairs {
-                                let kv = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Symbol(".KV".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Str(k), t.span)) }, t.span);
+                                let kv = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Ref("KV".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Str(k), t.span)) }, t.span);
                                 let kv2 = Expr::new(ExprKind::Apply { func: Box::new(kv), arg: Box::new(v) }, t.span);
-                                let sp = Span::new(expr.span.offset, span_all.offset + span_all.len - expr.span.offset);
-                                expr = Expr::new(ExprKind::Apply { func: Box::new(expr), arg: Box::new(kv2) }, sp);
+                                let sp = Span::new(tuple_expr.span.offset, span_all.offset + span_all.len - tuple_expr.span.offset);
+                                tuple_expr = Expr::new(ExprKind::Apply { func: Box::new(tuple_expr), arg: Box::new(kv2) }, sp);
                             }
+                            // (.Record (., ...))
+                            let expr = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Ref("Record".into()), t.span)), arg: Box::new(tuple_expr) }, span_all);
                             return Ok(expr);
                         }
                         _ => return Err(ParseError::Generic("expected , or }".into())),

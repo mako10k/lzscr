@@ -383,6 +383,20 @@ impl Env {
                     }
                     Ok(Value::Record(map))
                 }
+                Value::Ctor { name, args } if name == ".," => {
+                    let mut map = std::collections::BTreeMap::new();
+                    for kv in args {
+                        match kv {
+                            Value::Tuple(xs) if xs.len() == 2 => {
+                                if let Value::Str(k) = &xs[0] {
+                                    map.insert(k.clone(), xs[1].clone());
+                                } else { return Err(EvalError::TypeError); }
+                            }
+                            _ => return Err(EvalError::TypeError),
+                        }
+                    }
+                    Ok(Value::Record(map))
+                }
                 _ => Err(EvalError::TypeError),
             } },
         );
@@ -665,6 +679,19 @@ fn match_pattern(env: &Env, p: &Pattern, v: &Value) -> Option<std::collections::
         PatternKind::Float(f) => match v { Value::Float(g) if g == f => Some(HashMap::new()), _ => None },
         PatternKind::Str(st) => match v { Value::Str(s2) if s2 == st => Some(HashMap::new()), _ => None },
         PatternKind::Bool(b) => match v { Value::Bool(c) if c == b => Some(HashMap::new()), _ => None },
+        PatternKind::Record(fields) => match v {
+            Value::Record(map) => {
+                // all fields in pattern must exist in value
+                let mut acc = HashMap::new();
+                for (k, pv) in fields {
+                    let Some(vv) = map.get(k) else { return None; };
+                    let bi = match_pattern(env, pv, vv)?;
+                    acc = merge(acc, bi)?;
+                }
+                Some(acc)
+            }
+            _ => None,
+        },
         PatternKind::As(a, b) => {
             let m1 = match_pattern(env, a, v)?;
             let m2 = match_pattern(env, b, v)?;
@@ -681,6 +708,28 @@ fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalError> 
     if let Value::Raised(_) = fval { return Ok(fval); }
     if let Value::Raised(_) = aval { return Ok(aval); }
     match fval {
+        Value::Record(mut map) => {
+            // field access: ({...} .key) or ({...} "key")
+            let key_opt = match &aval {
+                Value::Symbol(id) => {
+                    let mut s = env.symbol_name(*id);
+                    if let Some(stripped) = s.strip_prefix('.') {
+                        s = stripped.to_string();
+                    }
+                    Some(s)
+                }
+                _ => None,
+            };
+            if let Some(k) = key_opt {
+                if let Some(v) = map.remove(&k) {
+                    Ok(v)
+                } else {
+                    Err(EvalError::TypeError)
+                }
+            } else {
+                Err(EvalError::TypeError)
+            }
+        }
         Value::Symbol(id) => {
             let name = env.symbol_name(id);
             // Special internal tuple pack constructor '.,' accepts any arity; materialize to Tuple progressively.
@@ -779,6 +828,24 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             let a = eval(env, arg)?;
             if let Value::Raised(_) = a { return Ok(a); }
             match f {
+                Value::Record(mut map) => {
+                    let a = a; // already evaluated above
+                    let key_opt = match &a {
+                        Value::Symbol(id) => {
+                            let mut s = env.symbol_name(*id);
+                            if let Some(stripped) = s.strip_prefix('.') {
+                                s = stripped.to_string();
+                            }
+                            Some(s)
+                        }
+                        _ => None,
+                    };
+                    if let Some(k) = key_opt {
+                        if let Some(v) = map.remove(&k) { Ok(v) } else { Err(EvalError::TypeError) }
+                    } else {
+                        Err(EvalError::TypeError)
+                    }
+                }
                 // Constructor variable: build constructor value accumulating payload args
                 Value::Symbol(id) => {
                     let name = env.symbol_name(id);

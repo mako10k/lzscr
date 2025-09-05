@@ -61,6 +61,10 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             PatternKind::Var(n) => format!("~{}", n),
             PatternKind::Unit => "()".into(),
             PatternKind::Tuple(xs) => format!("({})", xs.iter().map(pp).collect::<Vec<_>>().join(", ")),
+            PatternKind::Record(fields) => {
+                let inner = fields.iter().map(|(k, v)| format!("{}: {}", k, pp(v))).collect::<Vec<_>>().join(", ");
+                format!("{{{}}}", inner)
+            }
             PatternKind::Ctor { name, args } => if args.is_empty() { name.clone() } else { format!("{} {}", name, args.iter().map(pp).collect::<Vec<_>>().join(" ")) },
                         PatternKind::Symbol(s) => s.clone(), // 現状パーサで禁止方向に寄せたが互換のため残置
             PatternKind::Int(n) => format!("{}", n),
@@ -225,6 +229,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
             PatternKind::Wildcard | PatternKind::Unit | PatternKind::Symbol(_) | PatternKind::Int(_) | PatternKind::Float(_) | PatternKind::Str(_) | PatternKind::Bool(_) => {}
             PatternKind::Var(n) => { acc.insert(n.clone()); }
             PatternKind::Tuple(xs) => { for x in xs { binds(x, acc); } }
+            PatternKind::Record(fs) => { for (_, v) in fs { binds(v, acc); } }
             PatternKind::Ctor { args, .. } => { for x in args { binds(x, acc); } }
             PatternKind::As(a, b) => { binds(a, acc); binds(b, acc); }
                     }
@@ -257,6 +262,7 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
             PatternKind::Wildcard | PatternKind::Unit | PatternKind::Symbol(_) | PatternKind::Int(_) | PatternKind::Float(_) | PatternKind::Str(_) | PatternKind::Bool(_) => {}
             PatternKind::Var(n) => out.push(n.clone()),
             PatternKind::Tuple(xs) => { for x in xs { pat_idents(x, out); } }
+            PatternKind::Record(fs) => { for (_, v) in fs { pat_idents(v, out); } }
             PatternKind::Ctor { args, .. } => { for x in args { pat_idents(x, out); } }
             PatternKind::As(a, b) => { pat_idents(a, out); pat_idents(b, out); }
                     }
@@ -311,6 +317,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             PatternKind::Wildcard | PatternKind::Unit | PatternKind::Symbol(_) | PatternKind::Int(_) | PatternKind::Float(_) | PatternKind::Str(_) | PatternKind::Bool(_) => false,
             PatternKind::Var(n) => n == name,
             PatternKind::Tuple(xs) => xs.iter().any(|x| binds_param(x, name)),
+            PatternKind::Record(fs) => fs.iter().any(|(_, v)| binds_param(v, name)),
             PatternKind::Ctor { args, .. } => args.iter().any(|x| binds_param(x, name)),
             PatternKind::As(a, b) => binds_param(a, name) || binds_param(b, name),
         }
@@ -324,6 +331,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             PatternKind::Wildcard | PatternKind::Unit | PatternKind::Symbol(_) | PatternKind::Int(_) | PatternKind::Float(_) | PatternKind::Str(_) | PatternKind::Bool(_) => {}
             PatternKind::Var(n) => outn.push(n.clone()),
             PatternKind::Tuple(xs) => { for x in xs { collect(x, outn); } }
+            PatternKind::Record(fs) => { for (_, v) in fs { collect(v, outn); } }
             PatternKind::Ctor { args, .. } => { for x in args { collect(x, outn); } }
             PatternKind::As(a, b) => { collect(a, outn); collect(b, outn); }
                     }

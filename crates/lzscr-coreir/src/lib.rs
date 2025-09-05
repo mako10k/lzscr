@@ -83,6 +83,10 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                     PatternKind::Float(f) => format!("{}", f),
                     PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
                     PatternKind::Bool(b) => format!("{}", b),
+                    PatternKind::Record(fields) => {
+                        let inner = fields.iter().map(|(k, v)| format!("{}: {}", k, print_pattern(v))).collect::<Vec<_>>().join(", ");
+                        format!("{{{}}}", inner)
+                    }
                     PatternKind::As(a, b) => format!("{} @ {}", print_pattern(a), print_pattern(b)),
                 }
             }
