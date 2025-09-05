@@ -135,14 +135,69 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     fn parse_expr_bp<'a>(
         i: &mut usize,
         toks: &'a [lzscr_lexer::Lexed<'a>],
-        _bp: u8,
+        bp: u8,
     ) -> Result<Expr, ParseError> {
         let mut lhs = parse_atom(i, toks)?;
         loop {
             let Some(nxt) = peek(*i, toks) else { break };
+            // Pratt parser: handle infix precedence
+            let (op_bp, op_kind) = match nxt.tok.clone() {
+                Tok::Plus => (10, Some("+")),
+                Tok::Minus => (10, Some("-")),
+                Tok::Star => (20, Some("*")),
+                Tok::Slash => (20, Some("/")),
+                Tok::DotPlus => (10, Some(".+")),
+                Tok::DotMinus => (10, Some(".-")),
+                Tok::DotStar => (20, Some(".*")),
+                Tok::DotSlash => (20, Some("./")),
+                Tok::Less => (5, Some("<")),
+                Tok::LessEq => (5, Some("<=")),
+                Tok::Greater => (5, Some(">")),
+                Tok::GreaterEq => (5, Some(">=")),
+                Tok::EqEq => (4, Some("==")),
+                Tok::BangEq => (4, Some("!=")),
+                Tok::DotLess => (5, Some(".<")),
+                Tok::DotLessEq => (5, Some(".<=")),
+                Tok::DotGreater => (5, Some(".>")),
+                Tok::DotGreaterEq => (5, Some(".>=")),
+                _ => (0, None),
+            };
+            if let Some(op) = op_kind {
+                if op_bp < bp { break; }
+                // consume op
+                let _ = bump(i, toks);
+                let rhs = parse_expr_bp(i, toks, op_bp + 1)?;
+                // desugar: (a + b) → ((~add a) b) など
+                let callee = match op {
+                    "+" => Expr::new(ExprKind::Ref("add".into()), nxt.span),
+                    "-" => Expr::new(ExprKind::Ref("sub".into()), nxt.span),
+                    "*" => Expr::new(ExprKind::Ref("mul".into()), nxt.span),
+                    "/" => Expr::new(ExprKind::Ref("div".into()), nxt.span),
+                    ".+" => Expr::new(ExprKind::Ref("fadd".into()), nxt.span),
+                    ".-" => Expr::new(ExprKind::Ref("fsub".into()), nxt.span),
+                    ".*" => Expr::new(ExprKind::Ref("fmul".into()), nxt.span),
+                    "./" => Expr::new(ExprKind::Ref("fdiv".into()), nxt.span),
+                    "<" => Expr::new(ExprKind::Ref("lt".into()), nxt.span),
+                    "<=" => Expr::new(ExprKind::Ref("le".into()), nxt.span),
+                    ">" => Expr::new(ExprKind::Ref("gt".into()), nxt.span),
+                    ">=" => Expr::new(ExprKind::Ref("ge".into()), nxt.span),
+                    "==" => Expr::new(ExprKind::Ref("eq".into()), nxt.span),
+                    "!=" => Expr::new(ExprKind::Ref("ne".into()), nxt.span),
+                    ".<" => Expr::new(ExprKind::Ref("flt".into()), nxt.span),
+                    ".<=" => Expr::new(ExprKind::Ref("fle".into()), nxt.span),
+                    ".>" => Expr::new(ExprKind::Ref("fgt".into()), nxt.span),
+                    ".>=" => Expr::new(ExprKind::Ref("fge".into()), nxt.span),
+                    _ => unreachable!(),
+                };
+                let span = Span::new(lhs.span.offset, rhs.span.offset + rhs.span.len - lhs.span.offset);
+                let app1 = Expr::new(ExprKind::Apply { func: Box::new(callee), arg: Box::new(lhs) }, span);
+                lhs = Expr::new(ExprKind::Apply { func: Box::new(app1), arg: Box::new(rhs) }, span);
+                continue;
+            }
             match nxt.tok {
                 Tok::LParen
                 | Tok::Int(_)
+                | Tok::Float(_)
                 | Tok::Str(_)
                 | Tok::Tilde
                 | Tok::Backslash

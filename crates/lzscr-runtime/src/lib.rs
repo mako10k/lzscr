@@ -111,36 +111,81 @@ impl Env {
             },
         );
 
-        // add : Int -> Int -> Int
+        // add : (Int|Float) -> (Int|Float) -> same
         e.vars.insert(
             "add".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |_env, args| {
-                    if let (Value::Int(a), Value::Int(b)) = (&args[0], &args[1]) {
-                        Ok(Value::Int(a + b))
-                    } else {
-                        Err(EvalError::TypeError)
-                    }
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
+                    _ => Err(EvalError::TypeError),
                 },
             },
         );
 
-        // sub : Int -> Int -> Int
+        // sub : (Int|Float) -> (Int|Float) -> same
         e.vars.insert(
             "sub".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |_env, args| {
-                    if let (Value::Int(a), Value::Int(b)) = (&args[0], &args[1]) {
-                        Ok(Value::Int(a - b))
-                    } else {
-                        Err(EvalError::TypeError)
-                    }
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
+                    _ => Err(EvalError::TypeError),
                 },
             },
+        );
+
+        // mul : (Int|Float) -> (Int|Float) -> same
+        e.vars.insert(
+            "mul".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+
+        // div : Int -> Int -> Int (0 除算はエラー)
+        e.vars.insert(
+            "div".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Int(_), Value::Int(b)) if *b == 0 => Err(EvalError::TypeError),
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+
+        // fadd : Float -> Float -> Float
+        e.vars.insert(
+            "fadd".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) { (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)), _ => Err(EvalError::TypeError) } }
+        );
+        // fsub : Float -> Float -> Float
+        e.vars.insert(
+            "fsub".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) { (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)), _ => Err(EvalError::TypeError) } }
+        );
+        // fmul : Float -> Float -> Float
+        e.vars.insert(
+            "fmul".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) { (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)), _ => Err(EvalError::TypeError) } }
+        );
+        // fdiv : Float -> Float -> Float (0.0 除算はエラー)
+        e.vars.insert(
+            "fdiv".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) { (Value::Float(_), Value::Float(b)) if *b == 0.0 => Err(EvalError::TypeError), (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)), _ => Err(EvalError::TypeError) } }
         );
 
         // eq : Int|Float|Bool|Str|Unit|Symbol -> same -> Symbol("True"|"False")
@@ -170,6 +215,78 @@ impl Env {
                     }
                 },
             },
+        );
+
+        // le : Int|Float -> Int|Float -> Symbol("True"|"False")
+        e.vars.insert(
+            "le".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| {
+                    match (&args[0], &args[1]) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Symbol(if a <= b { "True".into() } else { "False".into() })),
+                        (Value::Float(a), Value::Float(b)) => Ok(Value::Symbol(if a <= b { "True".into() } else { "False".into() })),
+                        _ => Err(EvalError::TypeError),
+                    }
+                },
+            },
+        );
+
+        // gt : Int|Float -> Int|Float -> Symbol("True"|"False")
+        e.vars.insert(
+            "gt".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| {
+                    match (&args[0], &args[1]) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Symbol(if a > b { "True".into() } else { "False".into() })),
+                        (Value::Float(a), Value::Float(b)) => Ok(Value::Symbol(if a > b { "True".into() } else { "False".into() })),
+                        _ => Err(EvalError::TypeError),
+                    }
+                },
+            },
+        );
+
+        // ge : Int|Float -> Int|Float -> Symbol("True"|"False")
+        e.vars.insert(
+            "ge".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| {
+                    match (&args[0], &args[1]) {
+                        (Value::Int(a), Value::Int(b)) => Ok(Value::Symbol(if a >= b { "True".into() } else { "False".into() })),
+                        (Value::Float(a), Value::Float(b)) => Ok(Value::Symbol(if a >= b { "True".into() } else { "False".into() })),
+                        _ => Err(EvalError::TypeError),
+                    }
+                },
+            },
+        );
+
+        // ne : a -> a -> Bool (構造的不等価)
+        e.vars.insert(
+            "ne".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| { let res = !v_equal(&args[0], &args[1]); Ok(Value::Symbol(if res { "True".into() } else { "False".into() })) } }
+        );
+
+        // Float-only comparisons: flt/fle/fgt/fge
+        e.vars.insert(
+            "flt".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) { (Value::Float(a), Value::Float(b)) => Ok(Value::Symbol(if a < b { "True".into() } else { "False".into() })), _ => Err(EvalError::TypeError) } }
+        );
+        e.vars.insert(
+            "fle".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) { (Value::Float(a), Value::Float(b)) => Ok(Value::Symbol(if a <= b { "True".into() } else { "False".into() })), _ => Err(EvalError::TypeError) } }
+        );
+        e.vars.insert(
+            "fgt".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) { (Value::Float(a), Value::Float(b)) => Ok(Value::Symbol(if a > b { "True".into() } else { "False".into() })), _ => Err(EvalError::TypeError) } }
+        );
+        e.vars.insert(
+            "fge".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) { (Value::Float(a), Value::Float(b)) => Ok(Value::Symbol(if a >= b { "True".into() } else { "False".into() })), _ => Err(EvalError::TypeError) } }
         );
 
         // seq は特別扱いで評価順を制御するため、Native としては不要だが参照解決のために登録はしておく

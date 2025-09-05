@@ -23,6 +23,49 @@ pub enum Tok {
     Bang,
     #[token("\\")]
     Backslash,
+    // Infix operators
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Star,
+    #[token("/")]
+    Slash,
+
+    // Float-specific infix operators (distinct semantics)
+    #[token(".+")]
+    DotPlus,
+    #[token(".-")]
+    DotMinus,
+    #[token(".*")]
+    DotStar,
+    #[token("./")]
+    DotSlash,
+
+    // Comparison operators (longer first)
+    #[token("<=")]
+    LessEq,
+    #[token("<")]
+    Less,
+    #[token(">=")]
+    GreaterEq,
+    #[token(">")]
+    Greater,
+    #[token("==")]
+    EqEq,
+    #[token("!=")]
+    BangEq,
+
+    // Float-specific comparison operators
+    #[token(".<=")]
+    DotLessEq,
+    #[token(".<")]
+    DotLess,
+    #[token(".>=")]
+    DotGreaterEq,
+    #[token(".>")]
+    DotGreater,
 
     #[token("~")]
     Tilde,
