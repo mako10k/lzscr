@@ -42,10 +42,17 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             ExprKind::Lambda { body, .. } => 1 + walk(body, tbl),
             ExprKind::Apply { func, arg } => 1 + walk(func, tbl) + walk(arg, tbl),
             ExprKind::Block(inner) => 1 + walk(inner, tbl),
+            ExprKind::LetGroup { bindings, body } => {
+                let mut acc = 1 + walk(body, tbl);
+                for (_p, ex) in bindings {
+                    acc += walk(ex, tbl);
+                }
+                acc
+            }
             ExprKind::List(xs) => 1 + xs.iter().map(|x| walk(x, tbl)).sum::<usize>(),
         };
         // very simple structural repr (not fully unique but works for heuristic)
-        let repr = match &e.kind {
+    let repr = match &e.kind {
             ExprKind::Unit => "()".to_string(),
             ExprKind::Int(n) => format!("i:{n}"),
             ExprKind::Float(f) => format!("f:{}", f),
@@ -103,6 +110,10 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             }
             ExprKind::Apply { func, arg } => format!("ap({},{})", func.span.len, arg.span.len),
             ExprKind::Block(inner) => format!("blk({})", inner.span.len),
+            ExprKind::LetGroup { bindings, body } => {
+                let bcount = bindings.len();
+                format!("letg[{};{}]", bcount, body.span.len)
+            }
             ExprKind::List(xs) => format!("list({})", xs.len()),
         };
         let entry = tbl.entry(repr).or_insert((0, e.span, size));
@@ -221,6 +232,12 @@ pub fn analyze_ctor_arity(
                 check(func, arities, out);
                 check(arg, arities, out);
             }
+            ExprKind::LetGroup { bindings, body } => {
+                for (_p, ex) in bindings {
+                    check(ex, arities, out);
+                }
+                check(body, arities, out);
+            }
             ExprKind::Block(inner) => check(inner, arities, out),
             _ => {}
         }
@@ -248,6 +265,57 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                 for x in xs {
                     walk(x, scopes, allow, out);
                 }
+            }
+            ExprKind::LetGroup { bindings, body } => {
+                // let-group 全体のスコープを 1 つ作成（全束縛名を可視化）
+                fn binds(p: &Pattern, acc: &mut HashSet<String>) {
+                    match &p.kind {
+                        PatternKind::Wildcard
+                        | PatternKind::Unit
+                        | PatternKind::Symbol(_)
+                        | PatternKind::Int(_)
+                        | PatternKind::Float(_)
+                        | PatternKind::Str(_)
+                        | PatternKind::Bool(_) => {}
+                        PatternKind::Var(n) => {
+                            acc.insert(n.clone());
+                        }
+                        PatternKind::Tuple(xs) | PatternKind::List(xs) => {
+                            for x in xs {
+                                binds(x, acc);
+                            }
+                        }
+                        PatternKind::Record(fs) => {
+                            for (_, v) in fs {
+                                binds(v, acc);
+                            }
+                        }
+                        PatternKind::Ctor { args, .. } => {
+                            for x in args {
+                                binds(x, acc);
+                            }
+                        }
+                        PatternKind::Cons(h, t) => {
+                            binds(h, acc);
+                            binds(t, acc);
+                        }
+                        PatternKind::As(a, b) => {
+                            binds(a, acc);
+                            binds(b, acc);
+                        }
+                    }
+                }
+                let mut set = scopes.last().cloned().unwrap_or_default();
+                for (p, _) in bindings.iter() {
+                    binds(p, &mut set);
+                }
+                scopes.push(set);
+                // 式と各束縛式を解析
+                walk(body, scopes, allow, out);
+                for (_p, ex) in bindings.iter() {
+                    walk(ex, scopes, allow, out);
+                }
+                scopes.pop();
             }
             ExprKind::Raise(inner) => walk(inner, scopes, allow, out),
             ExprKind::OrElse { left, right } => {
@@ -402,6 +470,64 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                 walk(func, scopes, out);
                 walk(arg, scopes, out);
             }
+            ExprKind::LetGroup { bindings, body } => {
+                fn pat_idents(p: &Pattern, outn: &mut Vec<String>) {
+                    match &p.kind {
+                        PatternKind::Wildcard
+                        | PatternKind::Unit
+                        | PatternKind::Symbol(_)
+                        | PatternKind::Int(_)
+                        | PatternKind::Float(_)
+                        | PatternKind::Str(_)
+                        | PatternKind::Bool(_) => {}
+                        PatternKind::Var(n) => outn.push(n.clone()),
+                        PatternKind::Tuple(xs) | PatternKind::List(xs) => {
+                            for x in xs {
+                                pat_idents(x, outn);
+                            }
+                        }
+                        PatternKind::Record(fs) => {
+                            for (_, v) in fs {
+                                pat_idents(v, outn);
+                            }
+                        }
+                        PatternKind::Ctor { args, .. } => {
+                            for x in args {
+                                pat_idents(x, outn);
+                            }
+                        }
+                        PatternKind::Cons(h, t) => {
+                            pat_idents(h, outn);
+                            pat_idents(t, outn);
+                        }
+                        PatternKind::As(a, b) => {
+                            pat_idents(a, outn);
+                            pat_idents(b, outn);
+                        }
+                    }
+                }
+                let mut ids = Vec::new();
+                for (p, _) in bindings.iter() {
+                    pat_idents(p, &mut ids);
+                }
+                let is_shadow = scopes.iter().any(|s| ids.iter().any(|n| s.contains(n)));
+                if is_shadow {
+                    out.push(Shadowing {
+                        name: ids.first().cloned().unwrap_or_else(|| "_".into()),
+                        lambda_span: e.span,
+                    });
+                }
+                let mut top = scopes.last().cloned().unwrap_or_default();
+                for n in ids.iter() {
+                    top.insert(n.clone());
+                }
+                scopes.push(top);
+                walk(body, scopes, out);
+                for (_p, ex) in bindings.iter() {
+                    walk(ex, scopes, out);
+                }
+                scopes.pop();
+            }
             ExprKind::List(xs) => {
                 for x in xs {
                     walk(x, scopes, out);
@@ -519,6 +645,12 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             ExprKind::Apply { func, arg } => {
                 walk(func, out);
                 walk(arg, out);
+            }
+            ExprKind::LetGroup { bindings, body } => {
+                walk(body, out);
+                for (_p, ex) in bindings {
+                    walk(ex, out);
+                }
             }
             ExprKind::List(xs) => {
                 for x in xs {

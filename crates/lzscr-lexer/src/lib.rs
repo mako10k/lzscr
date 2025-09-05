@@ -21,14 +21,19 @@ pub enum Tok {
     RBracket,
     #[token(",")]
     Comma,
+    #[token(";")]
+    Semicolon,
     #[token("^")]
     Caret,
     #[token("|")]
     Pipe,
     #[token(":")]
     Colon,
+    // Note: '==' must be matched before '=' to avoid ambiguity
     #[token("->")]
     Arrow,
+    #[token("=")]
+    Eq,
     #[token("@")]
     At,
     #[token("!")]

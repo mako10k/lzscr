@@ -53,6 +53,18 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Str(s) => Term::new(Op::Str(s.clone())),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
+        ExprKind::LetGroup { bindings, body } => {
+            // 暫定 lowering: すべてのバインディング式を順に Seq で評価し、最後に body。
+            // パターンや束縛は Core IR では保持しない簡易版。
+            let mut term = lower_expr_to_core(body);
+            for (_p, ex) in bindings.iter().rev() {
+                term = Term::new(Op::Seq {
+                    first: Box::new(lower_expr_to_core(ex)),
+                    second: Box::new(term),
+                });
+            }
+            term
+        }
         ExprKind::List(xs) => {
             // Lower to foldr cons []
             let mut tail = Term::new(Op::Symbol("[]".into()));
@@ -229,5 +241,25 @@ mod tests {
             Op::Seq { .. } => {}
             _ => panic!("expected Seq"),
         }
+    }
+
+    #[test]
+    fn lower_let_group_seq() {
+        // ( ~x = 1; ~x; )
+        let e = Expr::new(
+            ExprKind::LetGroup {
+                bindings: vec![
+                    (
+                        Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
+                        Expr::new(ExprKind::Int(1), Span::new(0, 0)),
+                    ),
+                ],
+                body: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+            },
+            Span::new(0, 0),
+        );
+        let t = lower_expr_to_core(&e);
+        let s = print_term(&t);
+        assert!(s.contains("~seq"));
     }
 }

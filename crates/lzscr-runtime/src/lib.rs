@@ -1169,6 +1169,39 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Int(n) => Ok(Value::Int(*n)),
         ExprKind::Str(s) => Ok(Value::Str(s.clone())),
         ExprKind::Float(f) => Ok(Value::Float(*f)),
+        ExprKind::LetGroup { bindings, body } => {
+            // let-group スコープ: 先に self/mutual recursion 用に Var = Lambda の形だけ予宣言し、その後すべて評価して束縛。
+            let mut env2 = env.clone();
+            // 予宣言（Var パターンかつ RHS が Lambda の場合のみ）
+            for (p, ex) in bindings.iter() {
+                if let (PatternKind::Var(name), ExprKind::Lambda { param, body }) = (&p.kind, &ex.kind) {
+                    // env2 をキャプチャするクロージャを先に突っ込む（後で上書きされても env2 は共有）
+                    env2.vars.insert(
+                        name.clone(),
+                        Value::Closure {
+                            param: param.clone(),
+                            body: *body.clone(),
+                            env: env2.clone(),
+                        },
+                    );
+                }
+            }
+            // 逐次評価してパターン束縛
+            for (p, ex) in bindings.iter() {
+                let v = eval(&env2, ex)?;
+                if let Value::Raised(_) = v {
+                    return Ok(v);
+                }
+                if let Some(bind) = match_pattern(&env2, p, &v) {
+                    for (k, vv) in bind {
+                        env2.vars.insert(k, vv);
+                    }
+                } else {
+                    return Ok(Value::Raised(Box::new(Value::Unit)));
+                }
+            }
+            eval(&env2, body)
+        }
         ExprKind::List(xs) => {
             let mut out = Vec::with_capacity(xs.len());
             for ex in xs {
@@ -1443,6 +1476,29 @@ mod tests {
         match v {
             Value::Symbol(id) => assert_eq!(env2.symbol_name(id), "False"),
             _ => panic!("expected Symbol False"),
+        }
+    }
+
+    #[test]
+    fn eval_let_group_basic() {
+        // ( ~x = 1; ~x; ~y = 2; ) => 1
+        let x_pat = Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) };
+        let y_pat = Pattern { kind: PatternKind::Var("y".into()), span: Span::new(0, 0) };
+        let e = Expr::new(
+            ExprKind::LetGroup {
+                bindings: vec![
+                    (x_pat, Expr::new(ExprKind::Int(1), Span::new(0, 0))),
+                    (y_pat, Expr::new(ExprKind::Int(2), Span::new(0, 0))),
+                ],
+                body: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+            },
+            Span::new(0, 0),
+        );
+        let env = Env::with_builtins();
+        let v = eval(&env, &e).unwrap();
+        match v {
+            Value::Int(n) => assert_eq!(n, 1),
+            other => panic!("expected Int(1), got {:?}", other),
         }
     }
 

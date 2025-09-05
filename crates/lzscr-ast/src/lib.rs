@@ -58,8 +58,14 @@ pub mod ast {
         Lambda { param: Pattern, body: Box<Expr> },
         Apply { func: Box<Expr>, arg: Box<Expr> },
         Block(Box<Expr>),
-    // List literal: [e1, e2, ...]
-    List(Vec<Expr>),
+        // List literal: [e1, e2, ...]
+        List(Vec<Expr>),
+        // Let-group: (p1 = e1; ...; body; pN = eN; ...)
+        // Bindings can mutually/recursively reference each other within the group scope.
+        LetGroup {
+            bindings: Vec<(Pattern, Expr)>,
+            body: Box<Expr>,
+        },
         // Exceptions / control
         Raise(Box<Expr>),                             // ^(Expr)
         OrElse { left: Box<Expr>, right: Box<Expr> }, // a | b
@@ -145,6 +151,14 @@ pub mod pretty {
                     "[{}]",
                     xs.iter().map(print_expr).collect::<Vec<_>>().join(", ")
                 )
+            }
+            ExprKind::LetGroup { bindings, body } => {
+                let bs = bindings
+                    .iter()
+                    .map(|(p, ex)| format!("{} = {};", print_pattern(p), print_expr(ex)))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("({} {})", bs, print_expr(body))
             }
             ExprKind::Raise(inner) => format!("^({})", print_expr(inner)),
             ExprKind::OrElse { left, right } => {
