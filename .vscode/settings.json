@@ -1,0 +1,19 @@
+{
+  "github.copilot.chat.mcpServers": {
+    "search": {
+      "type": "stdio",
+      "command": "mcp-search",
+      "args": []
+    },
+    "shell-server": {
+      "type": "stdio",
+      "command": "mcp-shell-server",
+      "args": []
+    }
+},
+"chat.mcp.serverSampling": {
+    "lzscr/.vscode/mcp.json: shell-server": {
+        "allowedDuringChat": true
+    }
+}
+}

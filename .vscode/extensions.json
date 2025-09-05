@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "GitHub.copilot",
+    "GitHub.copilot-chat",
+    "ms-vscode.vscode-speech",
+    "LSTM-Kirigaya.openmcp-client" 
+  ]
+}

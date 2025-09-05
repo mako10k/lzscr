@@ -3,7 +3,11 @@
 **/*.rs.bk
 
 # Editors/IDE
-.vscode/
+# Ignore all under .vscode except selected files
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/mcp.json
 .idea/
 
 # OS

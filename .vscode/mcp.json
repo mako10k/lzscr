@@ -1,0 +1,15 @@
+{
+	"servers": {
+		"search": {
+			"type": "stdio",
+			"command": "mcp-search",
+			"args": []
+		},
+		"shell-server": {
+			"type": "stdio",
+			"command": "mcp-shell-server",
+			"args": []
+		}
+	},
+	"inputs": []
+}
