@@ -172,32 +172,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if opt.strict_effects {
             env.strict_effects = true;
         }
-        let val = eval(&env, &ast).map_err(|e| format!("{e}"))?;
-        fn val_to_string(v: &Value) -> String {
+    let val = eval(&env, &ast).map_err(|e| format!("{e}"))?;
+    fn val_to_string(env: &Env, v: &Value) -> String {
             match v {
                 Value::Unit => "()".into(),
                 Value::Int(n) => n.to_string(),
                 Value::Float(f) => f.to_string(),
                 Value::Bool(b) => b.to_string(),
                 Value::Str(s) => s.clone(),
-                Value::Symbol(s) => s.clone(),
+        Value::Symbol(id) => env.symbol_name(*id),
+        Value::Raised(b) => format!("^({})", val_to_string(env, b)),
                 Value::Ctor { name, args } => {
-                    if args.is_empty() {
+                    if name == ".," {
+                        format!("({})", args.iter().map(|x| val_to_string(env, x)).collect::<Vec<_>>().join(", "))
+                    } else if args.is_empty() {
                         name.clone()
                     } else {
-                        format!("{}({})", name, args.iter().map(val_to_string).collect::<Vec<_>>().join(", "))
+                        format!("{}({})", name, args.iter().map(|x| val_to_string(env, x)).collect::<Vec<_>>().join(", "))
                     }
                 }
-                Value::List(xs) => format!("[{}]", xs.iter().map(val_to_string).collect::<Vec<_>>().join(", ")),
-                Value::Tuple(xs) => format!("({})", xs.iter().map(val_to_string).collect::<Vec<_>>().join(", ")),
+        Value::List(xs) => format!("[{}]", xs.iter().map(|x| val_to_string(env, x)).collect::<Vec<_>>().join(", ")),
+        Value::Tuple(xs) => format!("({})", xs.iter().map(|x| val_to_string(env, x)).collect::<Vec<_>>().join(", ")),
                 Value::Record(map) => {
-                    let inner = map.iter().map(|(k,v)| format!("{}: {}", k, val_to_string(v))).collect::<Vec<_>>().join(", ");
+            let inner = map.iter().map(|(k,v)| format!("{}: {}", k, val_to_string(env, v))).collect::<Vec<_>>().join(", ");
                     format!("{{{}}}", inner)
                 }
                 Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
             }
         }
-        let out = val_to_string(&val);
+    let out = val_to_string(&env, &val);
         println!("{out}");
         return Ok(());
     }

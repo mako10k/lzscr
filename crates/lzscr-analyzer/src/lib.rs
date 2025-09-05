@@ -36,6 +36,9 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             | ExprKind::Str(_)
             | ExprKind::Ref(_)
             | ExprKind::Symbol(_) => 1,
+            ExprKind::Raise(inner) => 1 + walk(inner, tbl),
+            ExprKind::OrElse { left, right } => 1 + walk(left, tbl) + walk(right, tbl),
+            ExprKind::Catch { left, right } => 1 + walk(left, tbl) + walk(right, tbl),
             ExprKind::Lambda { body, .. } => 1 + walk(body, tbl),
             ExprKind::Apply { func, arg } => 1 + walk(func, tbl) + walk(arg, tbl),
             ExprKind::Block(inner) => 1 + walk(inner, tbl),
@@ -48,7 +51,27 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             ExprKind::Str(s) => format!("s:\"{}\"", s),
             ExprKind::Ref(n) => format!("r:{n}"),
             ExprKind::Symbol(s) => format!("y:{s}"),
-            ExprKind::Lambda { param, body } => format!("lam {param} -> [{}]", body.span.len),
+            ExprKind::Raise(inner) => format!("raise[{}]", inner.span.len),
+            ExprKind::OrElse { left, right } => format!("orelse({},{})", left.span.len, right.span.len),
+            ExprKind::Catch { left, right } => format!("catch({},{})", left.span.len, right.span.len),
+            ExprKind::Lambda { param, body } => {
+        fn pp(p: &Pattern) -> String {
+                    match &p.kind {
+            PatternKind::Wildcard => "_".into(),
+            PatternKind::Var(n) => format!("~{}", n),
+            PatternKind::Unit => "()".into(),
+            PatternKind::Tuple(xs) => format!("({})", xs.iter().map(pp).collect::<Vec<_>>().join(", ")),
+            PatternKind::Ctor { name, args } => if args.is_empty() { name.clone() } else { format!("{} {}", name, args.iter().map(pp).collect::<Vec<_>>().join(" ")) },
+                        PatternKind::Symbol(s) => s.clone(), // 現状パーサで禁止方向に寄せたが互換のため残置
+            PatternKind::Int(n) => format!("{}", n),
+            PatternKind::Float(f) => format!("{}", f),
+            PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
+            PatternKind::Bool(b) => format!("{}", b),
+            PatternKind::As(a, b) => format!("{} @ {}", pp(a), pp(b)),
+                    }
+                }
+                format!("lam {} -> [{}]", pp(param), body.span.len)
+            }
             ExprKind::Apply { func, arg } => format!("ap({},{})", func.span.len, arg.span.len),
             ExprKind::Block(inner) => format!("blk({})", inner.span.len),
         };
@@ -176,6 +199,9 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
     ) {
         match &e.kind {
             ExprKind::Unit | ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Str(_) | ExprKind::Symbol(_) => {}
+            ExprKind::Raise(inner) => walk(inner, scopes, allow, out),
+            ExprKind::OrElse { left, right } => { walk(left, scopes, allow, out); walk(right, scopes, allow, out); }
+            ExprKind::Catch { left, right } => { walk(left, scopes, allow, out); walk(right, scopes, allow, out); }
             ExprKind::Ref(n) => {
                 let mut bound = allow.contains(n);
                 if !bound {
@@ -194,7 +220,18 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                 }
             }
             ExprKind::Lambda { param, body } => {
-                scopes.push(HashSet::from([param.clone()]));
+        fn binds(p: &Pattern, acc: &mut HashSet<String>) {
+                    match &p.kind {
+            PatternKind::Wildcard | PatternKind::Unit | PatternKind::Symbol(_) | PatternKind::Int(_) | PatternKind::Float(_) | PatternKind::Str(_) | PatternKind::Bool(_) => {}
+            PatternKind::Var(n) => { acc.insert(n.clone()); }
+            PatternKind::Tuple(xs) => { for x in xs { binds(x, acc); } }
+            PatternKind::Ctor { args, .. } => { for x in args { binds(x, acc); } }
+            PatternKind::As(a, b) => { binds(a, acc); binds(b, acc); }
+                    }
+                }
+                let mut set = HashSet::new();
+                binds(param, &mut set);
+                scopes.push(set);
                 walk(body, scopes, allow, out);
                 scopes.pop();
             }
@@ -213,17 +250,28 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
 pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
     let mut out = Vec::new();
     fn walk(e: &Expr, scopes: &mut Vec<HashSet<String>>, out: &mut Vec<Shadowing>) {
-        match &e.kind {
+    match &e.kind {
             ExprKind::Lambda { param, body } => {
-                let is_shadow = scopes.iter().any(|s| s.contains(param));
+        fn pat_idents(p: &Pattern, out: &mut Vec<String>) {
+                    match &p.kind {
+            PatternKind::Wildcard | PatternKind::Unit | PatternKind::Symbol(_) | PatternKind::Int(_) | PatternKind::Float(_) | PatternKind::Str(_) | PatternKind::Bool(_) => {}
+            PatternKind::Var(n) => out.push(n.clone()),
+            PatternKind::Tuple(xs) => { for x in xs { pat_idents(x, out); } }
+            PatternKind::Ctor { args, .. } => { for x in args { pat_idents(x, out); } }
+            PatternKind::As(a, b) => { pat_idents(a, out); pat_idents(b, out); }
+                    }
+                }
+                let mut ids = Vec::new();
+                pat_idents(param, &mut ids);
+                let is_shadow = scopes.iter().any(|s| ids.iter().any(|n| s.contains(n)));
                 if is_shadow {
                     out.push(Shadowing {
-                        name: param.clone(),
+                        name: ids.first().cloned().unwrap_or_else(|| "_".into()),
                         lambda_span: e.span,
                     });
                 }
                 let mut top = scopes.last().cloned().unwrap_or_default();
-                top.insert(param.clone());
+                for n in ids.iter() { top.insert(n.clone()); }
                 scopes.push(top);
                 walk(body, scopes, out);
                 scopes.pop();
@@ -232,6 +280,9 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                 walk(func, scopes, out);
                 walk(arg, scopes, out);
             }
+            ExprKind::Raise(inner) => walk(inner, scopes, out),
+            ExprKind::OrElse { left, right } => { walk(left, scopes, out); walk(right, scopes, out); }
+            ExprKind::Catch { left, right } => { walk(left, scopes, out); walk(right, scopes, out); }
             ExprKind::Block(inner) => walk(inner, scopes, out),
             _ => {}
         }
@@ -246,26 +297,43 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
     fn used_in(e: &Expr, target: &str) -> bool {
         match &e.kind {
             ExprKind::Ref(n) => n == target,
-            ExprKind::Lambda { param, body } => {
-                if param == target {
-                    false
-                } else {
-                    used_in(body, target)
-                }
-            }
+            ExprKind::Lambda { param, body } => used_in(body, target) && !binds_param(param, target),
             ExprKind::Apply { func, arg } => used_in(func, target) || used_in(arg, target),
+            ExprKind::Raise(inner) => used_in(inner, target),
+            ExprKind::OrElse { left, right } => used_in(left, target) || used_in(right, target),
+            ExprKind::Catch { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::Block(inner) => used_in(inner, target),
             _ => false,
         }
     }
+    fn binds_param(p: &Pattern, name: &str) -> bool {
+        match &p.kind {
+            PatternKind::Wildcard | PatternKind::Unit | PatternKind::Symbol(_) | PatternKind::Int(_) | PatternKind::Float(_) | PatternKind::Str(_) | PatternKind::Bool(_) => false,
+            PatternKind::Var(n) => n == name,
+            PatternKind::Tuple(xs) => xs.iter().any(|x| binds_param(x, name)),
+            PatternKind::Ctor { args, .. } => args.iter().any(|x| binds_param(x, name)),
+            PatternKind::As(a, b) => binds_param(a, name) || binds_param(b, name),
+        }
+    }
     fn walk(e: &Expr, out: &mut Vec<UnusedParam>) {
-        match &e.kind {
+    match &e.kind {
             ExprKind::Lambda { param, body } => {
-                if !used_in(body, param) {
-                    out.push(UnusedParam {
-                        name: param.clone(),
-                        lambda_span: e.span,
-                    });
+                // collect bound names
+        fn collect(p: &Pattern, outn: &mut Vec<String>) {
+                    match &p.kind {
+            PatternKind::Wildcard | PatternKind::Unit | PatternKind::Symbol(_) | PatternKind::Int(_) | PatternKind::Float(_) | PatternKind::Str(_) | PatternKind::Bool(_) => {}
+            PatternKind::Var(n) => outn.push(n.clone()),
+            PatternKind::Tuple(xs) => { for x in xs { collect(x, outn); } }
+            PatternKind::Ctor { args, .. } => { for x in args { collect(x, outn); } }
+            PatternKind::As(a, b) => { collect(a, outn); collect(b, outn); }
+                    }
+                }
+                let mut names = Vec::new();
+                collect(param, &mut names);
+                for n in names.iter() {
+                    if !used_in(body, n) {
+                        out.push(UnusedParam { name: n.clone(), lambda_span: e.span });
+                    }
                 }
                 walk(body, out);
             }
@@ -273,6 +341,9 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
                 walk(func, out);
                 walk(arg, out);
             }
+            ExprKind::Raise(inner) => walk(inner, out),
+            ExprKind::OrElse { left, right } => { walk(left, out); walk(right, out); }
+            ExprKind::Catch { left, right } => { walk(left, out); walk(right, out); }
             ExprKind::Block(inner) => walk(inner, out),
             _ => {}
         }

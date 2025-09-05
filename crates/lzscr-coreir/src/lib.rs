@@ -51,7 +51,44 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Str(s) => Term::new(Op::Str(s.clone())),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
-        ExprKind::Lambda { param, body } => Term::new(Op::Lam { param: param.clone(), body: Box::new(lower_expr_to_core(body)) }),
+        ExprKind::Raise(inner) => {
+            // 暫定: 表示用に Symbol("^(") + inner + Symbol(")") にせず、App で (~raise inner) 相当の形にすることも考えたが
+            // PoC 段階なので単純に Symbol("RAISE") と引数の App に落とす
+            let tag = Term::new(Op::Symbol("RAISE".into()));
+            Term::new(Op::App { func: Box::new(tag), arg: Box::new(lower_expr_to_core(inner)) })
+        }
+        ExprKind::OrElse { left, right } => {
+            // Symbol("OR") left right を App 連鎖に
+            let or = Term::new(Op::Symbol("OR".into()));
+            let app_l = Term::new(Op::App { func: Box::new(or), arg: Box::new(lower_expr_to_core(left)) });
+            Term::new(Op::App { func: Box::new(app_l), arg: Box::new(lower_expr_to_core(right)) })
+        }
+        ExprKind::Catch { left, right } => {
+            let cat = Term::new(Op::Symbol("CATCH".into()));
+            let app_l = Term::new(Op::App { func: Box::new(cat), arg: Box::new(lower_expr_to_core(left)) });
+            Term::new(Op::App { func: Box::new(app_l), arg: Box::new(lower_expr_to_core(right)) })
+        }
+        ExprKind::Lambda { param, body } => {
+            fn print_pattern(p: &Pattern) -> String {
+                match &p.kind {
+                    PatternKind::Wildcard => "_".into(),
+                    PatternKind::Var(n) => format!("~{}", n),
+                    PatternKind::Unit => "()".into(),
+                    PatternKind::Tuple(xs) => format!("({})", xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")),
+                    PatternKind::Ctor { name, args } => {
+                        if args.is_empty() { name.clone() } else { format!("{} {}", name, args.iter().map(print_pattern).collect::<Vec<_>>().join(" ")) }
+                    }
+                    PatternKind::Symbol(s) => s.clone(),
+                    PatternKind::Int(n) => format!("{}", n),
+                    PatternKind::Float(f) => format!("{}", f),
+                    PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
+                    PatternKind::Bool(b) => format!("{}", b),
+                    PatternKind::As(a, b) => format!("{} @ {}", print_pattern(a), print_pattern(b)),
+                }
+            }
+            let param_str = print_pattern(param);
+            Term::new(Op::Lam { param: param_str, body: Box::new(lower_expr_to_core(body)) })
+        }
         ExprKind::Apply { func, arg } => {
             // desugar (~seq a b) into Seq
             if let ExprKind::Apply { func: seq_ref_expr, arg: a_expr } = &func.kind {
@@ -76,7 +113,7 @@ pub fn print_term(t: &Term) -> String {
         Op::Str(s) => format!("\"{}\"", s.escape_default()),
         Op::Ref(n) => format!("~{n}"),
         Op::Symbol(s) => s.clone(),
-        Op::Lam { param, body } => format!("\\{param} -> {}", print_term(body)),
+    Op::Lam { param, body } => format!("\\{} -> {}", param, print_term(body)),
         Op::App { func, arg } => format!("({} {})", print_term(func), print_term(arg)),
         Op::Seq { first, second } => format!("(~seq {} {})", print_term(first), print_term(second)),
     }

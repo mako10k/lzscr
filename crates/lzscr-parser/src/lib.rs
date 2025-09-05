@@ -33,6 +33,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     ) -> Result<Expr, ParseError> {
         let t = bump(i, toks).ok_or_else(|| ParseError::Generic("unexpected EOF".into()))?;
         Ok(match &t.tok {
+            // ^(Expr)
+            Tok::Caret => {
+                let lp = bump(i, toks).ok_or_else(|| ParseError::Generic("expected ( after ^".into()))?;
+                if !matches!(lp.tok, Tok::LParen) { return Err(ParseError::Generic("expected ( after ^".into())); }
+                let inner = parse_expr_bp(i, toks, 0)?;
+                let rp = bump(i, toks).ok_or_else(|| ParseError::Generic(") expected".into()))?;
+                if !matches!(rp.tok, Tok::RParen) { return Err(ParseError::Generic(") expected".into())); }
+                let span = Span::new(t.span.offset, rp.span.offset + rp.span.len - t.span.offset);
+                Expr::new(ExprKind::Raise(Box::new(inner)), span)
+            }
             Tok::Int(n) => Expr::new(ExprKind::Int(*n), t.span),
             Tok::Float(f) => Expr::new(ExprKind::Float(*f), t.span),
             Tok::Str(s) => Expr::new(ExprKind::Str(s.clone()), t.span),
@@ -71,11 +81,109 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 )
             }
             Tok::Backslash => {
-                let id =
-                    bump(i, toks).ok_or_else(|| ParseError::Generic("expected param".into()))?;
-                if !matches!(id.tok, Tok::Ident) {
-                    return Err(ParseError::Generic("expected ident param".into()));
+                // parse pattern parameter up to '->'
+                fn is_upper_initial(s: &str) -> bool {
+                    s.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false)
                 }
+                fn parse_pat<'b>(i: &mut usize, toks: &'b [lzscr_lexer::Lexed<'b>]) -> Result<Pattern, ParseError> {
+                    fn parse_pat_atom<'c>(i: &mut usize, toks: &'c [lzscr_lexer::Lexed<'c>]) -> Result<Pattern, ParseError> {
+                        let t = bump(i, toks).ok_or_else(|| ParseError::Generic("expected pattern".into()))?;
+                        Ok(match &t.tok {
+                            Tok::Tilde => {
+                                let id = bump(i, toks).ok_or_else(|| ParseError::Generic("expected ident after ~ in pattern".into()))?;
+                                if !matches!(id.tok, Tok::Ident) { return Err(ParseError::Generic("expected ident after ~ in pattern".into())); }
+                                let span = Span::new(t.span.offset, id.span.offset + id.span.len - t.span.offset);
+                                Pattern::new(PatternKind::Var(id.text.to_string()), span)
+                            }
+                            Tok::Ident => {
+                                let name = t.text.to_string();
+                                if name == "_" {
+                                    Pattern::new(PatternKind::Wildcard, t.span)
+                                } else if name == "true" {
+                                    Pattern::new(PatternKind::Bool(true), t.span)
+                                } else if name == "false" {
+                                    Pattern::new(PatternKind::Bool(false), t.span)
+                                } else {
+                                    // 裸の識別子は変数束縛としては使わない（~ident のみ）。Ctor は別経路で先読み処理。
+                                    return Err(ParseError::Generic("invalid bare identifier in pattern; use ~name or a constructor".into()));
+                                }
+                            }
+                            Tok::Member(m) => Pattern::new(PatternKind::Ctor { name: m.clone(), args: vec![] }, t.span),
+                            Tok::LParen => {
+                                // () or tuple pattern or grouped pattern
+                                if let Some(nxt) = toks.get(*i) { if matches!(nxt.tok, Tok::RParen) { let r = bump(i, toks).unwrap(); return Ok(Pattern::new(PatternKind::Unit, Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset))); } }
+                                // parse first
+                                let first = parse_pat(i, toks)?;
+                                // comma-separated?
+                                let mut items = vec![first];
+                                loop {
+                                    let Some(nxt) = toks.get(*i) else { return Err(ParseError::Generic(") expected".into())); };
+                                    match nxt.tok {
+                                        Tok::Comma => { let _ = bump(i, toks); let p = parse_pat(i, toks)?; items.push(p); }
+                                        Tok::RParen => {
+                                            let r = bump(i, toks).unwrap();
+                                            let span = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset);
+                                            if items.len() == 1 { return Ok(items.pop().unwrap()); }
+                                            return Ok(Pattern::new(PatternKind::Tuple(items), span));
+                                        }
+                                        _ => return Err(ParseError::Generic("expected , or ) in pattern".into())),
+                                    }
+                                }
+                            }
+                            Tok::Int(n) => Pattern::new(PatternKind::Int(*n), t.span),
+                            Tok::Float(f) => Pattern::new(PatternKind::Float(*f), t.span),
+                            Tok::Str(s) => Pattern::new(PatternKind::Str(s.clone()), t.span),
+                            _ => return Err(ParseError::Generic("unexpected token in pattern".into())),
+                        })
+                    }
+                    // lookahead for ctor head: Ident with Uppercase initial or Member
+                    if let Some(head) = toks.get(*i) {
+                        match &head.tok {
+                            Tok::Ident if is_upper_initial(head.text) => {
+                                // ctor with possible args
+                                let h = bump(i, toks).unwrap();
+                                let mut args = Vec::new();
+                                loop {
+                                    let Some(nxt) = toks.get(*i) else { break };
+                                    match nxt.tok {
+                                        Tok::Arrow | Tok::RParen | Tok::Comma => break,
+                                        Tok::Ident | Tok::Member(_) | Tok::LParen => {
+                                            let a = parse_pat_atom(i, toks)?;
+                                            args.push(a);
+                                        }
+                                        _ => break,
+                                    }
+                                }
+                                let end = if args.is_empty() { h.span.offset + h.span.len } else { let last = args.last().unwrap(); last.span.offset + last.span.len };
+                                return Ok(Pattern::new(PatternKind::Ctor { name: h.text.to_string(), args }, Span::new(h.span.offset, end - h.span.offset)));
+                            }
+                            Tok::Member(m) => {
+                                let h = bump(i, toks).unwrap();
+                                let mut args = Vec::new();
+                                loop {
+                                    let Some(nxt) = toks.get(*i) else { break };
+                                    match nxt.tok {
+                                        Tok::Arrow | Tok::RParen | Tok::Comma => break,
+                                        Tok::Tilde | Tok::Ident | Tok::Member(_) | Tok::LParen | Tok::Int(_) | Tok::Float(_) | Tok::Str(_) => {
+                                            let a = parse_pat_atom(i, toks)?;
+                                            args.push(a);
+                                        }
+                                        _ => break,
+                                    }
+                                }
+                                let end = if args.is_empty() { h.span.offset + h.span.len } else { let last = args.last().unwrap(); last.span.offset + last.span.len };
+                                return Ok(Pattern::new(PatternKind::Ctor { name: m.clone(), args }, Span::new(h.span.offset, end - h.span.offset)));
+                            }
+                            _ => {}
+                        }
+                    }
+                    // fallback: single atom
+                    // As パターン: atom ('@' pat)?
+                    let left = parse_pat_atom(i, toks)?;
+                    if let Some(nxt) = toks.get(*i) { if matches!(nxt.tok, Tok::At) { let _ = bump(i, toks); let right = parse_pat(i, toks)?; let sp = Span::new(left.span.offset, right.span.offset + right.span.len - left.span.offset); return Ok(Pattern::new(PatternKind::As(Box::new(left), Box::new(right)), sp)); } }
+                    Ok(left)
+                }
+                let pat = parse_pat(i, toks)?;
                 let arr = bump(i, toks).ok_or_else(|| ParseError::Generic("expected ->".into()))?;
                 if !matches!(arr.tok, Tok::Arrow) {
                     return Err(ParseError::Generic("expected ->".into()));
@@ -87,7 +195,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 );
                 Expr::new(
                     ExprKind::Lambda {
-                        param: id.text.to_string(),
+                        param: pat,
                         body: Box::new(body),
                     },
                     span,
@@ -124,8 +232,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 // 単一は括弧の意味（関数適用の優先付け）。
                                 return Ok(Expr::new(items.pop().unwrap().kind, span_all));
                             }
-                            // (.Tuple item1) item2 ... へ糖衣
-                            let mut expr = Expr::new(ExprKind::Symbol(".Tuple".into()), t.span);
+                            // (., item1) item2 ... へ糖衣（内部専用コンストラクタ '.,' ）
+                            let mut expr = Expr::new(ExprKind::Symbol(".,".into()), t.span);
                             for it in items {
                                 let sp = Span::new(expr.span.offset, span_all.offset + span_all.len - expr.span.offset);
                                 expr = Expr::new(ExprKind::Apply { func: Box::new(expr), arg: Box::new(it) }, sp);
@@ -178,7 +286,12 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     }
                 }
             }
-            Tok::Ident => Expr::new(ExprKind::Symbol(t.text.to_string()), t.span),
+            Tok::Ident => {
+                return Err(ParseError::Generic(format!(
+                    "bare identifier '{}' cannot be used as a symbol; use ~{} for a ref or .{} for a symbol",
+                    t.text, t.text, t.text
+                )))
+            }
             _ => {
                 return Err(ParseError::Generic(format!(
                     "unexpected token: {:?}",
@@ -198,6 +311,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             let Some(nxt) = peek(*i, toks) else { break };
             // Pratt parser: handle infix precedence
             let (op_bp, op_kind) = match nxt.tok.clone() {
+                // lowest precedence for catch and or-else
+                Tok::Pipe => (1, Some("|")),
                 Tok::Plus => (10, Some("+")),
                 Tok::Minus => (10, Some("-")),
                 Tok::Star => (20, Some("*")),
@@ -222,6 +337,14 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 if op_bp < bp { break; }
                 // consume op
                 let _ = bump(i, toks);
+                // special case: '^|' should be parsed as a single operator token sequence '^' '|' when used infix
+                if op == "|" {
+                    // parse RHS normally
+                    let rhs = parse_expr_bp(i, toks, op_bp + 1)?;
+                    let span = Span::new(lhs.span.offset, rhs.span.offset + rhs.span.len - lhs.span.offset);
+                    lhs = Expr::new(ExprKind::OrElse { left: Box::new(lhs), right: Box::new(rhs) }, span);
+                    continue;
+                }
                 let rhs = parse_expr_bp(i, toks, op_bp + 1)?;
                 // desugar: (a + b) → ((~add a) b) など
                 let callee = match op {
@@ -250,6 +373,19 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 lhs = Expr::new(ExprKind::Apply { func: Box::new(app1), arg: Box::new(rhs) }, span);
                 continue;
             }
+            // parse '^|' as infix catch ONLY when the next token after '^' is '|'
+            if let Tok::Caret = nxt.tok {
+                if let Some(n2) = peek(*i + 1, toks) {
+                    if matches!(n2.tok, Tok::Pipe) {
+                        let _ = bump(i, toks); // consume '^'
+                        let _ = bump(i, toks); // consume '|'
+                        let rhs = parse_expr_bp(i, toks, 2)?; // precedence slightly above '|'
+                        let span = Span::new(lhs.span.offset, rhs.span.offset + rhs.span.len - lhs.span.offset);
+                        lhs = Expr::new(ExprKind::Catch { left: Box::new(lhs), right: Box::new(rhs) }, span);
+                        continue;
+                    }
+                }
+            }
             match nxt.tok {
                 Tok::LParen
                 | Tok::Int(_)
@@ -259,7 +395,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 | Tok::Backslash
                 | Tok::Ident
                 | Tok::Member(_)
-                | Tok::Bang => {
+                | Tok::Bang
+                | Tok::Caret => {
                     // function application (left associative)
                     let arg = parse_atom(i, toks)?;
                     let span = Span::new(

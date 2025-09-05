@@ -17,10 +17,16 @@ pub enum Tok {
     RParen,
     #[token(",")]
     Comma,
+    #[token("^")]
+    Caret,
+    #[token("|")]
+    Pipe,
     #[token(":")]
     Colon,
     #[token("->")]
     Arrow,
+    #[token("@")]
+    At,
     #[token("!")]
     Bang,
     #[token("\\")]
