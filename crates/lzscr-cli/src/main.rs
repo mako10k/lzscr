@@ -202,6 +202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Value::Str(s) => s.clone(),
                 Value::Symbol(id) => env.symbol_name(*id),
                 Value::Raised(b) => format!("^({})", val_to_string(env, b)),
+                Value::Thunk { .. } => "<thunk>".into(),
                 Value::Ctor { name, args } => {
                     if name == ".," {
                         format!(

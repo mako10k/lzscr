@@ -46,6 +46,24 @@ pub enum Value {
     Symbol(u32),
     // Exception payload (internal). Represent ^(Expr) after evaluation as a value that propagates.
     Raised(Box<Value>),
+    // Lazy thunk for recursive/non-function let bindings
+    Thunk {
+        state: std::rc::Rc<std::cell::RefCell<ThunkState>>,
+        kind: ThunkKind,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum ThunkKind {
+    Expr { expr: Expr, env: Env },
+    Project { src: Box<Value>, pattern: Pattern, var: String },
+}
+
+#[derive(Debug, Clone)]
+pub enum ThunkState {
+    Unevaluated,
+    Evaluating,
+    Evaluated(Box<Value>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -618,7 +636,15 @@ impl Env {
 }
 
 fn to_str_like(env: &Env, v: &Value) -> String {
-    match v {
+    // サンクはここで可能なら強制してから表示する
+    let vv: Value = match v {
+        Value::Thunk { .. } => match force_value(env, v) {
+            Ok(val) => val,
+            Err(_) => return "<thunk>".into(),
+        },
+        _ => v.clone(),
+    };
+    match &vv {
         Value::Unit => "()".into(),
         Value::Int(n) => n.to_string(),
         Value::Float(f) => f.to_string(),
@@ -671,7 +697,9 @@ fn to_str_like(env: &Env, v: &Value) -> String {
                 .join(", ");
             format!("{{{}}}", inner)
         }
-        Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
+    Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
+    // Thunk は上で force 済みのはずだが、安全のため
+    _ => "<thunk>".into(),
     }
 }
 
@@ -683,7 +711,8 @@ fn sym_false(env: &Env) -> Value {
 }
 
 fn as_bool(env: &Env, v: &Value) -> Result<bool, EvalError> {
-    match v {
+    let v = force_value(env, v)?;
+    match &v {
         Value::Bool(b) => Ok(*b),
         Value::Symbol(id) => {
             let s = env.symbol_name(*id);
@@ -709,7 +738,8 @@ fn eff_guard(env: &Env) -> Result<(), EvalError> {
 
 fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
     eff_guard(env)?;
-    match &args[0] {
+    let v0 = force_value(env, &args[0])?;
+    match &v0 {
         Value::Str(s) => {
             print!("{}", s);
             Ok(Value::Unit)
@@ -795,6 +825,7 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 print!("<fun>");
                 Ok(Value::Unit)
             }
+            Value::Thunk { .. } => unreachable!(),
             Value::Str(_) => unreachable!(),
         },
     }
@@ -802,7 +833,8 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
 
 fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
     eff_guard(env)?;
-    match &args[0] {
+    let v0 = force_value(env, &args[0])?;
+    match &v0 {
         Value::Str(s) => {
             println!("{}", s);
             Ok(Value::Unit)
@@ -888,12 +920,14 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 println!("<fun>");
                 Ok(Value::Unit)
             }
+            Value::Thunk { .. } => unreachable!(),
             Value::Str(_) => unreachable!(),
         },
     }
 }
 
 fn v_equal(_env: &Env, a: &Value, b: &Value) -> bool {
+    // 注意: ここではサンクを強制しない（等価性は実質的に評価後に比較されるパスで使われる想定）
     match (a, b) {
         (Value::Unit, Value::Unit) => true,
         (Value::Int(x), Value::Int(y)) => x == y,
@@ -932,6 +966,7 @@ fn match_pattern(
     p: &Pattern,
     v: &Value,
 ) -> Option<std::collections::HashMap<String, Value>> {
+    let v = force_value(env, v).ok()?;
     use std::collections::HashMap;
     fn merge(
         mut a: HashMap<String, Value>,
@@ -967,7 +1002,7 @@ fn match_pattern(
             }
             _ => None,
         },
-        PatternKind::Ctor { name, args } => match v {
+        PatternKind::Ctor { name, args } => match &v {
             Value::Ctor { name: n2, args: vs } if n2 == name && vs.len() == args.len() => {
                 let mut acc = std::collections::HashMap::new();
                 for (pi, xi) in args.iter().zip(vs.iter()) {
@@ -978,27 +1013,27 @@ fn match_pattern(
             }
             _ => None,
         },
-        PatternKind::Symbol(s) => match v {
-            Value::Symbol(id) if env.symbol_name(*id) == *s => Some(HashMap::new()),
+        PatternKind::Symbol(s) => match &v {
+            Value::Symbol(id) if env.symbol_name(*id) == s.clone() => Some(HashMap::new()),
             _ => None,
         },
-        PatternKind::Int(n) => match v {
-            Value::Int(m) if m == n => Some(HashMap::new()),
+        PatternKind::Int(n) => match &v {
+            Value::Int(m) if *m == *n => Some(HashMap::new()),
             _ => None,
         },
-        PatternKind::Float(f) => match v {
-            Value::Float(g) if g == f => Some(HashMap::new()),
+        PatternKind::Float(f) => match &v {
+            Value::Float(g) if *g == *f => Some(HashMap::new()),
             _ => None,
         },
-        PatternKind::Str(st) => match v {
+        PatternKind::Str(st) => match &v {
             Value::Str(s2) if s2 == st => Some(HashMap::new()),
             _ => None,
         },
-        PatternKind::Bool(b) => match v {
-            Value::Bool(c) if c == b => Some(HashMap::new()),
+        PatternKind::Bool(b) => match &v {
+            Value::Bool(c) if *c == *b => Some(HashMap::new()),
             _ => None,
         },
-        PatternKind::Record(fields) => match v {
+        PatternKind::Record(fields) => match &v {
             Value::Record(map) => {
                 // all fields in pattern must exist in value
                 let mut acc = HashMap::new();
@@ -1011,7 +1046,7 @@ fn match_pattern(
             }
             _ => None,
         },
-        PatternKind::List(ps) => match v {
+    PatternKind::List(ps) => match &v {
             Value::List(xs) if xs.len() == ps.len() => {
                 let mut acc = HashMap::new();
                 for (pi, xi) in ps.iter().zip(xs.iter()) {
@@ -1022,7 +1057,7 @@ fn match_pattern(
             }
             _ => None,
         },
-        PatternKind::Cons(h, t) => match v {
+    PatternKind::Cons(h, t) => match &v {
             Value::List(xs) if !xs.is_empty() => {
                 let mut acc = HashMap::new();
                 let bi = match_pattern(env, h, &xs[0])?;
@@ -1035,8 +1070,8 @@ fn match_pattern(
             _ => None,
         },
         PatternKind::As(a, b) => {
-            let m1 = match_pattern(env, a, v)?;
-            let m2 = match_pattern(env, b, v)?;
+            let m1 = match_pattern(env, a, &v)?;
+            let m2 = match_pattern(env, b, &v)?;
             let mut acc = HashMap::new();
             for (k, v) in m1 {
                 if acc.contains_key(&k) {
@@ -1052,6 +1087,35 @@ fn match_pattern(
             }
             Some(acc)
         }
+    }
+}
+
+fn force_value(env: &Env, v: &Value) -> Result<Value, EvalError> {
+    match v {
+        Value::Thunk { state, kind } => {
+            let mut st = state.borrow_mut();
+            match &*st {
+                ThunkState::Evaluated(val) => return Ok((**val).clone()),
+                ThunkState::Evaluating => return Err(EvalError::TypeError), // recursive value
+                ThunkState::Unevaluated => {
+                    *st = ThunkState::Evaluating;
+                }
+            }
+            drop(st);
+            // compute
+            let result = match kind {
+                ThunkKind::Expr { expr, env: tenv } => eval(tenv, expr)?,
+                ThunkKind::Project { src, pattern, var } => {
+                    let base = force_value(env, src)?;
+                    let mm = match_pattern(env, pattern, &base).ok_or(EvalError::TypeError)?;
+                    mm.get(var).cloned().ok_or(EvalError::TypeError)?
+                }
+            };
+            let mut st2 = state.borrow_mut();
+            *st2 = ThunkState::Evaluated(Box::new(result.clone()));
+            Ok(result)
+        }
+        other => Ok(other.clone()),
     }
 }
 
@@ -1170,36 +1234,74 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Str(s) => Ok(Value::Str(s.clone())),
         ExprKind::Float(f) => Ok(Value::Float(*f)),
         ExprKind::LetGroup { bindings, body } => {
-            // let-group スコープ: 先に self/mutual recursion 用に Var = Lambda の形だけ予宣言し、その後すべて評価して束縛。
+            // 遅延束縛により非関数の再帰もサポート
             let mut env2 = env.clone();
-            // 予宣言（Var パターンかつ RHS が Lambda の場合のみ）
+            // 準備: 各バインディングごとに「全体値のサンク」を作る
+            let mut whole_thunks: Vec<(Pattern, Value)> = Vec::new();
             for (p, ex) in bindings.iter() {
-                if let (PatternKind::Var(name), ExprKind::Lambda { param, body }) = (&p.kind, &ex.kind) {
-                    // env2 をキャプチャするクロージャを先に突っ込む（後で上書きされても env2 は共有）
-                    env2.vars.insert(
-                        name.clone(),
-                        Value::Closure {
-                            param: param.clone(),
-                            body: *body.clone(),
-                            env: env2.clone(),
-                        },
-                    );
-                }
+                let state = std::rc::Rc::new(std::cell::RefCell::new(ThunkState::Unevaluated));
+                let whole = Value::Thunk {
+                    state: state.clone(),
+                    kind: ThunkKind::Expr {
+                        expr: ex.clone(),
+                        env: env2.clone(),
+                    },
+                };
+                whole_thunks.push((p.clone(), whole));
             }
-            // 逐次評価してパターン束縛
-            for (p, ex) in bindings.iter() {
-                let v = eval(&env2, ex)?;
-                if let Value::Raised(_) = v {
-                    return Ok(v);
-                }
-                if let Some(bind) = match_pattern(&env2, p, &v) {
-                    for (k, vv) in bind {
-                        env2.vars.insert(k, vv);
+            // 変数名→派生サンクを環境に登録
+            fn collect_vars(p: &Pattern, out: &mut Vec<String>) {
+                match &p.kind {
+                    PatternKind::Wildcard
+                    | PatternKind::Unit
+                    | PatternKind::Symbol(_)
+                    | PatternKind::Int(_)
+                    | PatternKind::Float(_)
+                    | PatternKind::Str(_)
+                    | PatternKind::Bool(_) => {}
+                    PatternKind::Var(n) => out.push(n.clone()),
+                    PatternKind::Tuple(xs) | PatternKind::List(xs) => {
+                        for x in xs {
+                            collect_vars(x, out);
+                        }
                     }
-                } else {
-                    return Ok(Value::Raised(Box::new(Value::Unit)));
+                    PatternKind::Record(fs) => {
+                        for (_, v) in fs {
+                            collect_vars(v, out);
+                        }
+                    }
+                    PatternKind::Ctor { args, .. } => {
+                        for x in args {
+                            collect_vars(x, out);
+                        }
+                    }
+                    PatternKind::Cons(h, t) => {
+                        collect_vars(h, out);
+                        collect_vars(t, out);
+                    }
+                    PatternKind::As(a, b) => {
+                        collect_vars(a, out);
+                        collect_vars(b, out);
+                    }
                 }
             }
+            for (p, whole) in whole_thunks.iter() {
+                let mut names = Vec::new();
+                collect_vars(p, &mut names);
+                for n in names {
+                    let state = std::rc::Rc::new(std::cell::RefCell::new(ThunkState::Unevaluated));
+                    let derived = Value::Thunk {
+                        state,
+                        kind: ThunkKind::Project {
+                            src: Box::new(whole.clone()),
+                            pattern: p.clone(),
+                            var: n.clone(),
+                        },
+                    };
+                    env2.vars.insert(n, derived);
+                }
+            }
+            // 本体を評価（必要に応じてサンクが強制される）
             eval(&env2, body)
         }
         ExprKind::List(xs) => {
@@ -1218,11 +1320,14 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             let v = eval(env, inner)?;
             Ok(Value::Raised(Box::new(v)))
         }
-        ExprKind::Ref(n) => env
-            .vars
-            .get(n)
-            .cloned()
-            .ok_or_else(|| EvalError::Unbound(n.clone())),
+        ExprKind::Ref(n) => {
+            let val = env
+                .vars
+                .get(n)
+                .cloned()
+                .ok_or_else(|| EvalError::Unbound(n.clone()))?;
+            force_value(env, &val)
+        }
         ExprKind::Symbol(s) => Ok(Value::Symbol(env.intern_symbol(s))),
         ExprKind::Lambda { param, body } => Ok(Value::Closure {
             param: param.clone(),
