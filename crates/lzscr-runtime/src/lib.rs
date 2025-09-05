@@ -45,6 +45,7 @@ pub struct Env {
     pub vars: std::collections::HashMap<String, Value>,
     pub strict_effects: bool,
     pub in_effect_context: bool,
+    pub ctor_arity: std::collections::HashMap<String, usize>,
 }
 
 // Default is derived
@@ -54,12 +55,25 @@ impl Env {
         Self::default()
     }
 
+    pub fn declare_ctor_arity(&mut self, name: &str, arity: usize) {
+        // 登録名はドット有無の両方を受け付ける（検索時も両方試す）
+        let n = name.to_string();
+        self.ctor_arity.insert(n.clone(), arity);
+        if n.starts_with('.') {
+            self.ctor_arity.insert(n.trim_start_matches('.').to_string(), arity);
+        } else {
+            self.ctor_arity.insert(format!(".{n}"), arity);
+        }
+    }
+
     pub fn with_builtins() -> Self {
-        let mut e = Env::new();
+    let mut e = Env::new();
 
     // Inject ~true / ~false as references
     e.vars.insert("true".into(), Value::Bool(true));
     e.vars.insert("false".into(), Value::Bool(false));
+    e.declare_ctor_arity(".true", 0);
+    e.declare_ctor_arity(".false", 0);
 
         // Bool constructor: (.true|.false) -> Bool
         e.vars.insert(
@@ -74,6 +88,7 @@ impl Env {
                 },
             },
         );
+    e.declare_ctor_arity("Bool", 1);
 
         // to_str : a -> Str
         e.vars.insert(
@@ -332,6 +347,7 @@ impl Env {
                 v => Ok(Value::Tuple(vec![v.clone()])),
             } },
         );
+    e.declare_ctor_arity("Tuple", 1);
         e.vars.insert(
             "Record".into(),
             Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
@@ -353,6 +369,7 @@ impl Env {
                 _ => Err(EvalError::TypeError),
             } },
         );
+    e.declare_ctor_arity("Record", 1);
         e.vars.insert(
             "KV".into(),
             Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) {
@@ -360,6 +377,7 @@ impl Env {
                 _ => Err(EvalError::TypeError),
             } },
         );
+    e.declare_ctor_arity("KV", 2);
 
         // logical ops: and/or/not. Accept Bool or Symbol("True"|"False"). Return Symbol("True"|"False").
         e.vars.insert(
@@ -601,9 +619,19 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             let a = eval(env, arg)?;
             match f {
                 // Constructor variable: build constructor value accumulating payload args
-                Value::Symbol(name) => Ok(Value::Ctor { name, args: vec![a] }),
+                Value::Symbol(name) => {
+                    // 1 引数目適用時点では最大 arity チェックはできないが、0 アリティならエラー
+                    if let Some(&k) = env.ctor_arity.get(&name).or_else(|| env.ctor_arity.get(&format!(".{name}"))) {
+                        if k == 0 { return Err(EvalError::TypeError); }
+                    }
+                    Ok(Value::Ctor { name, args: vec![a] })
+                }
                 Value::Ctor { name, mut args } => {
                     args.push(a);
+                    if let Some(&k) = env.ctor_arity.get(&name).or_else(|| env.ctor_arity.get(&format!(".{name}"))) {
+                        if args.len() > k { return Err(EvalError::TypeError); }
+                        // ちょうど満たした場合はそのまま返す（値）。不足時は未完成値。
+                    }
                     Ok(Value::Ctor { name, args })
                 }
                 Value::Native { arity, f, mut args } => {
