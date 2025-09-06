@@ -13,9 +13,19 @@
 # Option 風（Ctor は .Some / .None を使用）。AltLambdaで分配。
 ~option_is_some = \~o -> ((\ .Some _ -> ~true) | (\ .None -> ~false)) ~o;
 ~option_map = \~f -> \~o -> ((\ .Some ~x -> .Some (~f ~x)) | (\ .None -> .None)) ~o;
+~option_is_none = \~o -> ((\ .Some _ -> ~false) | (\ .None -> ~true)) ~o;
+~option_bind = \~f -> \~o -> ((\ .Some ~x -> ~f ~x) | (\ .None -> .None)) ~o;
+~option_unwrap_or = \~d -> \~o -> ((\ .Some ~x -> ~x) | (\ .None -> ~d)) ~o;
 
 # List 長さ（簡易）: パターンラムダ + AltLambda
 ~length = \~xs -> ((\[] -> 0) | (\( ~h : ~t ) -> 1 + (~length ~t))) ~xs;
+
+# List 補助（構築子は使わず、分解のみで定義できる範囲に限定）
+~head_opt = \~xs -> ((\[] -> .None) | (\( ~h : _ ) -> .Some ~h)) ~xs;
+~tail_opt = \~xs -> ((\[] -> .None) | (\( _ : ~t ) -> .Some ~t)) ~xs;
+~foldl = \~f -> \~init -> \~xs -> (
+	(\[] -> ~init) | (\( ~h : ~t ) -> ~foldl ~f (~f ~init ~h) ~t)
+) ~xs;
 
 # String ヘルパ（to_str のみに留める）
 # 将来、明確な結合APIを導入するまで concat は提供しない
@@ -29,4 +39,17 @@
 	math: ~Math;
 
 	str_len: ~Str .len;
+
+	# option
+	option_is_some: ~option_is_some;
+	option_is_none: ~option_is_none;
+	option_map: ~option_map;
+	option_bind: ~option_bind;
+	option_unwrap_or: ~option_unwrap_or;
+
+	# list
+	length: ~length;
+	head_opt: ~head_opt;
+	tail_opt: ~tail_opt;
+	foldl: ~foldl;
 }
