@@ -133,18 +133,33 @@ fn parse_string(lex: &mut Lexer<Tok>) -> Option<String> {
 }
 
 fn parse_block_comment(lex: &mut Lexer<Tok>) -> Option<()> {
-    // We have just matched "{-"; consume until the next "-}" (non-nested)
-    if let Some(pos) = lex.remainder().find("-}") {
-        lex.bump(pos + 2);
-        Some(())
-    } else {
-        // Unterminated: consume the rest
-        let len = lex.remainder().len();
-        if len > 0 {
-            lex.bump(len);
+    // We have just matched "{-"; consume with nesting until matching "-}"
+    let s = lex.remainder();
+    let bytes = s.as_bytes();
+    let mut i = 0usize;
+    let mut depth = 1i32;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'{' && bytes[i + 1] == b'-' {
+            depth += 1;
+            i += 2;
+            continue;
         }
-        Some(())
+        if bytes[i] == b'-' && bytes[i + 1] == b'}' {
+            depth -= 1;
+            i += 2;
+            if depth == 0 {
+                lex.bump(i);
+                return Some(());
+            }
+            continue;
+        }
+        i += 1;
     }
+    // Unterminated: consume the rest
+    if i < bytes.len() {
+        lex.bump(bytes.len());
+    }
+    Some(())
 }
 
 #[derive(Debug, Clone)]

@@ -50,44 +50,7 @@ pub fn to_preast(src: &str) -> Result<PreAst, PreAstError> {
 /// - Preserve comments and token order
 /// - Insert single spaces between tokens where needed
 pub fn preast_to_source(pre: &PreAst) -> String {
-    let mut out = String::new();
-    let mut prev_is_op = false;
-    for it in &pre.items {
-        match &it.kind {
-            PreTokenKind::CommentLine(s) => {
-                if !out.ends_with('\n') && !out.is_empty() {
-                    out.push('\n');
-                }
-                out.push_str(s);
-                out.push('\n');
-                prev_is_op = false;
-            }
-            PreTokenKind::CommentBlock(s) => {
-                if needs_space_before(&out) { out.push(' '); }
-                out.push_str(s);
-                prev_is_op = false;
-            }
-            PreTokenKind::Token(s) => {
-                let is_op = is_operator_token(s);
-                if is_op {
-                    if needs_space_before(&out) { out.push(' '); }
-                    out.push_str(s);
-                    out.push(' ');
-                    prev_is_op = true;
-                } else {
-                    if prev_is_op {
-                        // ensure space after operator
-                        if !out.ends_with(' ') { out.push(' '); }
-                    } else if needs_space_before(&out) && needs_space_before_token(s) {
-                        out.push(' ');
-                    }
-                    out.push_str(s);
-                    prev_is_op = false;
-                }
-            }
-        }
-    }
-    out
+    preast_to_source_with_opts(pre, &FormatOpts::default())
 }
 
 fn needs_space_before(out: &str) -> bool {
@@ -110,6 +73,110 @@ fn is_operator_token(s: &str) -> bool {
         ".<" | ".<=" | ".>" | ".>=" |
         "||" | "|" | ":" | "->" | "=" | "@"
     )
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FormatOpts {
+    pub indent: usize,
+    pub max_width: usize,
+}
+
+impl Default for FormatOpts {
+    fn default() -> Self {
+        Self { indent: 2, max_width: 100 }
+    }
+}
+
+pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
+    // Simple formatter: attach line comments to previous token line if room, else own line.
+    // Insert breaks after semicolons and before certain constructs; indent subsequent lines.
+    let mut out = String::new();
+    let mut col = 0usize;
+    let mut indent_level = 0usize;
+    let mut prev_is_op = false;
+    let mut at_line_start = true;
+
+    let push_str = |s: &str, col_ref: &mut usize, out_ref: &mut String| {
+        out_ref.push_str(s);
+        *col_ref += s.chars().count();
+    };
+    let newline = |indent_level: usize, col_ref: &mut usize, out_ref: &mut String| {
+        out_ref.push('\n');
+        for _ in 0..(indent_level * opts.indent) {
+            out_ref.push(' ');
+        }
+        *col_ref = indent_level * opts.indent;
+    };
+
+    for it in &pre.items {
+        match &it.kind {
+            PreTokenKind::CommentLine(s) => {
+                let trimmed = s.trim_end();
+                if at_line_start {
+                    // start of line: print as-is
+                    push_str(trimmed, &mut col, &mut out);
+                    out.push('\n');
+                    for _ in 0..(indent_level * opts.indent) { out.push(' '); }
+                    col = indent_level * opts.indent;
+                } else {
+                    // if fits on current line, attach; else put on its own line
+                    let need = 1 + trimmed.chars().count();
+                    if col + need <= opts.max_width {
+                        if !out.ends_with(' ') { out.push(' '); col += 1; }
+                        push_str(trimmed, &mut col, &mut out);
+                        out.push('\n');
+                        for _ in 0..(indent_level * opts.indent) { out.push(' '); }
+                        col = indent_level * opts.indent;
+                    } else {
+                        newline(indent_level, &mut col, &mut out);
+                        push_str(trimmed, &mut col, &mut out);
+                        out.push('\n');
+                        for _ in 0..(indent_level * opts.indent) { out.push(' '); }
+                        col = indent_level * opts.indent;
+                    }
+                }
+                prev_is_op = false;
+                at_line_start = true;
+            }
+            PreTokenKind::CommentBlock(s) => {
+                let trimmed = s;
+                if needs_space_before(&out) { out.push(' '); col += 1; }
+                push_str(trimmed, &mut col, &mut out);
+                prev_is_op = false;
+                at_line_start = false;
+            }
+            PreTokenKind::Token(s) => {
+                let is_op = is_operator_token(s);
+                let is_semi = s == ";";
+                let is_lparen = s == "(";
+                let is_rparen = s == ")";
+                if is_op {
+                    if needs_space_before(&out) { out.push(' '); col += 1; }
+                    push_str(s, &mut col, &mut out);
+                    out.push(' '); col += 1;
+                    prev_is_op = true;
+                    at_line_start = false;
+                } else {
+                    if prev_is_op {
+                        if !out.ends_with(' ') { out.push(' '); col += 1; }
+                    } else if needs_space_before(&out) && needs_space_before_token(s) {
+                        out.push(' '); col += 1;
+                    }
+                    push_str(s, &mut col, &mut out);
+                    prev_is_op = false;
+                    at_line_start = false;
+                }
+                if is_lparen { indent_level += 1; }
+                if is_rparen && indent_level > 0 { indent_level -= 1; }
+                if is_semi {
+                    // statement boundary: break line and indent next
+                    newline(indent_level, &mut col, &mut out);
+                    at_line_start = true;
+                }
+            }
+        }
+    }
+    out
 }
 
 // Placeholder: actual PRE-AST -> AST conversion will live in parser crate using this token stream.
