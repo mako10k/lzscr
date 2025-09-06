@@ -7,11 +7,39 @@
   - ふだんのプログラミングで必要な基本関数群を提供（コレクション操作、Option/Result、文字列、数値、レコード操作、IO ラッパ等）。
   - 既存のビルトイン（ランタイム）を安全・一貫した API として露出。
   - 言語の HM 型推論と相性のよい API 形状を採用（関数合成・高階関数を活用）。
+  - 中期目標: lzscr のパーサ/実行環境を lzscr 自身で書ける自己ホスト（Self-host）を視野に、必要最小限のプリミティブ/stdlib を整備。
 - 非目標（初期段階）
   - 並行/非同期、ファイルシステム等の重い IO（将来の別提案で拡張）。
   - パッケージマネージャや外部依存の解決機構（将来検討）。
 
+### 自己ホスト（Self-host）方針と最小要件
+自己ホストに向けた最小要件を以下にまとめます。これらは Rust ランタイムの安定したビルトインとして提供し、その上に lzscr 実装で積み上げます。
+
+- 必須プリミティブ（Rust 側のビルトインとして露出）
+  - 算術/比較: `(+,-,*,/,%,==,!=,<,<=,>,>=)`（Int/Float 対応）
+  - 等価/ハッシュ（当面は基本型に限定）
+  - 文字列: `str_len : Str -> Int`, `str_concat : Str -> Str -> Str`,
+    `str_slice : Str -> Int -> Int -> Str`（半開区間、境界はクランプ）, `str_cmp : Str -> Str -> Int`
+  - 文字列/コードポイント（最初は UTF-8 の手堅いサブセットで可）:
+    `str_codepoint_at : Str -> Int -> Option Int`（コードポイント Int を返す）, `str_from_codepoint : Int -> Str`（1 コードポイントの文字列）
+  - 文字クラス判定（コードポイント Int に対して）: `cp_is_alpha`, `cp_is_digit`, `cp_is_alnum`, `cp_is_space`, `cp_is_newline`, `cp_is_lower`, `cp_is_upper`
+  - デバッグ/表示: `to_str : a -> Str`（既存）, `println : Str -> Unit`（M3 にも関連）
+- stdlib（lzscr 実装）で提供する基礎
+  - list: `length/map/filter/foldl/foldr/append/reverse/take/drop/range`
+  - string: 上記ビルトインを包む安全 API と追加関数 `join/split`（簡易）, `starts_with/ends_with`, `find`
+  - unicode/codepoint: コードポイント Int に対する文字クラス API の薄いラップと補助 `cp_is_lower/cp_is_upper`
+  - option/result: 既存案のとおり
+- パーサ/字句解析に必要な土台
+  - `Span = { start: Int, end: Int }` レコードとユーティリティ
+  - `Token` バリアント: `.Ident | .IntLit | .StrLit | .Symbol | ...`（段階的に）
+  - `StringCursor` 相当の操作を `str_len/str_char_at/str_slice` で代替（最初は O(n) でも可）。
+
 ## フェーズ計画（マイルストーン）
+0. M0: 自己ホスト準備（最小ビルトインと stdlib の土台）
+   - Rust ランタイムに最小ビルトインを追加・公開（上記「必須プリミティブ」）。
+   - `stdlib/` に `prelude.lzscr` を用意し、list/string/char/option/result の最小関数を lzscr で実装。
+   - 文字列/文字 API を用いた簡易トークナイザの PoC を lzscr で作成（記号/識別子/数値/空白の区別）。
+   - CLI から PoC を呼び出す統合テストを追加。
 1. M1: ブートストラップ stdlib（プリロード方式）
    - 配布形態: リポジトリ内の `stdlib/` に .lzscr ソースとして配置。
    - CLI でデフォルト有効（`--no-stdlib` で無効化、`--stdlib-dir` で差し替え）。
@@ -50,7 +78,9 @@
   - `nil`（`[]` 相当）と `cons`（`(::)` 相当）；構築は糖衣 `[a,b,c]`
   - `length`, `map`, `filter`, `foldl`, `foldr`, `append`, `reverse`, `take`, `drop`, `range`
 - string
-  - `len`, `concat`, `join`, `split`（簡易）, `to_int`, `from_int`
+  - `len`, `concat`, `slice`, `cmp`, `join`, `split`（簡易）, `starts_with`, `ends_with`, `find`, `to_int`, `from_int`
+- char
+  - `of_int`, `to_int`, `is_alpha`, `is_digit`, `is_alnum`, `is_space`, `is_lower`, `is_upper`, `is_newline`
 - math（数値）
   - `abs`, `min`, `max`, `clamp`, `floor`, `ceil`, `pow`（必要に応じ Int/Float 版）
 - record（M2 以降）
@@ -90,12 +120,16 @@ cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
 - 単体: 各関数に最小限の性質テスト（例: `length (append xs ys) == length xs + length ys`）
 - 結合: `prelude` 経由での代表的なコード片が期待どおり評価されることを CLI テストで確認
 - フォーマット互換: stdlib 自身が `--format-code` で安定整形され、挙動が変わらないこと
+ - 自己ホスト準備: 文字列スライスや文字クラスの恒等性/境界条件（UTF-8 での境界クランプ）に関する性質テスト、簡易トークナイザ PoC の受入テスト
 
 ## ロードマップ（実装タスク）
 - [ ] stdlib ディレクトリ作成: `stdlib/prelude.lzscr`（空の雛形）
+- [ ] Rust ランタイムに最小ビルトインを追加（str_len/str_concat/str_slice/str_cmp/str_codepoint_at/str_from_codepoint、cp_* 判定、算術/比較の公開整理）
 - [ ] CLI: `--no-stdlib` / `--stdlib-dir` フラグ追加、プリロード実装
-- [ ] M1 API 実装: option/result/list/string/math（最小セット）
-- [ ] テスト: CLI から stdlib 機能を検証する統合テスト
+- [ ] M0 API 実装: list/string/unicode(codepoint)/option/result の最小セット（lzscr 実装）
+- [ ] M0 検証: lzscr で簡易トークナイザ（識別子/整数/記号/空白）を実装して CLI から実行
+- [ ] M1 API 実装: string の `join/split/find/starts_with/ends_with` と list の拡張、math 最小セット
+- [ ] テスト: CLI から stdlib 機能を検証する統合テスト + 文字列/文字性質テスト
 - [ ] ドキュメント: モジュール毎の README、API 一覧と使用例
 - [ ] M2 以降のモジュール拡充（record/tuple/io 等）
 - [ ] import 構文の提案と実装（パーサ/ランタイム/CLI 連携）
@@ -115,6 +149,14 @@ cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
   .[] -> 0;
   .,( _ , tail ) -> 1 + (~length tail);
 };
+
+# 簡易トークナイザ PoC（非常に簡略化の方針メモ）
+# - 入力を空白で分割し、各トークンについて「全て数字なら .IntLit、そうでなければ .Ident」を返す。
+# - 実装には list/string/codepoint API（`string.split`, `str_codepoint_at`, `cp_is_digit`, `list.map` など）を用いる。
+# - まずは方針と型を決める：
+#   Token = .IntLit Str | .Ident Str;
+#   tokenize : Str -> [Token]
+# - 具体的な実装は M0 の完了後に stdlib 上で作成し、CLI 統合テストで検証する。
 ```
 
 ---
