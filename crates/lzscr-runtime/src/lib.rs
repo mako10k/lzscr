@@ -639,108 +639,7 @@ impl Env {
                 },
             },
         );
-        string_ns.insert(
-            "slice".into(),
-            Value::Native {
-                arity: 3,
-                args: vec![],
-                f: |_env, args| match (&args[0], &args[1], &args[2]) {
-                    (Value::Str(s), Value::Int(st), Value::Int(ln)) => {
-                        if *st < 0 || *ln < 0 { return Err(EvalError::TypeError); }
-                        let st_usize = *st as usize;
-                        let ln_usize = *ln as usize;
-                        if let Some(sub) = s.slice_chars(st_usize, ln_usize) {
-                            Ok(Value::Str(sub))
-                        } else {
-                            Err(EvalError::TypeError)
-                        }
-                    }
-                    _ => Err(EvalError::TypeError),
-                },
-            },
-        );
-        string_ns.insert(
-            "cmp".into(),
-            Value::Native {
-                arity: 2,
-                args: vec![],
-                f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Str(a), Value::Str(b)) => {
-                        let ord = a.as_bytes().cmp(b.as_bytes());
-                        let v = match ord {
-                            std::cmp::Ordering::Less => -1,
-                            std::cmp::Ordering::Equal => 0,
-                            std::cmp::Ordering::Greater => 1,
-                        };
-                        Ok(Value::Int(v))
-                    }
-                    _ => Err(EvalError::TypeError),
-                },
-            },
-        );
-        // to_list: Str -> List(Char)
-        string_ns.insert(
-            "to_list".into(),
-            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
-                Value::Str(s) => {
-                    let mut out = Vec::new();
-                    if let Ok(text) = std::str::from_utf8(s.as_bytes()) {
-                        for ch in text.chars() {
-                            out.push(Value::Char(ch as u32 as i32));
-                        }
-                        Ok(Value::List(out))
-                    } else {
-                        // should not happen for interned parser strings
-                        Err(EvalError::TypeError)
-                    }
-                }
-                _ => Err(EvalError::TypeError)
-            } },
-        );
-        // of_list: List(Char) -> Str
-        string_ns.insert(
-            "of_list".into(),
-            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
-                Value::List(xs) => {
-                    let mut s = String::new();
-                    for v in xs {
-                        match v {
-                            Value::Char(c) => {
-                                let u = *c as u32;
-                                if let Some(ch) = std::char::from_u32(u) {
-                                    s.push(ch);
-                                } else {
-                                    return Err(EvalError::TypeError);
-                                }
-                            }
-                            _ => return Err(EvalError::TypeError),
-                        }
-                    }
-                    Ok(Value::Str(env.intern_string(s)))
-                }
-                _ => Err(EvalError::TypeError)
-            } },
-        );
-        // at: Str -> Int(index) -> Char
-        string_ns.insert(
-            "at".into(),
-            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) {
-                (Value::Str(s), Value::Int(i)) => {
-                    if *i < 0 { return Err(EvalError::TypeError); }
-                    let idx = *i as usize;
-                    if let Ok(text) = std::str::from_utf8(s.as_bytes()) {
-                        if let Some(ch) = text.chars().nth(idx) {
-                            Ok(Value::Char(ch as u32 as i32))
-                        } else {
-                            Err(EvalError::TypeError)
-                        }
-                    } else {
-                        Err(EvalError::TypeError)
-                    }
-                }
-                _ => Err(EvalError::TypeError)
-            } },
-        );
+    // keep builtins minimal: only len/concat for strings for now
 
         // math namespace (reuse existing natives where possible)
         let mut math_ns: BTreeMap<String, Value> = BTreeMap::new();
@@ -780,30 +679,6 @@ impl Env {
                     _ => Err(EvalError::TypeError),
                 },
             },
-        );
-        uni_ns.insert(
-            "is_scalar".into(),
-            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
-                Value::Char(c) => {
-                    let u = *c as u32;
-                    let ok = std::char::from_u32(u).is_some();
-                    Ok(if ok { sym_true(env) } else { sym_false(env) })
-                }
-                _ => Err(EvalError::TypeError)
-            } },
-        );
-        uni_ns.insert(
-            "is_digit".into(),
-            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
-                Value::Char(c) => {
-                    if let Some(ch) = std::char::from_u32(*c as u32) {
-                        Ok(if ch.is_numeric() { sym_true(env) } else { sym_false(env) })
-                    } else {
-                        Ok(sym_false(env))
-                    }
-                }
-                _ => Err(EvalError::TypeError)
-            } },
         );
         builtins.insert("unicode".into(), Value::Record(uni_ns));
     e.vars.insert("Builtins".into(), Value::Record(builtins));
@@ -1916,19 +1791,17 @@ mod tests {
     }
 
     #[test]
-    fn string_len_concat_slice_cmp() {
+    fn string_len_and_concat_only() {
         let env = Env::with_builtins();
         // Access Builtins.string namespace
         let string_ns = match env.vars.get("Builtins").cloned().unwrap() {
             Value::Record(m) => m.get("string").cloned().unwrap(),
             _ => panic!("Builtins missing"),
         };
-        let (len_f, concat_f, slice_f, cmp_f) = match string_ns.clone() {
+        let (len_f, concat_f) = match string_ns.clone() {
             Value::Record(m) => (
                 m.get("len").cloned().unwrap(),
                 m.get("concat").cloned().unwrap(),
-                m.get("slice").cloned().unwrap(),
-                m.get("cmp").cloned().unwrap(),
             ),
             _ => panic!("string ns not a record"),
         };
@@ -1943,79 +1816,6 @@ mod tests {
             .and_then(|f| apply_value(&env, f, Value::Str(env.intern_string("c"))))
             .unwrap();
         match v { Value::Str(rs) => assert_eq!(rs.to_string(), "abc"), _ => panic!() }
-
-        // slice: start=1, len=2 => "é😺"
-        let v = apply_value(&env, slice_f.clone(), s.clone())
-            .and_then(|f| apply_value(&env, f, Value::Int(1)))
-            .and_then(|f| apply_value(&env, f, Value::Int(2)))
-            .unwrap();
-        match v { Value::Str(rs) => assert_eq!(rs.to_string(), "é😺"), _ => panic!() }
-
-        // cmp: "abc" vs "abd" -> -1
-        let a = Value::Str(env.intern_string("abc"));
-        let b = Value::Str(env.intern_string("abd"));
-        let v = apply_value(&env, cmp_f.clone(), a)
-            .and_then(|f| apply_value(&env, f, b))
-            .unwrap();
-        match v { Value::Int(n) => assert_eq!(n, -1), _ => panic!() }
-
-        // cmp: "é" > "f" in UTF-8 byte order
-        let v = apply_value(&env, cmp_f.clone(), Value::Str(env.intern_string("é")))
-            .and_then(|f| apply_value(&env, f, Value::Str(env.intern_string("f"))))
-            .unwrap();
-        match v { Value::Int(n) => assert_eq!(n, 1), _ => panic!() }
-
-        // slice OOB -> TypeError
-        let err = apply_value(&env, slice_f, s)
-            .and_then(|f| apply_value(&env, f, Value::Int(10)))
-            .and_then(|f| apply_value(&env, f, Value::Int(1)))
-            .unwrap_err();
-        matches!(err, EvalError::TypeError);
-    }
-
-    #[test]
-    fn string_list_roundtrip_and_at_unicode_helpers() {
-        let env = Env::with_builtins();
-        // namespaces
-        let (string_ns, unicode_ns) = match env.vars.get("Builtins").cloned().unwrap() {
-            Value::Record(m) => (m.get("string").cloned().unwrap(), m.get("unicode").cloned().unwrap()),
-            _ => panic!("Builtins missing"),
-        };
-        let (to_list_f, of_list_f, at_f, to_int_f, of_int_f, is_scalar_f, is_digit_f) = match (string_ns, unicode_ns) {
-            (Value::Record(s), Value::Record(u)) => (
-                s.get("to_list").cloned().unwrap(),
-                s.get("of_list").cloned().unwrap(),
-                s.get("at").cloned().unwrap(),
-                u.get("to_int").cloned().unwrap(),
-                u.get("of_int").cloned().unwrap(),
-                u.get("is_scalar").cloned().unwrap(),
-                u.get("is_digit").cloned().unwrap(),
-            ),
-            _ => panic!("ns not a record"),
-        };
-
-        // to_list/of_list roundtrip
-        let s = Value::Str(env.intern_string("hé😺"));
-        let lst = apply_value(&env, to_list_f.clone(), s.clone()).unwrap();
-        let back = apply_value(&env, of_list_f.clone(), lst).unwrap();
-        match back { Value::Str(rs) => assert_eq!(rs.to_string(), "hé😺"), _ => panic!() }
-
-        // at index 2 should be 😺
-        let ch = apply_value(&env, at_f.clone(), s)
-            .and_then(|f| apply_value(&env, f, Value::Int(2)))
-            .unwrap();
-        let code = apply_value(&env, to_int_f.clone(), ch).unwrap();
-        match code { Value::Int(n) => assert_eq!(n, 0x1F63A), _ => panic!() }
-
-        // unicode.is_scalar on valid value
-        let ch_ok = apply_value(&env, of_int_f.clone(), Value::Int(0x1F600)).unwrap();
-        let res = apply_value(&env, is_scalar_f.clone(), ch_ok).unwrap();
-        match res { Value::Symbol(id) => assert_eq!(env.symbol_name(id), "True"), _ => panic!() }
-
-        // unicode.is_digit for '9'
-        let nine = apply_value(&env, of_int_f.clone(), Value::Int('9' as i32 as i64)).unwrap();
-        let res = apply_value(&env, is_digit_f.clone(), nine).unwrap();
-        match res { Value::Symbol(id) => assert_eq!(env.symbol_name(id), "True"), _ => panic!() }
     }
     fn int_expr(n: i64) -> Expr {
         Expr::new(ExprKind::Int(n), Span::new(0, 0))
