@@ -193,6 +193,8 @@ pub enum TypeError {
     NotFunction { ty: Type },
     #[error("unbound reference: {name}")]
     UnboundRef { name: String },
+    #[error("effect not allowed at ({span_offset},{span_len})")]
+    EffectNotAllowed { span_offset: usize, span_len: usize },
 }
 
 // ---------- Unification ----------
@@ -441,7 +443,7 @@ fn pop_tyvars(ctx: &mut InferCtx, n: usize) {
     for _ in 0..n { let _ = ctx.tyvars.pop(); }
 }
 
-fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> {
+fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type, Subst), TypeError> {
     // Helper: convert TypeExpr to Type using ctx.tyvars and a local holes table for '?'
     fn conv_typeexpr(ctx: &mut InferCtx, te: &TypeExpr, holes: &mut HashMap<String, TvId>) -> Type {
         match te {
@@ -485,7 +487,7 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
 
     match &e.kind {
         ExprKind::Annot { ty, expr } => {
-            let (got, s) = infer_expr(ctx, expr)?;
+            let (got, s) = infer_expr(ctx, expr, allow_effects)?;
             let mut holes = HashMap::new();
             let want = conv_typeexpr(ctx, ty, &mut holes);
             let s2 = unify(&got.apply(&s), &want)?;
@@ -512,26 +514,47 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
             let mut env2 = ctx.env.clone();
             for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
             let prev = std::mem::replace(&mut ctx.env, env2);
-            let (bt, s_body) = infer_expr(ctx, body)?;
+            let (bt, s_body) = infer_expr(ctx, body, allow_effects)?;
             ctx.env = prev;
             pop_tyvars(ctx, pushed);
             let ty = Type::fun(a.apply(&s_body).apply(&pi.subst), bt.apply(&s_body));
             Ok((ty, s_body.compose(pi.subst)))
         }
         ExprKind::Apply { func, arg } => {
-            let (tf, sf) = infer_expr(ctx, func)?;
-            let (ta, sa) = infer_expr(ctx, arg)?;
+            // Special-case: (~seq a b) allows effects in b only
+            if let ExprKind::Apply { func: seq_ref_expr, arg: first } = &func.kind {
+                if let ExprKind::Ref(seq_name) = &seq_ref_expr.kind {
+                    if seq_name == "seq" {
+                        let (_t1, s1) = infer_expr(ctx, first, false)?; // first must be pure
+                        let (t2, s2) = infer_expr(ctx, arg, true)?; // second may perform effects
+                        let s = s2.compose(s1);
+                        return Ok((t2.apply(&s), s));
+                    }
+                }
+            }
+            let (tf, sf) = infer_expr(ctx, func, allow_effects)?;
+            let (ta, sa) = infer_expr(ctx, arg, allow_effects)?;
             let r = ctx.tv.fresh();
             let s1 = unify(&tf.apply(&sa).apply(&sf), &Type::fun(ta.apply(&sa), r.clone()))?;
             let s = s1.compose(sa).compose(sf);
+            // If this is an effect application like ((~effects .sym) x), forbid unless allowed
+            if !allow_effects {
+                if let ExprKind::Apply { func: inner_f, arg: _ } = &func.kind {
+                    if let ExprKind::Ref(eff_name) = &inner_f.kind {
+                        if eff_name == "effects" {
+                            return Err(TypeError::EffectNotAllowed { span_offset: e.span.offset, span_len: e.span.len });
+                        }
+                    }
+                }
+            }
             Ok((r.apply(&s), s))
         }
-        ExprKind::Block(inner) => infer_expr(ctx, inner),
+        ExprKind::Block(inner) => infer_expr(ctx, inner, allow_effects),
         ExprKind::List(items) => {
             let a = ctx.tv.fresh();
             let mut s = Subst::new();
             for it in items {
-                let (ti, si) = infer_expr(ctx, it)?;
+                let (ti, si) = infer_expr(ctx, it, allow_effects)?;
                 let s1 = unify(&ti.apply(&s).apply(&si), &a.apply(&s).apply(&si))?;
                 s = s1.compose(si).compose(s);
             }
@@ -545,7 +568,7 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
                 // Push typevars from pattern during RHS inference and binding
                 let (p_core, pushed) = push_tyvars_from_pattern(ctx, p);
                 let saved = std::mem::replace(&mut ctx.env, env.clone());
-                let (t_rhs, s_rhs) = infer_expr(ctx, ex)?;
+                let (t_rhs, s_rhs) = infer_expr(ctx, ex, allow_effects)?;
                 ctx.env = saved;
                 let a = ctx.tv.fresh();
                 let pi = infer_pattern(&mut ctx.tv, p_core, &a.apply(&s_rhs))?;
@@ -558,27 +581,27 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
                 pop_tyvars(ctx, pushed);
             }
             let _ = std::mem::replace(&mut ctx.env, env.clone());
-            let res = infer_expr(ctx, body);
+            let res = infer_expr(ctx, body, allow_effects);
             ctx.env = env_prev;
             res
         }
         ExprKind::Raise(inner) => {
-            let (_t, s) = infer_expr(ctx, inner)?;
+            let (_t, s) = infer_expr(ctx, inner, allow_effects)?;
             let r = ctx.tv.fresh();
             Ok((r, s))
         }
         ExprKind::OrElse { left, right } => {
-            let (tl, sl) = infer_expr(ctx, left)?;
-            let (tr, sr) = infer_expr(ctx, right)?;
+            let (tl, sl) = infer_expr(ctx, left, allow_effects)?;
+            let (tr, sr) = infer_expr(ctx, right, allow_effects)?;
             let s1 = unify(&tl.apply(&sr).apply(&sl), &tr.apply(&sr))?;
             let s = s1.compose(sr).compose(sl);
             Ok((tr.apply(&s), s))
         }
         ExprKind::Catch { left, right } => {
-            let (tl, sl) = infer_expr(ctx, left)?;
+            let (tl, sl) = infer_expr(ctx, left, allow_effects)?;
             let a = ctx.tv.fresh();
             let r = ctx.tv.fresh();
-            let (tr, sr) = infer_expr(ctx, right)?;
+            let (tr, sr) = infer_expr(ctx, right, allow_effects)?;
             let s1 = unify(&tr.apply(&sr).apply(&sl), &Type::fun(a, r.clone()))?;
             let s2 = unify(&tl.apply(&s1).apply(&sr).apply(&sl), &r)?;
             let s = s2.compose(s1).compose(sr).compose(sl);
@@ -608,7 +631,7 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
             match &pl_core.kind {
                 PatternKind::Wildcard => {
                     let pi = infer_pattern(&mut ctx.tv, pl_core, &param_ty.apply(&s_all))?;
-                    let (tb, sb) = infer_expr(ctx, bl)?;
+                    let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
@@ -620,7 +643,7 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
                     variants.push((name.clone(), payload.clone()));
                     let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
                     let pi = infer_pattern(&mut ctx.tv, pl_core, &scr.apply(&s_all))?;
-                    let (tb, sb) = infer_expr(ctx, bl)?;
+                    let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
@@ -631,7 +654,7 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
                     variants.push((name.clone(), vec![]));
                     let scr = Type::Ctor { tag: name.clone(), payload: vec![] };
                     let pi = infer_pattern(&mut ctx.tv, pl_core, &scr.apply(&s_all))?;
-                    let (tb, sb) = infer_expr(ctx, bl)?;
+                    let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
@@ -644,7 +667,7 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
             match &pr_core.kind {
                 PatternKind::Wildcard => {
                     let pi = infer_pattern(&mut ctx.tv, pr_core, &param_ty.apply(&s_all))?;
-                    let (tb, sb) = infer_expr(ctx, br)?;
+                    let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
@@ -656,7 +679,7 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
                     variants.push((name.clone(), payload.clone()));
                     let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
                     let pi = infer_pattern(&mut ctx.tv, pr_core, &scr.apply(&s_all))?;
-                    let (tb, sb) = infer_expr(ctx, br)?;
+                    let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
@@ -667,7 +690,7 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
                     variants.push((name.clone(), vec![]));
                     let scr = Type::Ctor { tag: name.clone(), payload: vec![] };
                     let pi = infer_pattern(&mut ctx.tv, pr_core, &scr.apply(&s_all))?;
-                    let (tb, sb) = infer_expr(ctx, br)?;
+                    let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
@@ -733,7 +756,7 @@ pub mod api {
     pub fn infer_program(src: &str) -> Result<String, String> {
         let ast = parse_expr(src).map_err(|e| format!("parse error: {e}"))?;
     let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![] };
-        match infer_expr(&mut ctx, &ast) {
+        match infer_expr(&mut ctx, &ast, false) {
             Ok((t, _s)) => Ok(pp_type(&t)),
             Err(e) => Err(format!("{e}")),
         }
