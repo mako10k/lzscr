@@ -88,6 +88,11 @@
 - 追加（将来の LLVM 機能用）: LLVM 15+ と `inkwell`（オプション）。
 - テスト: `cargo test`（パーサのゴールデンテスト、評価器の期待出力テスト、プロパティテストに `proptest`）。
 
+拡張子/MIME:
+- 公式拡張子: `.lzscr`
+- MIME: `text/vnd.lzscr; charset=utf-8`
+- 当面のエディタ関連付け: VS Code は `*.lzscr` を `plaintext` に関連付け（`.vscode/settings.json`）。将来的に専用拡張でシンタックスハイライト/言語機能を提供予定。
+
 #### 4.1) CLI/ENV 互換方針（初期 + 将来）
 
 - 初期にサポート: `-e/--eval`, `-s/--strict-effects`, `--entry`, `-p/--prelude-so`, `-n/--sugar-namespace`。

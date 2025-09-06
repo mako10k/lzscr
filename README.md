@@ -33,14 +33,24 @@ cargo run -p lzscr-cli -- -e '{a: 1, b: 2}'
 cargo run -p lzscr-cli -- -e 'if true() 10 20'
 # => 10
 
-## ファイルからの実行 (--file)
+## ファイル拡張子・MIME / ファイルからの実行 (--file)
 
+公式の拡張子は `.lzscr`、MIME Type は `text/vnd.lzscr; charset=utf-8` です（テキスト言語）。
 1ファイルの式/バインディング群を評価できます。CLI はファイル内容を括弧で囲み、先頭や末尾の `~x = ...;` 形式のバインディングを let グループとして扱います。
 
 ```
-echo '~x = 1; ~add ~x 2;' > /tmp/a.lzs
-cargo run -p lzscr-cli -- --file /tmp/a.lzs
+echo '~x = 1; ~add ~x 2;' > /tmp/a.lzscr
+cargo run -p lzscr-cli -- --file /tmp/a.lzscr
 # => 3
+```
+
+エディタ連携が未導入の場合、当面はプレーンテキストとして扱ってください（VS Code は本リポジトリの `.vscode/settings.json` で `*.lzscr` をプレーンテキストに関連付け済み）。
+
+シェバン例（インストール名が `lzscr` の場合）:
+
+```
+#!/usr/bin/env lzscr
+~add 1 2;
 ```
 
 ## 型チェック (Hindley–Milner 推論)

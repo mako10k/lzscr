@@ -23,5 +23,8 @@
     "lzscr/.vscode/mcp.json: shell-server": {
       "allowedDuringChat": true
     }
+  },
+  "files.associations": {
+    "*.lzscr": "plaintext"
   }
 }
