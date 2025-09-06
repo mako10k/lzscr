@@ -9,4 +9,4 @@ chumsky = { version = "1.0.0-alpha.7", features = ["label"] }
 lzscr-ast = { path = "../lzscr-ast" }
 lzscr-lexer = { path = "../lzscr-lexer" }
 lzscr-preast = { path = "../lzscr-preast" }
-thiserror = "1"
+thiserror = "2"
