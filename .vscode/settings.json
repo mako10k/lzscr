@@ -1,4 +1,12 @@
 {
+  "editor.formatOnSave": true,
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+  },
+  "rust-analyzer.rustfmt.extraArgs": [
+    "--config-path",
+    "${workspaceFolder}/rustfmt.toml"
+  ],
   "github.copilot.chat.mcpServers": {
     "search": {
       "type": "stdio",
@@ -10,10 +18,10 @@
       "command": "mcp-shell-server",
       "args": []
     }
-},
-"chat.mcp.serverSampling": {
+  },
+  "chat.mcp.serverSampling": {
     "lzscr/.vscode/mcp.json: shell-server": {
-        "allowedDuringChat": true
+      "allowedDuringChat": true
     }
-}
+  }
 }

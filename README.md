@@ -103,3 +103,13 @@ cargo run -p lzscr-cli -- -e '1 + 2' --dump-coreir-json
 - Lint（Clippy）: `cargo clippy --all-targets -- -D warnings`
 - テスト: `cargo test`
 GitHub Actions で fmt/clippy/test を自動実行します（`.github/workflows/ci.yml`）。
+
+## コードフォーマット
+
+- 本リポジトリは `rustfmt.toml` により Rust のフォーマットを統一しています。
+- VS Code: 保存時に自動整形されます（`.vscode/settings.json`）。
+- 手動実行:
+
+```bash
+cargo fmt --all
+```
