@@ -104,6 +104,14 @@ struct Opt {
     #[arg(long = "fmt-width")]
     fmt_width: Option<usize>,
 
+    /// Disable loading the standard library prelude
+    #[arg(long = "no-stdlib", default_value_t = false)]
+    no_stdlib: bool,
+
+    /// Specify stdlib directory (default: ./stdlib)
+    #[arg(long = "stdlib-dir")]
+    stdlib_dir: Option<PathBuf>,
+
     /// Duplicate detection: minimum subtree size (nodes)
     #[arg(long = "dup-min-size", default_value_t = 3)]
     dup_min_size: usize,
@@ -116,7 +124,7 @@ struct Opt {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
     // Select input source: -e or --file
-    let (code, _from_file) = if let Some(c) = opt.eval {
+    let (mut code, _from_file) = if let Some(c) = opt.eval {
         (c, false)
     } else if let Some(ref p) = opt.file {
         let raw = fs::read_to_string(&p)?;
@@ -131,6 +139,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("no input; try -e '...' or --file path");
         return Ok(());
     };
+
+    // Preload stdlib (M1): prepend prelude as a let-group unless disabled or in formatting mode
+    let stdlib_enabled = !opt.no_stdlib && !opt.format_code;
+    if stdlib_enabled {
+        // Resolve stdlib dir
+        let dir = opt
+            .stdlib_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("stdlib"));
+        let prelude_path = dir.join("prelude.lzscr");
+        if let Ok(prelude_src) = fs::read_to_string(&prelude_path) {
+            // Combine as a let-group: ( prelude ; user )
+            // ユーザコードが既に括弧で包まれている場合でも安全側でネスト
+            code = format!("({}\n{} )", prelude_src, code);
+        } else {
+            eprintln!("warning: stdlib prelude not found at {} (use --stdlib-dir or --no-stdlib)", prelude_path.display());
+        }
+    }
 
     {
         // Formatting mode: run formatter first and exit

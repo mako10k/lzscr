@@ -1,0 +1,21 @@
+# lzscr stdlib prelude (M1)
+# 最低限の便利関数。将来段階的に拡充します。
+
+# 恒等・合成
+~id = \~x -> ~x;
+~compose = \~f -> \~g -> \~x -> ~f (~g ~x);
+
+# Bool ラップ（ランタイムの and/or/not を薄く包む例）
+~bool_and = \~a -> \~b -> ~and ~a ~b;
+~bool_or  = \~a -> \~b -> ~or ~a ~b;
+~bool_not = \~a -> ~not ~a;
+
+# Option 風（Ctor は .Some / .None を使用）。AltLambdaで分配。
+~option_is_some = \~o -> ((\ .Some _ -> ~true) | (\ .None -> ~false)) ~o;
+~option_map = \~f -> \~o -> ((\ .Some ~x -> .Some (~f ~x)) | (\ .None -> .None)) ~o;
+
+# List 長さ（簡易）: パターンラムダ + AltLambda
+~length = \~xs -> ((\[] -> 0) | (\( ~h : ~t ) -> 1 + (~length ~t))) ~xs;
+
+# String ヘルパ（to_str のみに留める）
+# 将来、明確な結合APIを導入するまで concat は提供しない

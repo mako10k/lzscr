@@ -68,6 +68,14 @@
 - 依存解決（M1）
   - 初期は単一ファイル `prelude.lzscr` に集約し、内部で関数定義のみ（import は未導入）。
 
+使用例:
+
+```bash
+cargo run -p lzscr-cli -- -e '~add 1 2'                 # stdlib 有効（デフォルト）
+cargo run -p lzscr-cli -- -e '~add 1 2' --no-stdlib     # stdlib を無効化
+cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
+```
+
 ## 命名規約とスタイル
 - snake_case（関数/変数）、UpperCamelCase（Ctor）
 - `prelude` に入れるのは曖昧さが少なく、使用頻度が高いものに限定

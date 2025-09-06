@@ -687,19 +687,42 @@ pub mod api {
             "alt".into(),
             Scheme { vars: vec![a, r], ty: alt_ty },
         );
-    // add : Int -> Int -> Int
-    let add_ty = Type::fun(Type::Int, Type::fun(Type::Int, Type::Int));
-    env.insert("add".into(), Scheme { vars: vec![], ty: add_ty });
-    // seq : forall a b. a -> b -> b
-    let a2 = TvId(1002);
-    let b2 = TvId(1003);
-    let seq_ty = Type::fun(Type::Var(a2), Type::fun(Type::Var(b2), Type::Var(b2)));
-    env.insert("seq".into(), Scheme { vars: vec![a2, b2], ty: seq_ty });
-    // effects : forall s a. s -> a -> Unit  (approximate; first arg is an effect symbol)
-    let s3 = TvId(1004);
-    let a3 = TvId(1005);
-    let eff_ty = Type::fun(Type::Var(s3), Type::fun(Type::Var(a3), Type::Unit));
-    env.insert("effects".into(), Scheme { vars: vec![s3, a3], ty: eff_ty });
+        // add : Int -> Int -> Int
+        let add_ty = Type::fun(Type::Int, Type::fun(Type::Int, Type::Int));
+        env.insert("add".into(), Scheme { vars: vec![], ty: add_ty });
+        // Boolean ops (approximate): and/or : Bool -> Bool -> Bool ; not : Bool -> Bool
+        // and/or : Bool -> Bool -> Bool
+        env.insert(
+            "and".into(),
+            Scheme { vars: vec![], ty: Type::fun(Type::Bool, Type::fun(Type::Bool, Type::Bool)) },
+        );
+        env.insert(
+            "or".into(),
+            Scheme { vars: vec![], ty: Type::fun(Type::Bool, Type::fun(Type::Bool, Type::Bool)) },
+        );
+        env.insert(
+            "not".into(),
+            Scheme { vars: vec![], ty: Type::fun(Type::Bool, Type::Bool) },
+        );
+        // boolean values
+        env.insert(
+            "true".into(),
+            Scheme { vars: vec![], ty: Type::Bool },
+        );
+        env.insert(
+            "false".into(),
+            Scheme { vars: vec![], ty: Type::Bool },
+        );
+        // seq : forall a b. a -> b -> b
+        let a2 = TvId(1002);
+        let b2 = TvId(1003);
+        let seq_ty = Type::fun(Type::Var(a2), Type::fun(Type::Var(b2), Type::Var(b2)));
+        env.insert("seq".into(), Scheme { vars: vec![a2, b2], ty: seq_ty });
+        // effects : forall s a. s -> a -> Unit  (approximate; first arg is an effect symbol)
+        let s3 = TvId(1004);
+        let a3 = TvId(1005);
+        let eff_ty = Type::fun(Type::Var(s3), Type::fun(Type::Var(a3), Type::Unit));
+        env.insert("effects".into(), Scheme { vars: vec![s3, a3], ty: eff_ty });
         env
     }
 }
