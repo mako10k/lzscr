@@ -191,6 +191,31 @@ impl Env {
             },
         );
 
+        // alt : (a -> r) -> (a -> r) -> a -> r
+        e.vars.insert(
+            "alt".into(),
+            Value::Native {
+                arity: 3,
+                args: vec![],
+                f: |env, args| {
+                    let lf = args[0].clone();
+                    let rf = args[1].clone();
+                    let av = args[2].clone();
+                    let res = apply_value(env, lf, av.clone())?;
+                    match res {
+                        Value::Raised(payload) => {
+                            if v_equal(env, &payload, &av) {
+                                apply_value(env, rf, av)
+                            } else {
+                                Ok(Value::Raised(payload))
+                            }
+                        }
+                        other => Ok(other),
+                    }
+                },
+            },
+        );
+
         e.vars.insert(
             "add".into(),
             Value::Native {
@@ -1479,6 +1504,44 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             }
         }
         ExprKind::Block(inner) => eval(env, inner),
+        ExprKind::AltLambda { left, right } => {
+            // Desugar to closure: \x -> (~alt left right x)
+            let param = Pattern::new(
+                PatternKind::Var("x".into()),
+                lzscr_ast::span::Span::new(0, 0),
+            );
+            let alt_ref = Expr::new(
+                ExprKind::Ref("alt".into()),
+                lzscr_ast::span::Span::new(0, 0),
+            );
+            let app1 = Expr::new(
+                ExprKind::Apply {
+                    func: Box::new(alt_ref),
+                    arg: left.clone(),
+                },
+                lzscr_ast::span::Span::new(0, 0),
+            );
+            let app2 = Expr::new(
+                ExprKind::Apply {
+                    func: Box::new(app1),
+                    arg: right.clone(),
+                },
+                lzscr_ast::span::Span::new(0, 0),
+            );
+            let x_ref = Expr::new(ExprKind::Ref("x".into()), lzscr_ast::span::Span::new(0, 0));
+            let body = Expr::new(
+                ExprKind::Apply {
+                    func: Box::new(app2),
+                    arg: Box::new(x_ref),
+                },
+                lzscr_ast::span::Span::new(0, 0),
+            );
+            Ok(Value::Closure {
+                param,
+                body,
+                env: env.clone(),
+            })
+        }
         ExprKind::OrElse { left, right } => {
             // 指定仕様: LHS の評価結果は捨て、RHS の評価結果を返す。
             // LHS が Raised でも捨てる。RHS が Raised なら全体が Raised。

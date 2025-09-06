@@ -38,6 +38,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             | ExprKind::Symbol(_) => 1,
             ExprKind::Raise(inner) => 1 + walk(inner, tbl),
             ExprKind::OrElse { left, right } => 1 + walk(left, tbl) + walk(right, tbl),
+            ExprKind::AltLambda { left, right } => 1 + walk(left, tbl) + walk(right, tbl),
             ExprKind::Catch { left, right } => 1 + walk(left, tbl) + walk(right, tbl),
             ExprKind::Lambda { body, .. } => 1 + walk(body, tbl),
             ExprKind::Apply { func, arg } => 1 + walk(func, tbl) + walk(arg, tbl),
@@ -62,6 +63,9 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             ExprKind::Raise(inner) => format!("raise[{}]", inner.span.len),
             ExprKind::OrElse { left, right } => {
                 format!("orelse({},{})", left.span.len, right.span.len)
+            }
+            ExprKind::AltLambda { left, right } => {
+                format!("altlam({},{})", left.span.len, right.span.len)
             }
             ExprKind::Catch { left, right } => {
                 format!("catch({},{})", left.span.len, right.span.len)
@@ -322,6 +326,10 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                 walk(left, scopes, allow, out);
                 walk(right, scopes, allow, out);
             }
+            ExprKind::AltLambda { left, right } => {
+                walk(left, scopes, allow, out);
+                walk(right, scopes, allow, out);
+            }
             ExprKind::Catch { left, right } => {
                 walk(left, scopes, allow, out);
                 walk(right, scopes, allow, out);
@@ -563,6 +571,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             ExprKind::List(xs) => xs.iter().any(|x| used_in(x, target)),
             ExprKind::Raise(inner) => used_in(inner, target),
             ExprKind::OrElse { left, right } => used_in(left, target) || used_in(right, target),
+            ExprKind::AltLambda { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::Catch { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::Block(inner) => used_in(inner, target),
             _ => false,
@@ -659,6 +668,10 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             }
             ExprKind::Raise(inner) => walk(inner, out),
             ExprKind::OrElse { left, right } => {
+                walk(left, out);
+                walk(right, out);
+            }
+            ExprKind::AltLambda { left, right } => {
                 walk(left, out);
                 walk(right, out);
             }

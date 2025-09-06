@@ -143,6 +143,27 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                 arg: Box::new(lower_expr_to_core(inner)),
             })
         }
+        ExprKind::AltLambda { left, right } => {
+            // Lower to \x -> ((~alt left) right) x
+            let x = "x".to_string();
+            let alt = Term::new(Op::Ref("alt".into()));
+            let app1 = Term::new(Op::App {
+                func: Box::new(alt),
+                arg: Box::new(lower_expr_to_core(left)),
+            });
+            let app2 = Term::new(Op::App {
+                func: Box::new(app1),
+                arg: Box::new(lower_expr_to_core(right)),
+            });
+            let body = Term::new(Op::App {
+                func: Box::new(app2),
+                arg: Box::new(Term::new(Op::Ref(x.clone()))),
+            });
+            Term::new(Op::Lam {
+                param: format!("~{}", x),
+                body: Box::new(body),
+            })
+        }
         ExprKind::OrElse { left, right } => {
             // Symbol("OR") left right を App 連鎖に
             let or = Term::new(Op::Symbol("OR".into()));
@@ -258,6 +279,63 @@ mod tests {
         match t.op {
             Op::Seq { .. } => {}
             _ => panic!("expected Seq"),
+        }
+    }
+
+    #[test]
+    fn lower_alt_lambda_to_alt_app_chain() {
+        use lzscr_ast::span::Span;
+        // (\~x -> ~x) | (\~y -> ~y)  ==>  \~x0 -> ((~alt (\~x -> ~x)) (\~y -> ~y)) ~x0
+        let lam_l = Expr::new(
+            ExprKind::Lambda {
+                param: Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
+                body: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+            },
+            Span::new(0, 0),
+        );
+        let lam_r = Expr::new(
+            ExprKind::Lambda {
+                param: Pattern::new(PatternKind::Var("y".into()), Span::new(0, 0)),
+                body: Box::new(Expr::new(ExprKind::Ref("y".into()), Span::new(0, 0))),
+            },
+            Span::new(0, 0),
+        );
+        let alt = Expr::new(
+            ExprKind::AltLambda {
+                left: Box::new(lam_l),
+                right: Box::new(lam_r),
+            },
+            Span::new(0, 0),
+        );
+        let t = lower_expr_to_core(&alt);
+        match t.op {
+            Op::Lam { param, body } => {
+                assert!(param.starts_with("~"));
+                // body must be App(App(App(Ref("alt"), left), right), Ref(param))
+                if let Op::App { func, arg } = &body.op {
+                    // last arg is the parameter ref
+                    match &arg.op {
+                        Op::Ref(_pn) => {}
+                        other => panic!("expected Ref param, got {:?}", other),
+                    }
+                    // unroll the func side: ((Ref alt) left) right
+                    if let Op::App { func: f2, arg: _right } = &func.op {
+                        if let Op::App { func: f1, arg: _left } = &f2.op {
+                            match &f1.op {
+                                Op::Ref(name) => assert_eq!(name, "alt"),
+                                other => panic!("expected Ref(alt), got {:?}", other),
+                            }
+                        } else {
+                            panic!("expected App in f2.func");
+                        }
+                    } else {
+                        panic!("expected App in body.func");
+                    }
+                } else {
+                    panic!("expected App at body root");
+                }
+            }
+            other => panic!("expected Lam at top, got {:?}", other),
         }
     }
 

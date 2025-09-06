@@ -423,7 +423,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 if !matches!(arr.tok, Tok::Arrow) {
                     return Err(ParseError::Generic("expected ->".into()));
                 }
-                let body = parse_expr_bp(i, toks, 0)?;
+                // Parse body with a higher binding power than '|' (which is 1),
+                // so that '\p -> e | g' parses as (\p -> e) | g, not \p -> (e | g).
+                let body = parse_expr_bp(i, toks, 2)?;
                 let span = Span::new(
                     t.span.offset,
                     body.span.offset + body.span.len - t.span.offset,
@@ -658,8 +660,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             let Some(nxt) = peek(*i, toks) else { break };
             // Pratt parser: handle infix precedence
             let (op_bp, op_kind) = match nxt.tok.clone() {
-                // lowest precedence for catch and or-else
-                Tok::PipePipe => (1, Some("||")),
+                // lowest precedence tier: catch (^|) handled specially below; '|' (alt-lambda) lower than '||' and '->'
+                Tok::Pipe => (1, Some("|")),
+                Tok::PipePipe => (2, Some("||")),
                 Tok::Colon => (6, Some(":")),
                 Tok::Plus => (10, Some("+")),
                 Tok::Minus => (10, Some("-")),
@@ -703,6 +706,35 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         span,
                     );
                     continue;
+                }
+                if op == "|" {
+                    // new alt-lambda: requires both sides to be lambdas syntactically
+                    let rhs = parse_expr_bp(i, toks, op_bp)?; // right-assoc: same bp for RHS
+                                                              // Validate shapes here; leave to analyzer/runtime if needed
+                    match (&lhs.kind, &rhs.kind) {
+                        (ExprKind::Lambda { .. }, ExprKind::Lambda { .. })
+                        | (ExprKind::Lambda { .. }, ExprKind::AltLambda { .. })
+                        | (ExprKind::AltLambda { .. }, ExprKind::Lambda { .. })
+                        | (ExprKind::AltLambda { .. }, ExprKind::AltLambda { .. }) => {
+                            let span = Span::new(
+                                lhs.span.offset,
+                                rhs.span.offset + rhs.span.len - lhs.span.offset,
+                            );
+                            lhs = Expr::new(
+                                ExprKind::AltLambda {
+                                    left: Box::new(lhs),
+                                    right: Box::new(rhs),
+                                },
+                                span,
+                            );
+                            continue;
+                        }
+                        _ => {
+                            return Err(ParseError::Generic(
+                                "'|' expects lambdas on both sides".into(),
+                            ));
+                        }
+                    }
                 }
                 if op == ":" {
                     // cons is right-associative; do not increase bp on RHS to keep right-assoc
@@ -778,7 +810,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     if matches!(n2.tok, Tok::Pipe) {
                         let _ = bump(i, toks); // consume '^'
                         let _ = bump(i, toks); // consume '|'
-                        let rhs = parse_expr_bp(i, toks, 2)?; // precedence slightly above '|'
+                        let rhs = parse_expr_bp(i, toks, 3)?; // slightly above '||' and '|'
                         let span = Span::new(
                             lhs.span.offset,
                             rhs.span.offset + rhs.span.len - lhs.span.offset,
@@ -953,6 +985,34 @@ mod tests {
                 other => panic!("expected Cons pattern, got {:?}", other),
             },
             _ => panic!("expected Lambda"),
+        }
+    }
+
+    #[test]
+    fn alt_lambda_requires_lambdas() {
+        let src = "(\\~x -> ~x) | 1";
+        let r = parse_expr(src);
+        assert!(matches!(r, Err(ParseError::Generic(msg)) if msg.contains("expects lambdas")));
+    }
+
+    #[test]
+    fn alt_lambda_right_assoc() {
+        let src = "\\~a -> ~a | \\~b -> ~b | \\~c -> ~c";
+        let r = parse_expr(src).unwrap();
+        // ensure it parses; structural checks covered in analyzer/runtime tests later
+        let _ = r;
+    }
+
+    #[test]
+    fn alt_lambda_lower_than_arrow() {
+        let src = "\\~x -> ~x | \\~y -> ~y";
+        let r = parse_expr(src).unwrap();
+        match r.kind {
+            ExprKind::AltLambda { left, right } => {
+                matches!(left.kind, ExprKind::Lambda { .. });
+                matches!(right.kind, ExprKind::Lambda { .. });
+            }
+            other => panic!("expected AltLambda at top, got {:?}", other),
         }
     }
 

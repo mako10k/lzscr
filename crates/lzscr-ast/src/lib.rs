@@ -74,10 +74,16 @@ pub mod ast {
         },
         // Exceptions / control
         Raise(Box<Expr>), // ^(Expr)
+        // Alternative lambda composition: (\p1 -> e1) | (\p2 -> e2)
+        // Right-associative, lower precedence than || and ->
+        AltLambda {
+            left: Box<Expr>,
+            right: Box<Expr>,
+        },
         OrElse {
             left: Box<Expr>,
             right: Box<Expr>,
-        }, // a | b
+        }, // a || b
         Catch {
             left: Box<Expr>,
             right: Box<Expr>,
@@ -173,6 +179,9 @@ pub mod pretty {
                 format!("({} {})", bs, print_expr(body))
             }
             ExprKind::Raise(inner) => format!("^({})", print_expr(inner)),
+            ExprKind::AltLambda { left, right } => {
+                format!("({} | {})", print_expr(left), print_expr(right))
+            }
             ExprKind::OrElse { left, right } => {
                 format!("({} || {})", print_expr(left), print_expr(right))
             }
