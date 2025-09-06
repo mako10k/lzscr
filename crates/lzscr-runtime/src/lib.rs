@@ -1268,7 +1268,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             TypeExpr::Float => "Float".into(),
             TypeExpr::Bool => "Bool".into(),
             TypeExpr::Str => "Str".into(),
-            TypeExpr::Var(a) => format!("'{}", a),
+            TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(Some(a)) => format!("?{}", a),
             TypeExpr::Hole(opt) => {
                 if let Some(a) = opt { format!("?{}", a) } else { "?".into() }

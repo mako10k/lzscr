@@ -67,7 +67,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             TypeExpr::Float => "Float".into(),
             TypeExpr::Bool => "Bool".into(),
             TypeExpr::Str => "Str".into(),
-            TypeExpr::Var(a) => format!("'{}", a),
+            TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(opt) => {
                 if let Some(a) = opt { format!("?{}", a) } else { "?".into() }
             }

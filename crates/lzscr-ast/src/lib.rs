@@ -29,7 +29,7 @@ pub mod ast {
         Record(Vec<(String, TypeExpr)>),
         Fun(Box<TypeExpr>, Box<TypeExpr>),
         Ctor { tag: String, args: Vec<TypeExpr> },
-        Var(String),             // 'a 等（構文は %{...} 内でのみ）
+    Var(String),             // %a 等（構文は %{...} 内でのみ）
         Hole(Option<String>),    // ? または ?a
     }
 
@@ -234,7 +234,7 @@ pub mod pretty {
             TypeExpr::Float => "Float".into(),
             TypeExpr::Bool => "Bool".into(),
             TypeExpr::Str => "Str".into(),
-            TypeExpr::Var(a) => format!("'{}", a),
+            TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(opt) => {
                 if let Some(a) = opt { format!("?{}", a) } else { "?".into() }
             }
