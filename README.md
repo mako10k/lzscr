@@ -68,7 +68,10 @@ cargo run -p lzscr-cli -- -e '(\~x -> ~x) 1' --no-typecheck
 
 メモ:
 - 裸シンボル（`.Foo` など）は Ctor（名前付きコンテナ）。`--ctor-arity` でアリティ宣言すると、過剰適用や 0 引数誤用を実行時で検出します。
-- strict-effects は実装済みです。`--strict-effects` 有効時は、効果は `(~seq a b)` の第2引数（effect 文脈）でのみ許可されます。
+- strict-effects は実装済みです。`--strict-effects` 有効時は、効果は以下の特別形の文脈でのみ許可されます。
+	- `(~seq a b)`: `a` は純粋、`b` は effect 文脈で評価。
+	- `(~chain a b)`: `a` と `b` を順に実行し、`b` の値を返す（両方 effect 文脈）。
+	- `(~bind e k)`: `e` を実行して値を得て、継続 `k` に渡して実行（両方 effect 文脈）。
 	- 効果 API は `(~effects .sym)` から取得します。糖衣構文 `!sym` は `(~effects .sym)` へ展開されます（例: `!println`, `!print`）。
 
 効果の例:
@@ -79,6 +82,27 @@ cargo run -p lzscr-cli -- -e '!println "hello"'
 
 # strict-effects: seq の第2引数でのみ効果可
 cargo run -p lzscr-cli -- -e '(~seq () (!println "hello"))' -s
+
+# do 記法（糖衣）
+
+`!{ ... }` は `~chain`/`~bind` の連鎖に展開される do 記法です。複数の式文と 1 つの最終式を記述できます。
+
+```
+!{
+	_ <- !println "start";   # 式の結果は捨てる
+	x <- !{ !println "work"; 1 + 2 };  # バインド
+	!println "done";         # 中間式
+	x + 4                     # 最終式（返り値）
+}
+```
+
+上は概念的に次に相当します:
+
+```
+(~bind (!println "start") (\_ ->
+ (~bind (!{ !println "work"; 1 + 2 }) (\x ->
+	(~chain (!println "done") (x + 4)))))
+```
 ```
 
 静的解析（言語レベル AST）:

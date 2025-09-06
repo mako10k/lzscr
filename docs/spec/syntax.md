@@ -33,6 +33,16 @@
 ### 糖衣構文
 
 - 効果: `!println` → `(~effects .println)`
+
+## do 記法と逐次実行
+
+- `!{ ... }` は逐次実行の糖衣。
+  - 文法: `stmt ::= pat <- expr ; | expr ;`
+  - ブロックは 0 個以上の文（末尾 `;` 任意の式文を含む）と、最後に 1 個の最終式を持つ。
+  - 展開規則:
+    - 末尾式 `E` は `(~bind E (\x -> x))` に変換（値を返す）
+    - `expr; ACC` は `(~chain expr ACC)`
+    - `pat <- expr; ACC` は `(~bind expr (\pat -> ACC))`
 - 真偽値: `true()` → `~true`, `false()` → `~false`
 - コンストラクタ値: `.Foo 1 2` → `Ctor("Foo", [1,2])`
 

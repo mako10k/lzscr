@@ -21,6 +21,12 @@ Rust製の PoC CLI。式の評価・静的解析・Core IR ダンプを提供。
 
 - `(~seq () (!println "x"))` を IR テキストで出力:
   - `lzscr-cli -e "(~seq () (!println \"x\"))" --dump-coreir`
+
+- do 記法の評価例:
+  - `lzscr-cli -e "!{ _ <- !println \"a\"; !println \"b\"; 1 + 2 }" -s`
+
+- chain/bind を直接使う例:
+  - `lzscr-cli -e "(~chain (!println \"a\") (~bind 1 (\\x -> x)))" -s`
 - 解析を JSON で:
   - `lzscr-cli -e "(\\x -> x) 1" --analyze --format json`
 

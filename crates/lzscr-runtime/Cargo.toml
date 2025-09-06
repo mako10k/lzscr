@@ -7,3 +7,6 @@ license = "MIT"
 [dependencies]
 lzscr-ast = { path = "../lzscr-ast" }
 thiserror = "1"
+
+[dev-dependencies]
+lzscr-parser = { path = "../lzscr-parser" }

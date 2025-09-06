@@ -431,6 +431,7 @@ name = "lzscr-runtime"
 version = "0.1.0"
 dependencies = [
  "lzscr-ast",
+ "lzscr-parser",
  "thiserror",
 ]
 

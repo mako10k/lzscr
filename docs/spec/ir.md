@@ -12,6 +12,7 @@
 
 ロワリング `lower_expr_to_core(&Expr) -> Term`:
 - ASTの `(~seq a b)` を `Seq { first=a, second=b }` へ変換。
+ - `(~chain a b)`, `(~bind e k)` は現在は AST 特別形として評価器が処理（将来的に IR 化を検討）。
 - それ以外は同形にマッピング。
 
 テキスト化:

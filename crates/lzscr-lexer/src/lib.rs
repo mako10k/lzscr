@@ -77,6 +77,8 @@ pub enum Tok {
     // Comparison operators (longer first)
     #[token("<=")]
     LessEq,
+    #[token("<-")]
+    LeftArrow,
     #[token("<")]
     Less,
     #[token(">=")]

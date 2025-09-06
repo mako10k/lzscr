@@ -15,7 +15,7 @@
 - シンタックスシュガー（現在の既定ルートモジュールは `prelude`）:
 	- `~~sym` → `(~prelude sym)`（純粋 API の短縮）
 	- `!sym` → `(~prelude .env .sym)`（効果 API の短縮。例: `!println`, `!require`, `!def`）
-	- `!{ ... }` → `chain/bind/return` への展開（do 記法相当）。
+	- `!{ ... }` → `chain/bind` への展開（do 記法相当）。
 	- ルートモジュールは CLI/環境変数で切替可能（互換のため当面は `--sugar-namespace` を使用）。
  	- 例外系糖衣: `^(Expr)` は Bottom を投げる（raise）。`Expr ^| <lamchain>` は左からの Bottom を捕捉（caret パターンで束縛）。
 - 実行セマンティクス:

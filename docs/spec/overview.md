@@ -8,5 +8,6 @@
   - ビルトイン: to_str, add, sub, eq, lt, seq, effects(.print/.println)
   - strict-effects: 有効時、効果は(~seq a b)の第2引数文脈でのみ許可。
   - 糖衣: !sym → (~effects .sym), .name はシンボル（Symbol）として扱う。
+  - 逐次の糖衣: !{ … } → chain/bind 連鎖。
 - 解析: 重複検出/未束縛参照/シャドウ/未使用引数（CLI --analyze）
 - ツール: CLI（-e評価、--strict-effects、--analyze、--format json、--dump-coreir、--dump-coreir-json）。CIでfmt/clippy/test/audit/deny/coverage。

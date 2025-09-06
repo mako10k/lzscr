@@ -541,7 +541,84 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 }
             }
             Tok::Bang => {
-                // !sym  =>  (~effects .sym)
+                // Two forms:
+                // - !sym  =>  (~effects .sym)
+                // - !{ do-notation } => desugar to chain/bind chaining
+                if let Some(nxt) = peek(*i, toks) {
+                    if matches!(nxt.tok, Tok::LBrace) {
+                        let _l = bump(i, toks).unwrap(); // consume '{'
+                        // Parse statements until '}'
+                        enum DoStmt { Bind(Pattern, Expr), Expr(Expr) }
+                        let mut stmts: Vec<DoStmt> = Vec::new();
+                        let mut final_expr: Option<Expr> = None;
+                        loop {
+                            let Some(cur) = peek(*i, toks) else {
+                                return Err(ParseError::Generic("} expected".into()));
+                            };
+                            if matches!(cur.tok, Tok::RBrace) {
+                                let r = bump(i, toks).unwrap();
+                                let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset);
+                                // Desugar to nested ~chain/~bind
+                                let mut acc = final_expr.ok_or_else(|| ParseError::Generic("empty do-block".into()))?;
+                                // Base case for last expression: (~bind acc (\x -> x)) to run in effect-context and yield value
+                                let x_pat = Pattern::new(PatternKind::Var("_x_do".into()), acc.span);
+                                let id_lam_span = Span::new(acc.span.offset, acc.span.offset + acc.span.len - acc.span.offset);
+                                let id_lam = Expr::new(ExprKind::Lambda { param: x_pat, body: Box::new(Expr::new(ExprKind::Ref("_x_do".into()), acc.span)) }, id_lam_span);
+                                let bind_ref = Expr::new(ExprKind::Ref("bind".into()), t.span);
+                                let app_b1 = Expr::new(ExprKind::Apply { func: Box::new(bind_ref), arg: Box::new(acc) }, span_all);
+                                acc = Expr::new(ExprKind::Apply { func: Box::new(app_b1), arg: Box::new(id_lam) }, span_all);
+                                for stmt in stmts.into_iter().rev() {
+                                    match stmt {
+                                        DoStmt::Expr(e) => {
+                                            let chain_ref = Expr::new(ExprKind::Ref("chain".into()), t.span);
+                                            let app_c1 = Expr::new(ExprKind::Apply { func: Box::new(chain_ref), arg: Box::new(e) }, span_all);
+                                            acc = Expr::new(ExprKind::Apply { func: Box::new(app_c1), arg: Box::new(acc) }, span_all);
+                                        }
+                                        DoStmt::Bind(p, e) => {
+                                            let bind_ref = Expr::new(ExprKind::Ref("bind".into()), t.span);
+                                            let lam_span = Span::new(p.span.offset, acc.span.offset + acc.span.len - p.span.offset);
+                                            let lam = Expr::new(ExprKind::Lambda { param: p, body: Box::new(acc) }, lam_span);
+                                            let app_b1 = Expr::new(ExprKind::Apply { func: Box::new(bind_ref), arg: Box::new(e) }, span_all);
+                                            acc = Expr::new(ExprKind::Apply { func: Box::new(app_b1), arg: Box::new(lam) }, span_all);
+                                        }
+                                    }
+                                }
+                                return Ok(acc);
+                            }
+                            // Try to parse a pattern <- expr ;
+                            let before = *i;
+                            if let Ok(pat) = parse_pattern(i, toks) {
+                                if let Some(arrow) = peek(*i, toks) {
+                                    if matches!(arrow.tok, Tok::LeftArrow) {
+                                        let _ = bump(i, toks); // consume <-
+                                        let ex = parse_expr_bp(i, toks, 0)?;
+                                        let semi = bump(i, toks).ok_or_else(|| ParseError::Generic("; expected after <- expr".into()))?;
+                                        if !matches!(semi.tok, Tok::Semicolon) {
+                                            return Err(ParseError::Generic("; expected after <- expr".into()));
+                                        }
+                                        stmts.push(DoStmt::Bind(pat, ex));
+                                        continue;
+                                    }
+                                }
+                                // not a '<-' after pattern: backtrack; treat as body expr
+                                *i = before;
+                            }
+                            // Parse an expression statement; if followed by ';', it's a sequencing expr; otherwise it's the final expr
+                            let ex = parse_expr_bp(i, toks, 0)?;
+                            if let Some(semi) = peek(*i, toks) {
+                                if matches!(semi.tok, Tok::Semicolon) {
+                                    let _ = bump(i, toks);
+                                    stmts.push(DoStmt::Expr(ex));
+                                    continue;
+                                }
+                            }
+                            if final_expr.is_some() {
+                                return Err(ParseError::Generic("unexpected extra expression in do-block".into()));
+                            }
+                            final_expr = Some(ex);
+                        }
+                    }
+                }
                 let id = bump(i, toks)
                     .ok_or_else(|| ParseError::Generic("expected ident after !".into()))?;
                 if !matches!(id.tok, Tok::Ident) {

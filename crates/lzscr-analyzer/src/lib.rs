@@ -175,7 +175,7 @@ pub fn default_allowlist() -> HashSet<String> {
     // Builtins available via ~name (keep in sync with runtime)
     [
         "to_str", "add", "sub", "mul", "div", "fadd", "fsub", "fmul", "fdiv", "lt", "le", "gt",
-        "ge", "eq", "ne", "flt", "fle", "fgt", "fge", "and", "or", "not", "if", "seq", "effects",
+        "ge", "eq", "ne", "flt", "fle", "fgt", "fge", "and", "or", "not", "if", "seq", "chain", "bind", "effects",
         "Tuple", "Record", "KV", "Bool", "cons",
     ]
     .iter()

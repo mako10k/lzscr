@@ -576,7 +576,7 @@ impl Env {
             },
         );
 
-        // seq は特別扱いで評価順を制御するため、Native としては不要だが参照解決のために登録はしておく
+        // seq/chain/bind は特別扱いで評価順を制御するため、Native としては不要だが参照解決のために登録はしておく
         e.vars.insert(
             "seq".into(),
             Value::Native {
@@ -584,6 +584,14 @@ impl Env {
                 args: vec![],
                 f: |_env, args| Ok(args[1].clone()),
             },
+        );
+        e.vars.insert(
+            "chain".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| Ok(args[1].clone()) },
+        );
+        e.vars.insert(
+            "bind".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| Ok(args[1].clone()) },
         );
 
         // effects: .sym -> effect function (guarded by strict-effects)
@@ -1587,7 +1595,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             env: env.clone(),
         }),
         ExprKind::Apply { func, arg } => {
-            // Special form: (~seq a b) controls effect-context for b
+            // Special forms controlling effect-context
             if let ExprKind::Apply {
                 func: seq_ref_expr,
                 arg: a_expr,
@@ -1599,6 +1607,23 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         let mut env2 = env.clone();
                         env2.in_effect_context = true;
                         return eval(&env2, arg);
+                    }
+                    if seq_name == "chain" {
+                        // (~chain a b): evaluate a for effects, then evaluate b in effect-context
+                        let _ = eval(env, a_expr)?;
+                        let mut env2 = env.clone();
+                        env2.in_effect_context = true;
+                        return eval(&env2, arg);
+                    }
+                    if seq_name == "bind" {
+                        // (~bind e k): run e, then apply k to its value under effect-context
+                        let v = eval(env, a_expr)?;
+                        if let Value::Raised(_) = v { return Ok(v); }
+                        let mut env2 = env.clone();
+                        env2.in_effect_context = true;
+                        let k = eval(&env2, arg)?;
+                        if let Value::Raised(_) = k { return Ok(k); }
+                        return apply_value(&env2, k, v);
                     }
                 }
             }

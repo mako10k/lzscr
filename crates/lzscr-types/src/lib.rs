@@ -530,6 +530,22 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
                         let s = s2.compose(s1);
                         return Ok((t2.apply(&s), s));
                     }
+                    if seq_name == "chain" {
+                        // (~chain a b): allow effects in both a and b; result type is type of b
+                        let (_t1, s1) = infer_expr(ctx, first, true)?;
+                        let (t2, s2) = infer_expr(ctx, arg, true)?;
+                        let s = s2.compose(s1);
+                        return Ok((t2.apply(&s), s));
+                    }
+                    if seq_name == "bind" {
+                        // (~bind e k): allow effects in both e and k; unify k : te -> r
+                        let (te, se) = infer_expr(ctx, first, true)?;
+                        let (tk, sk) = infer_expr(ctx, arg, true)?;
+                        let r = ctx.tv.fresh();
+                        let s1 = unify(&tk.apply(&sk).apply(&se), &Type::fun(te.apply(&sk).apply(&se), r.clone()))?;
+                        let s = s1.compose(sk).compose(se);
+                        return Ok((r.apply(&s), s));
+                    }
                 }
             }
             let (tf, sf) = infer_expr(ctx, func, allow_effects)?;
@@ -807,6 +823,16 @@ pub mod api {
         let b2 = TvId(1003);
         let seq_ty = Type::fun(Type::Var(a2), Type::fun(Type::Var(b2), Type::Var(b2)));
         env.insert("seq".into(), Scheme { vars: vec![a2, b2], ty: seq_ty });
+    // chain : forall a b. a -> b -> b
+    let a4 = TvId(1006);
+    let b4 = TvId(1007);
+    let chain_ty = Type::fun(Type::Var(a4), Type::fun(Type::Var(b4), Type::Var(b4)));
+    env.insert("chain".into(), Scheme { vars: vec![a4, b4], ty: chain_ty });
+    // bind : forall x r. x -> (x -> r) -> r
+    let x5 = TvId(1008);
+    let r5 = TvId(1009);
+    let bind_ty = Type::fun(Type::Var(x5), Type::fun(Type::fun(Type::Var(x5), Type::Var(r5)), Type::Var(r5)));
+    env.insert("bind".into(), Scheme { vars: vec![x5, r5], ty: bind_ty });
         // effects : forall s a. s -> a -> Unit  (approximate; first arg is an effect symbol)
         let s3 = TvId(1004);
         let a3 = TvId(1005);

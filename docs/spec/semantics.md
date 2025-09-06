@@ -7,7 +7,10 @@
     - Native: 逐次カリー化、arity到達で実行。剰余は過剰適用処理。
     - Closure: `param` に値束縛して `body` を評価。
     - Symbol: 未飽和関数様として保持（PoC段階）。
-  - 特別形: `(~seq a b)` は `a` を評価後、`b` を effect-context で評価。
+  - 特別形:
+    - `(~seq a b)` は `a` を評価後、`b` を effect-context で評価。
+    - `(~chain a b)` は `a` を評価後、`b` を effect-context で評価し、その値を返す。
+    - `(~bind e k)` は `e` を評価して値 `v` を得て、`k` を effect-context で評価したのち `k v` を適用して返す。
   - 効果: `(~effects .sym)` で効果関数を取得。
     - `.print`/`.println` を実装。
     - strict-effects時、effect-context外では `EffectNotAllowed`。
