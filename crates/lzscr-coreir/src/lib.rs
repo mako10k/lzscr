@@ -36,6 +36,14 @@ pub enum Op {
         first: Box<Term>,
         second: Box<Term>,
     },
+    Chain {
+        first: Box<Term>,
+        second: Box<Term>,
+    },
+    Bind {
+        value: Box<Term>,
+        cont: Box<Term>,
+    },
     // Recursive let-group to reflect lazy, mutually recursive semantics
     LetRec {
         bindings: Vec<(String, Term)>,
@@ -255,6 +263,28 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                     }
                 }
             }
+            // desugar (~chain a b) into Chain
+            if let ExprKind::Apply { func: chain_ref_expr, arg: a_expr } = &func.kind {
+                if let ExprKind::Ref(chain_name) = &chain_ref_expr.kind {
+                    if chain_name == "chain" {
+                        return Term::new(Op::Chain {
+                            first: Box::new(lower_expr_to_core(a_expr)),
+                            second: Box::new(lower_expr_to_core(arg)),
+                        });
+                    }
+                }
+            }
+            // desugar (~bind e k) into Bind
+            if let ExprKind::Apply { func: bind_ref_expr, arg: e_expr } = &func.kind {
+                if let ExprKind::Ref(bind_name) = &bind_ref_expr.kind {
+                    if bind_name == "bind" {
+                        return Term::new(Op::Bind {
+                            value: Box::new(lower_expr_to_core(e_expr)),
+                            cont: Box::new(lower_expr_to_core(arg)),
+                        });
+                    }
+                }
+            }
             Term::new(Op::App {
                 func: Box::new(lower_expr_to_core(func)),
                 arg: Box::new(lower_expr_to_core(arg)),
@@ -276,6 +306,8 @@ pub fn print_term(t: &Term) -> String {
         Op::Lam { param, body } => format!("\\{} -> {}", param, print_term(body)),
         Op::App { func, arg } => format!("({} {})", print_term(func), print_term(arg)),
         Op::Seq { first, second } => format!("(~seq {} {})", print_term(first), print_term(second)),
+    Op::Chain { first, second } => format!("(~chain {} {})", print_term(first), print_term(second)),
+    Op::Bind { value, cont } => format!("(~bind {} {})", print_term(value), print_term(cont)),
         Op::LetRec { bindings, body } => {
             let inner = bindings
                 .iter()
@@ -400,5 +432,56 @@ mod tests {
         let t = lower_expr_to_core(&e);
         let s = print_term(&t);
         assert!(s.contains("letrec"));
+    }
+
+    #[test]
+    fn lower_chain_and_bind() {
+        use lzscr_ast::span::Span;
+        // (~chain 1 (~bind 2 (\~x -> ~x)))
+        let chain_ref = Expr::new(ExprKind::Ref("chain".into()), Span::new(0, 0));
+        let bind_ref = Expr::new(ExprKind::Ref("bind".into()), Span::new(0, 0));
+        let one = Expr::new(ExprKind::Int(1), Span::new(0, 0));
+        let two = Expr::new(ExprKind::Int(2), Span::new(0, 0));
+        let lam = Expr::new(
+            ExprKind::Lambda {
+                param: Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
+                body: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+            },
+            Span::new(0, 0),
+        );
+        let bind_2 = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(
+                    ExprKind::Apply { func: Box::new(bind_ref), arg: Box::new(two) },
+                    Span::new(0, 0),
+                )),
+                arg: Box::new(lam),
+            },
+            Span::new(0, 0),
+        );
+        let chain_expr = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(
+                    ExprKind::Apply { func: Box::new(chain_ref), arg: Box::new(one) },
+                    Span::new(0, 0),
+                )),
+                arg: Box::new(bind_2),
+            },
+            Span::new(0, 0),
+        );
+        let t = lower_expr_to_core(&chain_expr);
+        match &t.op {
+            Op::Chain { first, second } => {
+                match &first.op { Op::Int(1) => {}, other => panic!("expected Int(1), got {:?}", other) }
+                match &second.op {
+                    Op::Bind { value, cont: _ } => match &value.op { Op::Int(2) => {}, other => panic!("expected Int(2), got {:?}", other) },
+                    other => panic!("expected Bind, got {:?}", other),
+                }
+            }
+            other => panic!("expected Chain root, got {:?}", other),
+        }
+        let s = print_term(&t);
+        assert!(s.contains("~chain"));
+        assert!(s.contains("~bind"));
     }
 }
