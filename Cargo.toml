@@ -7,6 +7,7 @@ members = [
   "crates/lzscr-analyzer",
   "crates/lzscr-coreir",
   "crates/lzscr-cli",
+  "crates/lzscr-types",
 ]
 resolver = "2"
 
