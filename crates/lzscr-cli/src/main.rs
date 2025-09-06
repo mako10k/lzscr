@@ -323,13 +323,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             env.strict_effects = true;
         }
         let val = eval(&env, &ast).map_err(|e| format!("{e}"))?;
-        fn val_to_string(env: &Env, v: &Value) -> String {
+    fn val_to_string(env: &Env, v: &Value) -> String {
             match v {
                 Value::Unit => "()".into(),
                 Value::Int(n) => n.to_string(),
                 Value::Float(f) => f.to_string(),
-                Value::Bool(b) => b.to_string(),
-                Value::Str(s) => s.clone(),
+        Value::Bool(b) => b.to_string(),
+        Value::Str(s) => s.to_string(),
+        Value::Char(c) => c.to_string(),
                 Value::Symbol(id) => env.symbol_name(*id),
                 Value::Raised(b) => format!("^({})", val_to_string(env, b)),
                 Value::Thunk { .. } => "<thunk>".into(),

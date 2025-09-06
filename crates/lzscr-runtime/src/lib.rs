@@ -1,4 +1,56 @@
 use lzscr_ast::ast::*;
+use std::sync::Arc;
+
+// Runtime string: shared UTF-8 buffer with slice (start,len)
+#[derive(Debug, Clone)]
+pub struct RtStr {
+    pub data: Arc<Vec<u8>>, // whole buffer
+    pub start: usize,        // byte offset
+    pub len: usize,          // byte length
+}
+
+impl RtStr {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.data[self.start..self.start + self.len]
+    }
+    pub fn to_string(&self) -> String {
+        // Strings created from parser are valid UTF-8; fall back to lossless if ever not
+        std::str::from_utf8(self.as_bytes())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|_| String::from_utf8_lossy(self.as_bytes()).into_owned())
+    }
+    pub fn eq_str(&self, s: &str) -> bool {
+        self.as_bytes() == s.as_bytes()
+    }
+    pub fn char_count(&self) -> usize {
+        std::str::from_utf8(self.as_bytes())
+            .map(|s| s.chars().count())
+            .unwrap_or_else(|_| String::from_utf8_lossy(self.as_bytes()).chars().count())
+    }
+}
+
+impl std::fmt::Display for RtStr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.to_string(), f)
+    }
+}
+
+impl PartialEq for RtStr {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_bytes() == other.as_bytes()
+    }
+}
+impl Eq for RtStr {}
+impl PartialEq<String> for RtStr {
+    fn eq(&self, other: &String) -> bool {
+        self.as_bytes() == other.as_bytes()
+    }
+}
+impl PartialEq<&str> for RtStr {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_bytes() == other.as_bytes()
+    }
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum EvalError {
@@ -23,7 +75,10 @@ pub enum Value {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Str(String),
+    // Sliceable runtime string (UTF-8 bytes; may contain NUL). Semantics: list of Char(codepoint).
+    Str(RtStr),
+    // Codepoint character (integer). Conversions with Int via builtins.
+    Char(i32),
     // Simple immutable containers (PoC)
     List(Vec<Value>),
     Tuple(Vec<Value>),
@@ -82,6 +137,8 @@ pub struct Env {
     // symbol interning
     pub sym_intern: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, u32>>>,
     pub sym_rev: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    // string interning: map full string to shared byte buffer
+    pub str_intern: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, Arc<Vec<u8>>>>>,
 }
 
 // Default is derived
@@ -95,6 +152,7 @@ impl Env {
             ctor_arity: std::collections::HashMap::new(),
             sym_intern: std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new())),
             sym_rev: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+            str_intern: std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new())),
         }
     }
 
@@ -116,6 +174,19 @@ impl Env {
             .get(id as usize)
             .cloned()
             .unwrap_or("<sym?>".to_string())
+    }
+
+    pub fn intern_string<S: AsRef<str>>(&self, s: S) -> RtStr {
+        let key = s.as_ref();
+        if let Some(buf) = self.str_intern.borrow().get(key) {
+            return RtStr { data: buf.clone(), start: 0, len: buf.len() };
+        }
+        let bytes = key.as_bytes().to_vec();
+        let arc = Arc::new(bytes);
+        self.str_intern
+            .borrow_mut()
+            .insert(key.to_string(), arc.clone());
+        RtStr { data: arc, start: 0, len: key.as_bytes().len() }
     }
 
     pub fn declare_ctor_arity(&mut self, name: &str, arity: usize) {
@@ -168,7 +239,7 @@ impl Env {
                 args: vec![],
                 f: |env, args| {
                     let v = &args[0];
-                    Ok(Value::Str(to_str_like(env, v)))
+                    Ok(Value::Str(env.intern_string(to_str_like(env, v))))
                 },
             },
         );
@@ -530,7 +601,7 @@ impl Env {
                 arity: 1,
                 args: vec![],
                 f: |_env, args| match &args[0] {
-                    Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
+                    Value::Str(s) => Ok(Value::Int(s.char_count() as i64)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -540,8 +611,10 @@ impl Env {
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Str(a), Value::Str(b)) => Ok(Value::Str(format!("{}{}", a, b))),
+                f: |env, args| match (&args[0], &args[1]) {
+                    (Value::Str(a), Value::Str(b)) => {
+                        Ok(Value::Str(env.intern_string(format!("{}{}", a, b))))
+                    }
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -562,6 +635,31 @@ impl Env {
         let mut builtins: BTreeMap<String, Value> = BTreeMap::new();
         builtins.insert("string".into(), Value::Record(string_ns));
         builtins.insert("math".into(), Value::Record(math_ns));
+        // unicode/codepoint namespace (Char conversions)
+        let mut uni_ns: BTreeMap<String, Value> = BTreeMap::new();
+        uni_ns.insert(
+            "of_int".into(),
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |_env, args| match &args[0] {
+                    Value::Int(n) => Ok(Value::Char(*n as i32)),
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+        uni_ns.insert(
+            "to_int".into(),
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |_env, args| match &args[0] {
+                    Value::Char(c) => Ok(Value::Int(*c as i64)),
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+        builtins.insert("unicode".into(), Value::Record(uni_ns));
     e.vars.insert("Builtins".into(), Value::Record(builtins));
 
         // Tuple/Record constructors used by parser sugar
@@ -586,12 +684,13 @@ impl Env {
                 f: |_env, args| match &args[0] {
                     Value::Unit => Ok(Value::Record(std::collections::BTreeMap::new())),
                     Value::Tuple(kvs) => {
-                        let mut map = std::collections::BTreeMap::new();
+                        let mut map: std::collections::BTreeMap<String, Value> =
+                            std::collections::BTreeMap::new();
                         for kv in kvs {
                             match kv {
                                 Value::Tuple(xs) if xs.len() == 2 => {
                                     if let Value::Str(k) = &xs[0] {
-                                        map.insert(k.clone(), xs[1].clone());
+                                        map.insert(k.to_string(), xs[1].clone());
                                     } else {
                                         return Err(EvalError::TypeError);
                                     }
@@ -602,12 +701,13 @@ impl Env {
                         Ok(Value::Record(map))
                     }
                     Value::Ctor { name, args } if name == ".," => {
-                        let mut map = std::collections::BTreeMap::new();
+                        let mut map: std::collections::BTreeMap<String, Value> =
+                            std::collections::BTreeMap::new();
                         for kv in args {
                             match kv {
                                 Value::Tuple(xs) if xs.len() == 2 => {
                                     if let Value::Str(k) = &xs[0] {
-                                        map.insert(k.clone(), xs[1].clone());
+                                        map.insert(k.to_string(), xs[1].clone());
                                     } else {
                                         return Err(EvalError::TypeError);
                                     }
@@ -724,8 +824,9 @@ fn to_str_like(env: &Env, v: &Value) -> String {
         Value::Unit => "()".into(),
         Value::Int(n) => n.to_string(),
         Value::Float(f) => f.to_string(),
-        Value::Bool(b) => b.to_string(),
-        Value::Str(s) => s.clone(),
+    Value::Bool(b) => b.to_string(),
+    Value::Str(s) => s.to_string(),
+    Value::Char(c) => c.to_string(),
         Value::Symbol(id) => env.symbol_name(*id),
         Value::Raised(b) => format!("^({})", to_str_like(env, b)),
         Value::Ctor { name, args } => {
@@ -837,6 +938,10 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 print!("{}", b);
                 Ok(Value::Unit)
             }
+            Value::Char(c) => {
+                print!("{}", c);
+                Ok(Value::Unit)
+            }
             Value::Symbol(id) => {
                 print!("{}", env.symbol_name(id));
                 Ok(Value::Unit)
@@ -932,6 +1037,10 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 println!("{}", b);
                 Ok(Value::Unit)
             }
+            Value::Char(c) => {
+                println!("{}", c);
+                Ok(Value::Unit)
+            }
             Value::Symbol(id) => {
                 println!("{}", env.symbol_name(id));
                 Ok(Value::Unit)
@@ -1008,8 +1117,9 @@ fn v_equal(_env: &Env, a: &Value, b: &Value) -> bool {
         (Value::Unit, Value::Unit) => true,
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Float(x), Value::Float(y)) => x == y,
-        (Value::Bool(x), Value::Bool(y)) => x == y,
-        (Value::Str(x), Value::Str(y)) => x == y,
+    (Value::Bool(x), Value::Bool(y)) => x == y,
+    (Value::Str(x), Value::Str(y)) => x == y,
+    (Value::Char(x), Value::Char(y)) => x == y,
         (Value::Symbol(x), Value::Symbol(y)) => x == y,
         (Value::Ctor { name: na, args: aa }, Value::Ctor { name: nb, args: ab }) => {
             na == nb
@@ -1103,7 +1213,7 @@ fn match_pattern(
             _ => None,
         },
         PatternKind::Str(st) => match &v {
-            Value::Str(s2) if s2 == st => Some(HashMap::new()),
+            Value::Str(s2) if s2.eq_str(st) => Some(HashMap::new()),
             _ => None,
         },
         PatternKind::Bool(b) => match &v {
@@ -1346,10 +1456,10 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
     }
     match &e.kind {
         ExprKind::Annot { ty: _, expr } => eval(env, expr),
-        ExprKind::TypeVal(ty) => Ok(Value::Str(print_type_expr(ty))),
+    ExprKind::TypeVal(ty) => Ok(Value::Str(env.intern_string(print_type_expr(ty)))),
         ExprKind::Unit => Ok(Value::Unit),
         ExprKind::Int(n) => Ok(Value::Int(*n)),
-        ExprKind::Str(s) => Ok(Value::Str(s.clone())),
+    ExprKind::Str(s) => Ok(Value::Str(env.intern_string(s))),
         ExprKind::Float(f) => Ok(Value::Float(*f)),
         ExprKind::LetGroup { bindings, body } => {
             // 遅延束縛により非関数の再帰もサポート
