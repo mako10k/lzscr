@@ -5,6 +5,7 @@ use lzscr_analyzer::{
 };
 use lzscr_coreir::{lower_expr_to_core, print_term};
 use lzscr_parser::parse_expr;
+use lzscr_ast::{ast::*, pretty::print_expr};
 use lzscr_runtime::{eval, Env, Value};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -112,6 +113,10 @@ struct Opt {
     #[arg(long = "stdlib-dir")]
     stdlib_dir: Option<PathBuf>,
 
+    /// Additional module search paths (colon-separated)
+    #[arg(long = "module-path")]
+    module_path: Option<String>,
+
     /// Duplicate detection: minimum subtree size (nodes)
     #[arg(long = "dup-min-size", default_value_t = 3)]
     dup_min_size: usize,
@@ -142,13 +147,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Preload stdlib (M1): prepend prelude as a let-group unless disabled or in formatting mode
     let stdlib_enabled = !opt.no_stdlib && !opt.format_code;
+    // Compute stdlib dir (may be used by ~require search paths)
+    let resolved_stdlib_dir = opt
+        .stdlib_dir
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("stdlib"));
     if stdlib_enabled {
         // Resolve stdlib dir
-        let dir = opt
-            .stdlib_dir
-            .clone()
-            .unwrap_or_else(|| PathBuf::from("stdlib"));
-        let prelude_path = dir.join("prelude.lzscr");
+        let prelude_path = resolved_stdlib_dir.join("prelude.lzscr");
         if let Ok(prelude_src) = fs::read_to_string(&prelude_path) {
             // Combine as a let-group: ( prelude ; user )
             // ユーザコードが既に括弧で包まれている場合でも安全側でネスト
@@ -180,6 +186,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("format error: {}", e);
                     std::process::exit(2);
                 }
+            }
+        }
+
+        // Expand ~require before parsing for subsequent phases (dump/analyze/exec)
+        let module_search_paths = build_module_search_paths(&resolved_stdlib_dir, opt.module_path.as_deref());
+        match expand_requires_in_source(&code, &module_search_paths) {
+            Ok(expanded) => {
+                code = expanded;
+            }
+            Err(e) => {
+                eprintln!("require error: {}", e);
+                std::process::exit(2);
             }
         }
 
@@ -366,4 +384,157 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{out}");
         return Ok(());
     }
+}
+
+// ---------- ~require expansion ----------
+
+fn build_module_search_paths(stdlib_dir: &PathBuf, module_path: Option<&str>) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    // 1) current directory
+    paths.push(PathBuf::from("."));
+    // 2) stdlib dir (may not exist)
+    paths.push(stdlib_dir.clone());
+    // 3) user-provided module-path (colon-separated)
+    if let Some(spec) = module_path {
+        for seg in spec.split(':') {
+            if seg.is_empty() { continue; }
+            paths.push(PathBuf::from(seg));
+        }
+    }
+    paths
+}
+
+fn expand_requires_in_source(src: &str, search_paths: &[PathBuf]) -> Result<String, String> {
+    let ast = parse_expr(src).map_err(|e| format!("parse error before require expansion: {e}"))?;
+    let mut stack: Vec<String> = Vec::new();
+    let expanded = expand_requires_in_expr(&ast, search_paths, &mut stack)?;
+    Ok(print_expr(&expanded))
+}
+
+fn expand_requires_in_expr(e: &Expr, search_paths: &[PathBuf], stack: &mut Vec<String>) -> Result<Expr, String> {
+    match match_require_call(e) {
+        Some(Ok(segs)) => {
+        let rel = segs.join("/") + ".lzscr";
+        let (path, content) = resolve_module_content(&rel, search_paths)?;
+        let canon = match std::fs::canonicalize(&path) {
+            Ok(p) => p.display().to_string(),
+            Err(_) => path.display().to_string(),
+        };
+        if stack.contains(&canon) {
+            return Err(format!("cyclic require detected: {} -> ... -> {}", stack.first().cloned().unwrap_or_default(), canon));
+        }
+        stack.push(canon);
+        // Wrap like file rule: ( <content> )
+        let wrapped = format!("({})", content);
+        let parsed = parse_expr(&wrapped).map_err(|e| format!("parse error in required module '{}': {e}", rel))?;
+        let expanded = expand_requires_in_expr(&parsed, search_paths, stack)?;
+        stack.pop();
+        return Ok(expanded);
+        }
+        Some(Err(msg)) => {
+            return Err(msg);
+        }
+        None => {}
+    }
+    // Otherwise, recurse children
+    use ExprKind::*;
+    let k = match &e.kind {
+        Unit | Int(_) | Float(_) | Str(_) | Ref(_) | Symbol(_) | TypeVal(_) => e.kind.clone(),
+        Annot { ty, expr } => Annot { ty: ty.clone(), expr: Box::new(expand_requires_in_expr(expr, search_paths, stack)?) },
+        Lambda { param, body } => Lambda { param: param.clone(), body: Box::new(expand_requires_in_expr(body, search_paths, stack)?) },
+        Apply { func, arg } => Apply {
+            func: Box::new(expand_requires_in_expr(func, search_paths, stack)?),
+            arg: Box::new(expand_requires_in_expr(arg, search_paths, stack)?),
+        },
+        Block(inner) => Block(Box::new(expand_requires_in_expr(inner, search_paths, stack)?)),
+        List(xs) => List(xs.iter().map(|x| expand_requires_in_expr(x, search_paths, stack)).collect::<Result<Vec<_>, _>>()?),
+        LetGroup { bindings, body } => {
+            let mut new_bs = Vec::with_capacity(bindings.len());
+            for (p, ex) in bindings.iter() {
+                new_bs.push((p.clone(), expand_requires_in_expr(ex, search_paths, stack)?));
+            }
+            LetGroup { bindings: new_bs, body: Box::new(expand_requires_in_expr(body, search_paths, stack)?) }
+        }
+        Raise(inner) => Raise(Box::new(expand_requires_in_expr(inner, search_paths, stack)?)),
+        AltLambda { left, right } => AltLambda {
+            left: Box::new(expand_requires_in_expr(left, search_paths, stack)?),
+            right: Box::new(expand_requires_in_expr(right, search_paths, stack)?),
+        },
+        OrElse { left, right } => OrElse {
+            left: Box::new(expand_requires_in_expr(left, search_paths, stack)?),
+            right: Box::new(expand_requires_in_expr(right, search_paths, stack)?),
+        },
+        Catch { left, right } => Catch {
+            left: Box::new(expand_requires_in_expr(left, search_paths, stack)?),
+            right: Box::new(expand_requires_in_expr(right, search_paths, stack)?),
+        },
+    };
+    Ok(Expr { kind: k, span: e.span })
+}
+
+fn match_require_call(e: &Expr) -> Option<Result<Vec<String>, String>> {
+    // Recognize application chain ((~require .a) .b) .c
+    fn collect_apply<'a>(mut cur: &'a Expr, out_args: &mut Vec<&'a Expr>) -> &'a Expr {
+        loop {
+            match &cur.kind {
+                ExprKind::Apply { func, arg } => {
+                    out_args.push(arg);
+                    cur = func;
+                }
+                _ => break cur,
+            }
+        }
+    }
+    let mut args = Vec::new();
+    let callee = collect_apply(e, &mut args);
+    match &callee.kind {
+        ExprKind::Ref(name) if name == "require" => {
+            if args.is_empty() { return Some(Err("~require expects at least one .segment".into())); }
+            let mut segs = Vec::with_capacity(args.len());
+            for a in args.into_iter().rev() {
+                match &a.kind {
+                    ExprKind::Symbol(s) if s.starts_with('.') && s.len() > 1 => {
+                        segs.push(s[1..].to_string());
+                    }
+                    other => {
+                        return Some(Err(format!("~require expects only ctor-dot symbols (.name); got {}", node_kind_name(other))));
+                    }
+                }
+            }
+            Some(Ok(segs))
+        }
+        _ => None,
+    }
+}
+
+fn node_kind_name(k: &ExprKind) -> &'static str {
+    match k {
+        ExprKind::Unit => "Unit",
+        ExprKind::Int(_) => "Int",
+        ExprKind::Float(_) => "Float",
+        ExprKind::Str(_) => "Str",
+        ExprKind::Ref(_) => "Ref",
+        ExprKind::Symbol(_) => "Symbol",
+        ExprKind::Annot { .. } => "Annot",
+        ExprKind::TypeVal(_) => "TypeVal",
+        ExprKind::Lambda { .. } => "Lambda",
+        ExprKind::Apply { .. } => "Apply",
+        ExprKind::Block(_) => "Block",
+        ExprKind::List(_) => "List",
+        ExprKind::LetGroup { .. } => "LetGroup",
+        ExprKind::Raise(_) => "Raise",
+        ExprKind::AltLambda { .. } => "AltLambda",
+        ExprKind::OrElse { .. } => "OrElse",
+        ExprKind::Catch { .. } => "Catch",
+    }
+}
+
+fn resolve_module_content(rel_path: &str, search_paths: &[PathBuf]) -> Result<(PathBuf, String), String> {
+    for root in search_paths {
+        let p = root.join(rel_path);
+        if let Ok(s) = fs::read_to_string(&p) {
+            return Ok((p, s));
+        }
+    }
+    Err(format!("module not found: {} (searched in: {})", rel_path, search_paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(":")))
 }
