@@ -163,3 +163,8 @@ VS Code 側で「Extensions > … > Install from VSIX…」から生成した VS
 - lzscr.maxWidth: 最大行幅ヒント（既定: 100）
 
 これらは CLI 呼び出し時に `--fmt-indent` / `--fmt-width` として連携されます。
+
+## 標準ライブラリ（計画）
+
+本格的なプログラミングのために、stdlib を段階的に整備します。方針・モジュール構成・ロードマップは `docs/stdlib.md` を参照してください。
+初期段階では CLI によるプリロード方式で提供し、将来的に import 構文を導入します。
