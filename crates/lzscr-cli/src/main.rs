@@ -8,6 +8,8 @@ use lzscr_parser::parse_expr;
 use lzscr_runtime::{eval, Env, Value};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::fs;
 
 fn parse_ctor_arity_spec(spec: &str) -> (HashMap<String, usize>, Vec<String>) {
     let mut map = HashMap::new();
@@ -54,6 +56,10 @@ struct Opt {
     #[arg(short = 'e', long = "eval")]
     eval: Option<String>,
 
+    /// Execute program from file
+    #[arg(short = 'f', long = "file")]
+    file: Option<PathBuf>,
+
     /// Enforce strict-effects (placeholder; runtime enforcement TBD)
     #[arg(short = 's', long = "strict-effects", default_value_t = false)]
     strict_effects: bool,
@@ -97,7 +103,19 @@ struct Opt {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
-    if let Some(code) = opt.eval {
+    // Select input source: -e or --file
+    let (code, _from_file) = if let Some(c) = opt.eval {
+        (c, false)
+    } else if let Some(p) = opt.file {
+        let raw = fs::read_to_string(&p)?;
+        // Wrap in parens so top-level becomes a let-block when it contains bindings
+        (format!("({})", raw), true)
+    } else {
+        eprintln!("no input; try -e '...' or --file path");
+        return Ok(());
+    };
+
+    {
         let ast = parse_expr(&code).map_err(|e| format!("{}", e))?;
         // Core IR dump modes take precedence over analyze/execute
         if opt.dump_coreir || opt.dump_coreir_json {
@@ -187,7 +205,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             return Ok(());
         }
-        // Optional typechecking phase
+    // Optional typechecking phase
         if !opt.no_typecheck {
             let ty_res = lzscr_types::api::infer_program(&code);
             match ty_res {
@@ -206,8 +224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-
-        let mut env = Env::with_builtins();
+    let mut env = Env::with_builtins();
         if let Some(spec) = &opt.ctor_arity {
             let (parsed, warns) = parse_ctor_arity_spec(spec);
             for w in warns {
@@ -282,6 +299,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{out}");
         return Ok(());
     }
-    eprintln!("no input; try -e '...'");
-    Ok(())
 }

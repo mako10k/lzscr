@@ -32,6 +32,28 @@ cargo run -p lzscr-cli -- -e '{a: 1, b: 2}'
 
 cargo run -p lzscr-cli -- -e 'if true() 10 20'
 # => 10
+
+## ファイルからの実行 (--file)
+
+1ファイルの式/バインディング群を評価できます。CLI はファイル内容を括弧で囲み、先頭や末尾の `~x = ...;` 形式のバインディングを let グループとして扱います。
+
+```
+echo '~x = 1; ~add ~x 2;' > /tmp/a.lzs
+cargo run -p lzscr-cli -- --file /tmp/a.lzs
+# => 3
+```
+
+## 型チェック (Hindley–Milner 推論)
+
+実行前に簡易型推論を行います。失敗時はエラー終了します。出力は pretty か json を選べます。
+
+```
+cargo run -p lzscr-cli -- -e '(\~x -> ~x) 1' --types pretty
+cargo run -p lzscr-cli -- -e '(\~x -> ~x) 1' --types json
+
+# 型チェックをスキップ
+cargo run -p lzscr-cli -- -e '(\~x -> ~x) 1' --no-typecheck
+```
 ```
 
 メモ:
