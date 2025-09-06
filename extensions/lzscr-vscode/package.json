@@ -1,0 +1,70 @@
+{
+  "name": "lzscr-vscode",
+  "displayName": "lzscr Language Support",
+  "description": "Syntax highlighting and formatting for lzscr (.lzscr).",
+  "version": "0.0.1",
+  "publisher": "mako10k",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages", "Formatters"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "lzscr",
+        "aliases": ["lzscr", "LZSCR"],
+        "extensions": [".lzscr"],
+        "mimetypes": ["text/vnd.lzscr"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lzscr",
+        "scopeName": "source.lzscr",
+        "path": "./syntaxes/lzscr.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "lzscr.formatDocument",
+        "title": "lzscr: Format Document"
+      }
+    ],
+    "configuration": {
+      "title": "lzscr",
+      "properties": {
+        "lzscr.formatterPath": {
+          "type": "string",
+          "default": "lzscr-cli",
+          "description": "Path to lzscr CLI used for formatting (must support --format-code)."
+        },
+        "lzscr.maxWidth": {
+          "type": "number",
+          "default": 100,
+          "description": "Target max line width for formatting (hint to the formatter)."
+        },
+        "lzscr.indent": {
+          "type": "number",
+          "default": 2,
+          "description": "Indent size in spaces for formatter."
+        }
+      }
+    }
+  },
+  "main": "./dist/extension.js",
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+  "@types/node": "^18.19.0",
+  "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.4.0",
+  "vsce": "^2.15.0"
+  }
+}

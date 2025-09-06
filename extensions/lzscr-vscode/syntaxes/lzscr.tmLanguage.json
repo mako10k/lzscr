@@ -1,0 +1,47 @@
+{
+  "scopeName": "source.lzscr",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.lzscr", "match": "//.*$" },
+        {
+          "name": "comment.block.lzscr",
+          "begin": "\\{-",
+          "end": "-\\}",
+          "patterns": [ { "include": "#comments" } ]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.lzscr",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.lzscr", "match": "\\\\." }
+          ]
+        },
+        { "name": "string.quoted.single.lzscr", "begin": "'", "end": "'" }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.float.lzscr", "match": "\\b[0-9]+\\.[0-9]+\\b" },
+        { "name": "constant.numeric.integer.lzscr", "match": "\\b[0-9]+\\b" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.lzscr", "match": "\\b(let|in|if|then|else|match|with|fun|rec)\\b" },
+        { "name": "keyword.operator.lzscr", "match": "[+\\-*/=<>|:&^.]" }
+      ]
+    }
+  }
+}

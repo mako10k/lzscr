@@ -134,6 +134,32 @@ cargo run -p lzscr-cli -- -e '1 + 2 * 3' --format-code
 
 # ファイル（.lzscr）
 cargo run -p lzscr-cli -- --file /path/to/code.lzscr --format-code
+
+# オプション（幅やインデント）
+cargo run -p lzscr-cli -- --file /path/to/code.lzscr --format-code --fmt-indent 4 --fmt-width 120
 ```
 
 注意: 現段階では構文糖衣の展開（例: 中置演算子が関数適用形へ）を反映した出力になります。将来的に人間向けの整形ルールを拡充予定です。
+
+## VS Code 拡張 (VSIX) の生成とインストール
+
+本リポジトリには `extensions/lzscr-vscode` に VS Code 拡張のひな型が含まれます。`.lzscr` のハイライトとフォーマットを提供します。
+
+生成手順:
+
+```bash
+# 依存関係の導入と VSIX パッケージ生成
+cd extensions/lzscr-vscode
+npm ci
+npm run package
+# カレントに lzscr-vscode-*.vsix が出力されます
+```
+
+VS Code 側で「Extensions > … > Install from VSIX…」から生成した VSIX を選択してください。
+
+拡張設定:
+- lzscr.formatterPath: CLI 実行パス（既定: lzscr-cli）
+- lzscr.indent: インデント幅（既定: 2）
+- lzscr.maxWidth: 最大行幅ヒント（既定: 100）
+
+これらは CLI 呼び出し時に `--fmt-indent` / `--fmt-width` として連携されます。

@@ -96,6 +96,14 @@ struct Opt {
     #[arg(long = "format-code", default_value_t = false)]
     format_code: bool,
 
+    /// Formatter indent width (spaces)
+    #[arg(long = "fmt-indent")]
+    fmt_indent: Option<usize>,
+
+    /// Formatter max line width
+    #[arg(long = "fmt-width")]
+    fmt_width: Option<usize>,
+
     /// Duplicate detection: minimum subtree size (nodes)
     #[arg(long = "dup-min-size", default_value_t = 3)]
     dup_min_size: usize,
@@ -112,32 +120,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (c, false)
     } else if let Some(ref p) = opt.file {
         let raw = fs::read_to_string(&p)?;
-        // Wrap in parens so top-level becomes a let-block when it contains bindings
-        (format!("({})", raw), true)
+        if opt.format_code {
+            // For formatting, keep raw; formatter has its own file-aware handling
+            (raw, true)
+        } else {
+            // Wrap in parens so top-level becomes a let-block when it contains bindings
+            (format!("({})", raw), true)
+        }
     } else {
         eprintln!("no input; try -e '...' or --file path");
         return Ok(());
     };
 
     {
-        let ast = parse_expr(&code).map_err(|e| format!("{}", e))?;
-        // Core IR dump modes take precedence over analyze/execute
-        if opt.dump_coreir || opt.dump_coreir_json {
-            let term = lower_expr_to_core(&ast);
-            if opt.dump_coreir_json {
-                println!("{}", serde_json::to_string_pretty(&term)?);
-            } else {
-                println!("{}", print_term(&term));
-            }
-            return Ok(());
-        }
+        // Formatting mode: run formatter first and exit
         if opt.format_code {
             let from_file = opt.file.is_some();
-            // If input was from --file, use file-aware formatting (drop outer parens)
+            let fmt_opts = lzscr_format::FormatOptions {
+                indent: opt.fmt_indent.unwrap_or(2),
+                max_width: opt.fmt_width.unwrap_or(100),
+            };
             let out = if from_file {
-                lzscr_format::format_file_source(&code)
+                lzscr_format::format_file_source_with_options(&code, fmt_opts)
             } else {
-                lzscr_format::format_source(&code)
+                lzscr_format::format_source_with_options(&code, fmt_opts)
             };
             match out {
                 Ok(s) => {
@@ -149,6 +155,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::process::exit(2);
                 }
             }
+        }
+
+        let ast = parse_expr(&code).map_err(|e| format!("{}", e))?;
+        // Core IR dump modes take precedence over analyze/execute
+        if opt.dump_coreir || opt.dump_coreir_json {
+            let term = lower_expr_to_core(&ast);
+            if opt.dump_coreir_json {
+                println!("{}", serde_json::to_string_pretty(&term)?);
+            } else {
+                println!("{}", print_term(&term));
+            }
+            return Ok(());
         }
     if opt.analyze {
             #[derive(Serialize)]
