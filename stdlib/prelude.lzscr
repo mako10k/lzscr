@@ -19,3 +19,14 @@
 
 # String ヘルパ（to_str のみに留める）
 # 将来、明確な結合APIを導入するまで concat は提供しない
+
+# Builtins 経由の委譲（推奨: ユーザは Builtins を直接参照せず prelude を使う）
+~Str  = ~Builtins .string;
+~Math = ~Builtins .math;
+
+{
+	string: ~Str;
+	math: ~Math;
+
+	str_len: ~Str .len;
+}

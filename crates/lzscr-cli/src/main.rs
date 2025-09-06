@@ -412,6 +412,11 @@ fn expand_requires_in_source(src: &str, search_paths: &[PathBuf]) -> Result<Stri
 }
 
 fn expand_requires_in_expr(e: &Expr, search_paths: &[PathBuf], stack: &mut Vec<String>) -> Result<Expr, String> {
+    // First, handle ~builtin path: expand to a Ref of a generated alias name.
+    if let Some(alias) = match_builtin_call(e) {
+        return Ok(Expr { kind: ExprKind::Ref(alias), span: e.span });
+    }
+    // Next, handle ~require expansion
     match match_require_call(e) {
         Some(Ok(segs)) => {
         let rel = segs.join("/") + ".lzscr";
@@ -502,6 +507,40 @@ fn match_require_call(e: &Expr) -> Option<Result<Vec<String>, String>> {
                 }
             }
             Some(Ok(segs))
+        }
+        _ => None,
+    }
+}
+
+fn match_builtin_call(e: &Expr) -> Option<String> {
+    // Recognize (~builtin .a .b .c) and turn into Ref("builtin_a_b_c")
+    fn collect_apply<'a>(mut cur: &'a Expr, out_args: &mut Vec<&'a Expr>) -> &'a Expr {
+        loop {
+            match &cur.kind {
+                ExprKind::Apply { func, arg } => {
+                    out_args.push(arg);
+                    cur = func;
+                }
+                _ => break cur,
+            }
+        }
+    }
+    let mut args = Vec::new();
+    let callee = collect_apply(e, &mut args);
+    match &callee.kind {
+        ExprKind::Ref(name) if name == "builtin" => {
+            if args.is_empty() { return Some("builtin".to_string()); }
+            let mut segs = Vec::with_capacity(args.len());
+            for a in args.into_iter().rev() {
+                match &a.kind {
+                    ExprKind::Symbol(s) if s.starts_with('.') && s.len() > 1 => {
+                        segs.push(s[1..].to_string());
+                    }
+                    _ => return None,
+                }
+            }
+            let alias = format!("builtin_{}", segs.join("_"));
+            Some(alias)
         }
         _ => None,
     }

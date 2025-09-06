@@ -68,6 +68,7 @@
   - 関数合成 `(~compose f g x) = f (g x)`、恒等 `(~id x) = x`
   - 比較/ブール: `and/or/not` の薄いラップ（短絡挙動は保持）
   - Option/Result の代表関数の再エクスポート
+  - Builtins 委譲方針: ランタイムのビルトインは `~Builtins` レコードに名前空間で集約し、ユーザコードは原則 `prelude` 経由で参照（例: `~Str = ~Builtins .string;`）
 - option
   - 構築子: `.Some x`, `.None`
   - `is_some`, `is_none`, `map`, `and_then`, `unwrap_or`
@@ -123,7 +124,8 @@ cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
  - 自己ホスト準備: 文字列スライスや文字クラスの恒等性/境界条件（UTF-8 での境界クランプ）に関する性質テスト、簡易トークナイザ PoC の受入テスト
 
 ## ロードマップ（実装タスク）
-- [ ] stdlib ディレクトリ作成: `stdlib/prelude.lzscr`（空の雛形）
+- [x] stdlib ディレクトリ作成: `stdlib/prelude.lzscr`（雛形作成・Builtins 委譲を開始）
+- [x] ランタイムに `~Builtins` レコード導入（namespaces: string/math）し、prelude から委譲
 - [ ] Rust ランタイムに最小ビルトインを追加（str_len/str_concat/str_slice/str_cmp/str_codepoint_at/str_from_codepoint、cp_* 判定、算術/比較の公開整理）
 - [ ] CLI: `--no-stdlib` / `--stdlib-dir` フラグ追加、プリロード実装
 - [ ] M0 API 実装: list/string/unicode(codepoint)/option/result の最小セット（lzscr 実装）

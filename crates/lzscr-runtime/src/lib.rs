@@ -519,6 +519,50 @@ impl Env {
                 },
             },
         );
+        // ---------------- Builtins record (namespaced access, prefer stdlib delegation) ----------------
+        use std::collections::BTreeMap;
+
+        // string namespace
+        let mut string_ns: BTreeMap<String, Value> = BTreeMap::new();
+        string_ns.insert(
+            "len".into(),
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |_env, args| match &args[0] {
+                    Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+        string_ns.insert(
+            "concat".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Str(a), Value::Str(b)) => Ok(Value::Str(format!("{}{}", a, b))),
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+
+        // math namespace (reuse existing natives where possible)
+        let mut math_ns: BTreeMap<String, Value> = BTreeMap::new();
+        for name in [
+            "add", "sub", "mul", "div", // int
+            "fadd", "fsub", "fmul", "fdiv", // float
+            "eq", "lt", "le", "gt", "ge",
+        ] {
+            if let Some(v) = e.vars.get(name).cloned() {
+                math_ns.insert(name.to_string(), v);
+            }
+        }
+
+        let mut builtins: BTreeMap<String, Value> = BTreeMap::new();
+        builtins.insert("string".into(), Value::Record(string_ns));
+        builtins.insert("math".into(), Value::Record(math_ns));
+    e.vars.insert("Builtins".into(), Value::Record(builtins));
 
         // Tuple/Record constructors used by parser sugar
         // Tuple sugar is now handled via special symbol '.,' directly; keep 'Tuple' for compatibility if needed.
