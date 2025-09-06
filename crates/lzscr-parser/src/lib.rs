@@ -1,5 +1,6 @@
 use lzscr_ast::{ast::*, span::Span};
 use lzscr_lexer::{lex, Tok};
+use lzscr_preast as preast;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
@@ -8,8 +9,12 @@ pub enum ParseError {
 }
 
 pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
+    // Phase 0: PRE-AST (preserve comments, prepare token stream)
+    let _pre = preast::to_preast(src).map_err(|e| ParseError::Generic(e.to_string()))?;
     // Minimal, direct token-based parser for a subset: ints, strings, refs, idents, lambda, apply, block
-    let tokens = lex(src);
+    let mut tokens = lex(src);
+    // Drop comments for parsing; they are handled in PRE-AST/formatter layer
+    tokens.retain(|t| !matches!(t.tok, Tok::CommentLine | Tok::CommentBlock));
     let mut i = 0usize;
 
     fn peek<'a>(

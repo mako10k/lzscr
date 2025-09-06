@@ -368,6 +368,7 @@ dependencies = [
  "lzscr-analyzer",
  "lzscr-ast",
  "lzscr-coreir",
+ "lzscr-format",
  "lzscr-parser",
  "lzscr-runtime",
  "lzscr-types",
@@ -386,6 +387,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lzscr-format"
+version = "0.1.0"
+dependencies = [
+ "lzscr-ast",
+ "lzscr-parser",
+ "lzscr-preast",
+ "thiserror",
+]
+
+[[package]]
 name = "lzscr-lexer"
 version = "0.1.0"
 dependencies = [
@@ -401,6 +412,17 @@ dependencies = [
  "chumsky",
  "lzscr-ast",
  "lzscr-lexer",
+ "lzscr-preast",
+ "thiserror",
+]
+
+[[package]]
+name = "lzscr-preast"
+version = "0.1.0"
+dependencies = [
+ "lzscr-ast",
+ "lzscr-lexer",
+ "serde",
  "thiserror",
 ]
 

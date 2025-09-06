@@ -8,6 +8,8 @@ members = [
   "crates/lzscr-coreir",
   "crates/lzscr-cli",
   "crates/lzscr-types",
+  "crates/lzscr-format",
+  "crates/lzscr-preast",
 ]
 resolver = "2"
 

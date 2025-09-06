@@ -104,7 +104,7 @@ pub mod ast {
 
 pub mod pretty {
     use crate::ast::*;
-    fn print_pattern(p: &Pattern) -> String {
+    pub fn print_pattern(p: &Pattern) -> String {
         match &p.kind {
             PatternKind::Wildcard => "_".into(),
             PatternKind::Var(n) => format!("~{}", n),

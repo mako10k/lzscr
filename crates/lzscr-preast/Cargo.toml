@@ -1,0 +1,11 @@
+[package]
+name = "lzscr-preast"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+lzscr-lexer = { path = "../lzscr-lexer" }
+lzscr-ast = { path = "../lzscr-ast" }
+thiserror = "1"

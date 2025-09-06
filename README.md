@@ -123,3 +123,17 @@ GitHub Actions で fmt/clippy/test を自動実行します（`.github/workflows
 ```bash
 cargo fmt --all
 ```
+
+### lzscr ソースのフォーマット（実験的）
+
+最小の lzscr フォーマッタ（AST による pretty print）を同梱しています。
+
+```bash
+# 1行式
+cargo run -p lzscr-cli -- -e '1 + 2 * 3' --format-code
+
+# ファイル（.lzscr）
+cargo run -p lzscr-cli -- --file /path/to/code.lzscr --format-code
+```
+
+注意: 現段階では構文糖衣の展開（例: 中置演算子が関数適用形へ）を反映した出力になります。将来的に人間向けの整形ルールを拡充予定です。

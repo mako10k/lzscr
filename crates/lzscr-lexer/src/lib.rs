@@ -3,9 +3,15 @@ use lzscr_ast::span::Span;
 
 #[derive(Debug, Logos, PartialEq, Clone)]
 pub enum Tok {
+    // Whitespace is skipped
     #[regex(r"[ \t\r\n]+", logos::skip)]
-    #[regex(r"#[^\n]*", logos::skip)]
+    _Whitespace,
+
+    // Comments are preserved in token stream
+    #[regex(r"#[^\n]*")]
     CommentLine,
+    #[regex(r"\{-", parse_block_comment)]
+    CommentBlock,
 
     #[token("{")]
     LBrace,
@@ -124,6 +130,21 @@ fn parse_string(lex: &mut Lexer<Tok>) -> Option<String> {
         }
     }
     Some(out)
+}
+
+fn parse_block_comment(lex: &mut Lexer<Tok>) -> Option<()> {
+    // We have just matched "{-"; consume until the next "-}" (non-nested)
+    if let Some(pos) = lex.remainder().find("-}") {
+        lex.bump(pos + 2);
+        Some(())
+    } else {
+        // Unterminated: consume the rest
+        let len = lex.remainder().len();
+        if len > 0 {
+            lex.bump(len);
+        }
+        Some(())
+    }
 }
 
 #[derive(Debug, Clone)]

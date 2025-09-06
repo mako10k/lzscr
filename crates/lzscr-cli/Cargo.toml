@@ -12,6 +12,7 @@ lzscr-runtime = { path = "../lzscr-runtime" }
 lzscr-analyzer = { path = "../lzscr-analyzer" }
 lzscr-coreir = { path = "../lzscr-coreir" }
 lzscr-types = { path = "../lzscr-types" }
+lzscr-format = { path = "../lzscr-format" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

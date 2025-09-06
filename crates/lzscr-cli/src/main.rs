@@ -92,6 +92,10 @@ struct Opt {
     #[arg(long = "format", default_value = "text")]
     format: String,
 
+    /// Format code instead of executing (pretty-print)
+    #[arg(long = "format-code", default_value_t = false)]
+    format_code: bool,
+
     /// Duplicate detection: minimum subtree size (nodes)
     #[arg(long = "dup-min-size", default_value_t = 3)]
     dup_min_size: usize,
@@ -106,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Select input source: -e or --file
     let (code, _from_file) = if let Some(c) = opt.eval {
         (c, false)
-    } else if let Some(p) = opt.file {
+    } else if let Some(ref p) = opt.file {
         let raw = fs::read_to_string(&p)?;
         // Wrap in parens so top-level becomes a let-block when it contains bindings
         (format!("({})", raw), true)
@@ -126,6 +130,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", print_term(&term));
             }
             return Ok(());
+        }
+        if opt.format_code {
+            let from_file = opt.file.is_some();
+            // If input was from --file, use file-aware formatting (drop outer parens)
+            let out = if from_file {
+                lzscr_format::format_file_source(&code)
+            } else {
+                lzscr_format::format_source(&code)
+            };
+            match out {
+                Ok(s) => {
+                    println!("{}", s);
+                    return Ok(());
+                }
+                Err(e) => {
+                    eprintln!("format error: {}", e);
+                    std::process::exit(2);
+                }
+            }
         }
     if opt.analyze {
             #[derive(Serialize)]
