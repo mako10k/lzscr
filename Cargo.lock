@@ -348,6 +348,7 @@ dependencies = [
  "lzscr-coreir",
  "lzscr-parser",
  "lzscr-runtime",
+ "lzscr-types",
  "predicates",
  "serde",
  "serde_json",
@@ -393,6 +394,7 @@ name = "lzscr-types"
 version = "0.1.0"
 dependencies = [
  "lzscr-ast",
+ "lzscr-parser",
  "serde",
  "thiserror",
 ]

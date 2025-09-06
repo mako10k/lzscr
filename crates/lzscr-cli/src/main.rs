@@ -70,6 +70,14 @@ struct Opt {
     #[arg(long = "dump-coreir-json", default_value_t = false)]
     dump_coreir_json: bool,
 
+    /// Disable static typechecking (inference) before execution
+    #[arg(long = "no-typecheck", default_value_t = false)]
+    no_typecheck: bool,
+
+    /// Type output mode: pretty|json (when typechecking runs)
+    #[arg(long = "types", default_value = "pretty")]
+    types: String,
+
     /// Declare constructor arities (e.g., Foo=2,Bar=0). Comma-separated.
     #[arg(long = "ctor-arity")]
     ctor_arity: Option<String>,
@@ -101,7 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             return Ok(());
         }
-        if opt.analyze {
+    if opt.analyze {
             #[derive(Serialize)]
             struct AnalyzeOut<'a> {
                 duplicates: &'a [lzscr_analyzer::DupFinding],
@@ -179,6 +187,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             return Ok(());
         }
+        // Optional typechecking phase
+        if !opt.no_typecheck {
+            let ty_res = lzscr_types::api::infer_program(&code);
+            match ty_res {
+                Ok(t) => {
+                    if opt.types == "json" {
+                        #[derive(Serialize)]
+                        struct TypeOut { ty: String }
+                        println!("{}", serde_json::to_string_pretty(&TypeOut { ty: t })?);
+                    } else if opt.types == "pretty" {
+                        eprintln!("type: {t}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("type error: {e}");
+                    std::process::exit(2);
+                }
+            }
+        }
+
         let mut env = Env::with_builtins();
         if let Some(spec) = &opt.ctor_arity {
             let (parsed, warns) = parse_ctor_arity_spec(spec);

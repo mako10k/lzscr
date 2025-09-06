@@ -242,7 +242,13 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             Tok::Arrow | Tok::RParen | Tok::Comma | Tok::Eq | Tok::Semicolon => {
                                 break
                             }
-                            Tok::Ident | Tok::Member(_) | Tok::LParen => {
+                            Tok::Tilde
+                            | Tok::Ident
+                            | Tok::Member(_)
+                            | Tok::LParen
+                            | Tok::Int(_)
+                            | Tok::Float(_)
+                            | Tok::Str(_) => {
                                 let a = parse_pat_atom(i, toks)?;
                                 args.push(a);
                             }
