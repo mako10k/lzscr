@@ -43,7 +43,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 .map(|c| c.is_ascii_uppercase())
                 .unwrap_or(false)
         }
-        fn parse_pat_atom<'c>(
+    fn parse_pat_atom<'c>(
             i: &mut usize,
             toks: &'c [lzscr_lexer::Lexed<'c>],
         ) -> Result<Pattern, ParseError> {
@@ -258,6 +258,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 Tok::Int(n) => Pattern::new(PatternKind::Int(*n), t.span),
                 Tok::Float(f) => Pattern::new(PatternKind::Float(*f), t.span),
                 Tok::Str(s) => Pattern::new(PatternKind::Str(s.clone()), t.span),
+                Tok::Char(c) => Pattern::new(PatternKind::Char(*c), t.span),
                 _ => return Err(ParseError::Generic("unexpected token in pattern".into())),
             })
         }
@@ -280,7 +281,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             | Tok::LParen
                             | Tok::Int(_)
                             | Tok::Float(_)
-                            | Tok::Str(_) => {
+                                | Tok::Str(_)
+                                | Tok::Char(_) => {
                                 let a = parse_pat_atom(i, toks)?;
                                 args.push(a);
                             }
@@ -316,7 +318,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             | Tok::LParen
                             | Tok::Int(_)
                             | Tok::Float(_)
-                            | Tok::Str(_) => {
+                                | Tok::Str(_)
+                                | Tok::Char(_) => {
                                 let a = parse_pat_atom(i, toks)?;
                                 args.push(a);
                             }
@@ -388,13 +391,14 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     fn parse_type_atom<'c>(j: &mut usize, toks: &'c [lzscr_lexer::Lexed<'c>]) -> Result<TypeExpr, ParseError> {
                         let t = bump(j, toks).ok_or_else(|| ParseError::Generic("expected type".into()))?;
                         Ok(match &t.tok {
-                            Tok::Ident => {
+                Tok::Ident => {
                                 match t.text {
                                     "Unit" => TypeExpr::Unit,
                                     "Int" => TypeExpr::Int,
                                     "Float" => TypeExpr::Float,
                                     "Bool" => TypeExpr::Bool,
-                                    "Str" => TypeExpr::Str,
+                    "Str" => TypeExpr::Str,
+                    "Char" => TypeExpr::Char,
                                     other => TypeExpr::Ctor { tag: other.to_string(), args: vec![] },
                                 }
                             }
@@ -528,6 +532,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             Tok::Int(n) => Expr::new(ExprKind::Int(*n), t.span),
             Tok::Float(f) => Expr::new(ExprKind::Float(*f), t.span),
             Tok::Str(s) => Expr::new(ExprKind::Str(s.clone()), t.span),
+            Tok::Char(c) => Expr::new(ExprKind::Char(*c), t.span),
             Tok::Member(name) => Expr::new(ExprKind::Symbol(name.clone()), t.span),
             Tok::Tilde => {
                 let id = bump(i, toks)
@@ -1055,6 +1060,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 | Tok::Int(_)
                 | Tok::Float(_)
                 | Tok::Str(_)
+                | Tok::Char(_)
                 | Tok::Tilde
                 | Tok::Backslash
                 | Tok::Ident
@@ -1256,6 +1262,14 @@ mod tests {
         let r = parse_expr(src).unwrap();
         // ensure it parses; structural checks covered in analyzer/runtime tests later
         let _ = r;
+    }
+
+    #[test]
+    fn char_literal_basic_and_escape() {
+        let r = parse_expr("'a'").unwrap();
+        match r.kind { ExprKind::Char(c) => assert_eq!(c, 'a' as i32), _ => panic!("expected Char") }
+        let r2 = parse_expr("'\\n'").unwrap();
+        match r2.kind { ExprKind::Char(c) => assert_eq!(c, '\n' as i32), _ => panic!("expected Char") }
     }
 
     #[test]

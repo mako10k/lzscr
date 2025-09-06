@@ -384,6 +384,7 @@ version = "0.1.0"
 dependencies = [
  "lzscr-ast",
  "serde",
+ "thiserror",
 ]
 
 [[package]]

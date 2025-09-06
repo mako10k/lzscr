@@ -113,6 +113,10 @@ pub enum Tok {
     #[regex(r#"\"([^"\\]|\\.)*\""#, parse_string)]
     Str(String),
 
+    // Char literal: '\'' with escapes and unicode (e.g., '\n', '\\', '\'', '\u{1F600}')
+    #[regex(r"'(?:[^'\\]|\\u\{[0-9a-fA-F]+\}|\\.)'", parse_char)]
+    Char(i32),
+
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident,
 
@@ -142,6 +146,40 @@ fn parse_string(lex: &mut Lexer<Tok>) -> Option<String> {
         }
     }
     Some(out)
+}
+
+fn parse_char(lex: &mut Lexer<Tok>) -> Option<i32> {
+    let s = lex.slice();
+    // s is like '\x' or '\\' or '\u{...}' wrapped in single quotes
+    if s.len() < 2 { return None; }
+    let inner = &s[1..s.len()-1];
+    let mut chars = inner.chars();
+    let c = match chars.next()? {
+        '\\' => {
+            match chars.next()? {
+                '\'' => '\'' as u32,
+                '"' => '"' as u32,
+                'n' => '\n' as u32,
+                'r' => '\r' as u32,
+                't' => '\t' as u32,
+                '0' => '\0' as u32,
+                'u' => {
+                    // expect {HEX+}
+                    if chars.next()? != '{' { return None; }
+                    let mut hex = String::new();
+                    while let Some(ch) = chars.next() {
+                        if ch == '}' { break; }
+                        hex.push(ch);
+                    }
+                    let v = u32::from_str_radix(hex.trim(), 16).ok()?;
+                    v
+                }
+                other => other as u32,
+            }
+        }
+        other => other as u32,
+    };
+    Some((c & 0xFFFF_FFFF) as i32)
 }
 
 fn parse_block_comment(lex: &mut Lexer<Tok>) -> Option<()> {

@@ -1,5 +1,6 @@
 use lzscr_ast::ast::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // Core IR: deliberately small for PoC. Lambda-calculus-like with explicit refs and sequence.
 
@@ -10,6 +11,7 @@ pub enum Ty {
     Float,
     Bool,
     Str,
+    Char,
     Fun(Box<Ty>, Box<Ty>),
     Dyn, // unknown/placeholder at PoC stage
 }
@@ -23,6 +25,7 @@ pub enum Op {
     Float(f64),
     Bool(bool),
     Str(String),
+    Char(i32),
     Unit,
     Lam {
         param: String,
@@ -75,6 +78,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             TypeExpr::Float => "Float".into(),
             TypeExpr::Bool => "Bool".into(),
             TypeExpr::Str => "Str".into(),
+            TypeExpr::Char => "Char".into(),
             TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(opt) => {
                 if let Some(a) = opt { format!("?{}", a) } else { "?".into() }
@@ -140,6 +144,12 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             PatternKind::Int(n) => format!("{}", n),
             PatternKind::Float(f) => format!("{}", f),
             PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
+            PatternKind::Char(c) => {
+                let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
+                let mut tmp = String::new();
+                tmp.push(ch);
+                format!("'{}'", tmp.escape_default())
+            }
             PatternKind::Bool(b) => format!("{}", b),
             PatternKind::Record(fields) => {
                 let inner = fields
@@ -159,6 +169,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Int(n) => Term::new(Op::Int(*n)),
         ExprKind::Float(f) => Term::new(Op::Float(*f)),
         ExprKind::Str(s) => Term::new(Op::Str(s.clone())),
+    ExprKind::Char(c) => Term::new(Op::Char(*c)),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
         ExprKind::LetGroup { bindings, body } => {
@@ -301,6 +312,12 @@ pub fn print_term(t: &Term) -> String {
         Op::Float(f) => format!("{}", f),
         Op::Bool(b) => format!("{}", b),
         Op::Str(s) => format!("\"{}\"", s.escape_default()),
+        Op::Char(c) => {
+            let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
+            let mut tmp = String::new();
+            tmp.push(ch);
+            format!("'{}'", tmp.escape_default())
+        }
         Op::Ref(n) => format!("~{n}"),
         Op::Symbol(s) => s.clone(),
         Op::Lam { param, body } => format!("\\{} -> {}", param, print_term(body)),
@@ -316,6 +333,172 @@ pub fn print_term(t: &Term) -> String {
                 .join("; ");
             format!("(letrec {{ {}; }} {})", inner, print_term(body))
         }
+    }
+}
+
+// ---- Minimal IR evaluator (PoC) ----
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum IrValue {
+    Unit,
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Str(String),
+    Char(i32),
+    Fun { param: String, body: Term, env: HashMap<String, IrValue> },
+    Builtin { name: String, args: Vec<IrValue> },
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum IrEvalError {
+    #[error("unbound ref: {0}")]
+    Unbound(String),
+    #[error("not a function: {0:?}")]
+    NotFunction(IrValue),
+    #[error("unsupported pattern in lambda parameter: {0}")]
+    UnsupportedParam(String),
+    #[error("arity error for builtin: {0}")]
+    Arity(String),
+}
+
+fn is_simple_var_param(p: &str) -> Option<String> {
+    // Accept param like "~x" only
+    if let Some(rest) = p.strip_prefix('~') {
+        if !rest.is_empty() && rest.chars().all(|c| c == '_' || c.is_alphanumeric()) {
+            return Some(rest.to_string());
+        }
+    }
+    None
+}
+
+fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
+    match (name, args) {
+        ("add", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a + b)),
+        ("sub", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a - b)),
+        ("mul", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a * b)),
+        ("div", [IrValue::Int(_), IrValue::Int(0)]) => Err(IrEvalError::Arity("div by zero".into())),
+        ("div", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a / b)),
+        ("to_str", [v]) => Ok(IrValue::Str(match v {
+            IrValue::Unit => "()".into(),
+            IrValue::Int(n) => n.to_string(),
+            IrValue::Float(f) => f.to_string(),
+            IrValue::Bool(b) => b.to_string(),
+            IrValue::Str(s) => s.clone(),
+            IrValue::Char(c) => {
+                let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
+                let mut tmp = String::new();
+                tmp.push(ch);
+                format!("'{}'", tmp.escape_default())
+            }
+            IrValue::Fun { .. } => "<fun>".into(),
+            IrValue::Builtin { .. } => "<fun>".into(),
+        })),
+        _ => Err(IrEvalError::Arity(name.into())),
+    }
+}
+
+fn builtin_arity(name: &str) -> Option<usize> {
+    match name {
+        "add" | "sub" | "mul" | "div" => Some(2),
+        "to_str" => Some(1),
+        _ => None,
+    }
+}
+
+fn eval_app(func: IrValue, arg: IrValue) -> Result<IrValue, IrEvalError> {
+    match func {
+        IrValue::Fun { param, body, mut env } => {
+            env.insert(param, arg);
+            eval_term_with_env(&body, &mut env)
+        }
+        IrValue::Builtin { name, mut args } => {
+            args.push(arg);
+            if let Some(k) = builtin_arity(&name) {
+                if args.len() < k {
+                    Ok(IrValue::Builtin { name, args })
+                } else if args.len() == k {
+                    eval_builtin(&name, &args)
+                } else {
+                    // support over-application: compute then keep applying remaining args
+                    let (first, rest) = args.split_at(k);
+                    let mut res = eval_builtin(&name, first)?;
+                    for a in rest.iter().cloned() {
+                        res = eval_app(res, a)?;
+                    }
+                    Ok(res)
+                }
+            } else {
+                Err(IrEvalError::Unbound(name))
+            }
+        }
+        other => Err(IrEvalError::NotFunction(other)),
+    }
+}
+
+fn eval_term_with_env(t: &Term, env: &mut HashMap<String, IrValue>) -> Result<IrValue, IrEvalError> {
+    match &t.op {
+        Op::Unit => Ok(IrValue::Unit),
+        Op::Int(n) => Ok(IrValue::Int(*n)),
+        Op::Float(f) => Ok(IrValue::Float(*f)),
+        Op::Bool(b) => Ok(IrValue::Bool(*b)),
+        Op::Str(s) => Ok(IrValue::Str(s.clone())),
+    Op::Char(c) => Ok(IrValue::Char(*c)),
+        Op::Ref(n) => {
+            if let Some(v) = env.get(n).cloned() { return Ok(v); }
+            // Builtins
+            if builtin_arity(n).is_some() {
+                return Ok(IrValue::Builtin { name: n.clone(), args: vec![] });
+            }
+            Err(IrEvalError::Unbound(n.clone()))
+        }
+        Op::Symbol(s) => Ok(IrValue::Str(s.clone())), // minimal placeholder
+        Op::Lam { param, body } => {
+            let Some(vname) = is_simple_var_param(param) else {
+                return Err(IrEvalError::UnsupportedParam(param.clone()));
+            };
+            Ok(IrValue::Fun { param: vname, body: (*body.clone()), env: env.clone() })
+        }
+        Op::App { func, arg } => {
+            let f = eval_term_with_env(func, env)?;
+            let a = eval_term_with_env(arg, env)?;
+            eval_app(f, a)
+        }
+        Op::Seq { first, second } | Op::Chain { first, second } => {
+            let _ = eval_term_with_env(first, env)?;
+            eval_term_with_env(second, env)
+        }
+        Op::Bind { value, cont } => {
+            let v = eval_term_with_env(value, env)?;
+            let k = eval_term_with_env(cont, env)?;
+            eval_app(k, v)
+        }
+        Op::LetRec { .. } => {
+            // Not yet supported in PoC evaluator
+            Err(IrEvalError::UnsupportedParam("letrec".into()))
+        }
+    }
+}
+
+pub fn eval_term(t: &Term) -> Result<IrValue, IrEvalError> {
+    let mut env = HashMap::new();
+    eval_term_with_env(t, &mut env)
+}
+
+pub fn print_ir_value(v: &IrValue) -> String {
+    match v {
+        IrValue::Unit => "()".into(),
+        IrValue::Int(n) => n.to_string(),
+        IrValue::Float(f) => f.to_string(),
+        IrValue::Bool(b) => b.to_string(),
+        IrValue::Str(s) => s.clone(),
+        IrValue::Char(c) => {
+            let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
+            let mut tmp = String::new();
+            tmp.push(ch);
+            format!("'{}'", tmp.escape_default())
+        }
+        IrValue::Fun { .. } | IrValue::Builtin { .. } => "<fun>".into(),
     }
 }
 
@@ -483,5 +666,34 @@ mod tests {
         let s = print_term(&t);
         assert!(s.contains("~chain"));
         assert!(s.contains("~bind"));
+    }
+
+    #[test]
+    fn eval_ir_add_and_bind() {
+        use lzscr_ast::span::Span;
+        // (~add 1 2) => 3
+        let add = Expr::new(ExprKind::Ref("add".into()), Span::new(0, 0));
+        let one = Expr::new(ExprKind::Int(1), Span::new(0, 0));
+        let two = Expr::new(ExprKind::Int(2), Span::new(0, 0));
+        let add1 = Expr::new(ExprKind::Apply { func: Box::new(add), arg: Box::new(one) }, Span::new(0, 0));
+        let add12 = Expr::new(ExprKind::Apply { func: Box::new(add1), arg: Box::new(two) }, Span::new(0, 0));
+        let t = lower_expr_to_core(&add12);
+        let v = eval_term(&t).expect("ir eval add");
+        assert_eq!(print_ir_value(&v), "3");
+
+        // (~bind 2 (\~x -> ~x)) => 2
+        let bind = Expr::new(ExprKind::Ref("bind".into()), Span::new(0, 0));
+        let two = Expr::new(ExprKind::Int(2), Span::new(0, 0));
+        let id = Expr::new(
+            ExprKind::Lambda {
+                param: Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
+                body: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+            },
+            Span::new(0, 0),
+        );
+        let b2 = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Apply { func: Box::new(bind), arg: Box::new(two) }, Span::new(0, 0))), arg: Box::new(id) }, Span::new(0, 0));
+        let t2 = lower_expr_to_core(&b2);
+        let v2 = eval_term(&t2).expect("ir eval bind");
+        assert_eq!(print_ir_value(&v2), "2");
     }
 }

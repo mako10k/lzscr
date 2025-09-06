@@ -19,6 +19,7 @@ pub enum Type {
     Float,
     Bool,
     Str,
+    Char,
     Var(TvId),
     Fun(Box<Type>, Box<Type>),
     List(Box<Type>),
@@ -90,7 +91,7 @@ impl TypesApply for Type {
                     .map(|(n, ps)| (n.clone(), ps.iter().map(|t| t.apply(s)).collect()))
                     .collect(),
             ),
-            t @ (Type::Unit | Type::Int | Type::Float | Type::Bool | Type::Str) => t.clone(),
+            t @ (Type::Unit | Type::Int | Type::Float | Type::Bool | Type::Str | Type::Char) => t.clone(),
         }
     }
     fn ftv(&self) -> HashSet<TvId> {
@@ -128,7 +129,7 @@ impl TypesApply for Type {
                     }
                 }
             }
-            Type::Unit | Type::Int | Type::Float | Type::Bool | Type::Str => {}
+            Type::Unit | Type::Int | Type::Float | Type::Bool | Type::Str | Type::Char => {}
         }
         s
     }
@@ -209,7 +210,8 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
         | (Type::Int, Type::Int)
         | (Type::Float, Type::Float)
         | (Type::Bool, Type::Bool)
-        | (Type::Str, Type::Str) => Ok(Subst::new()),
+    | (Type::Str, Type::Str)
+    | (Type::Char, Type::Char) => Ok(Subst::new()),
         (Type::Fun(a1, b1), Type::Fun(a2, b2)) => {
             let s1 = unify(a1, a2)?;
             let s2 = unify(&b1.apply(&s1), &b2.apply(&s1))?;
@@ -320,6 +322,7 @@ fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatI
         PatternKind::Int(_) => unify(scrutinee, &Type::Int).map(|s| PatInfo { bindings: vec![], subst: s }),
         PatternKind::Float(_) => unify(scrutinee, &Type::Float).map(|s| PatInfo { bindings: vec![], subst: s }),
         PatternKind::Str(_) => unify(scrutinee, &Type::Str).map(|s| PatInfo { bindings: vec![], subst: s }),
+    PatternKind::Char(_) => unify(scrutinee, &Type::Char).map(|s| PatInfo { bindings: vec![], subst: s }),
         PatternKind::Bool(_) => unify(scrutinee, &Type::Bool).map(|s| PatInfo { bindings: vec![], subst: s }),
         PatternKind::Tuple(xs) => {
             let mut s = Subst::new();
@@ -451,7 +454,8 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
             TypeExpr::Int => Type::Int,
             TypeExpr::Float => Type::Float,
             TypeExpr::Bool => Type::Bool,
-            TypeExpr::Str => Type::Str,
+                TypeExpr::Str => Type::Str,
+                TypeExpr::Char => Type::Char,
             TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr(ctx, t, holes))),
             TypeExpr::Tuple(xs) => Type::Tuple(xs.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect()),
             TypeExpr::Record(fs) => {
@@ -497,7 +501,8 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
         ExprKind::Unit => Ok((Type::Unit, Subst::new())),
         ExprKind::Int(_) => Ok((Type::Int, Subst::new())),
         ExprKind::Float(_) => Ok((Type::Float, Subst::new())),
-        ExprKind::Str(_) => Ok((Type::Str, Subst::new())),
+    ExprKind::Str(_) => Ok((Type::Str, Subst::new())),
+    ExprKind::Char(_) => Ok((Type::Char, Subst::new())),
         ExprKind::Ref(n) => {
             let s = ctx.env.get(n).ok_or_else(|| TypeError::UnboundRef { name: n.clone() })?;
             Ok((instantiate(&mut ctx.tv, &s), Subst::new()))
@@ -733,6 +738,7 @@ fn pp_type(t: &Type) -> String {
         Type::Float => "Float".into(),
         Type::Bool => "Bool".into(),
         Type::Str => "Str".into(),
+    Type::Char => "Char".into(),
         Type::Var(TvId(i)) => format!("t{i}"),
         Type::List(a) => format!("List {}", pp_atom(a)),
         Type::Tuple(xs) => format!("({})", xs.iter().map(pp_type).collect::<Vec<_>>().join(", ")),
@@ -839,6 +845,17 @@ pub mod api {
         let eff_ty = Type::fun(Type::Var(s3), Type::fun(Type::Var(a3), Type::Unit));
         env.insert("effects".into(), Scheme { vars: vec![s3, a3], ty: eff_ty });
         env
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::api::infer_program;
+
+    #[test]
+    fn infer_char_literal() {
+        let t = infer_program("'x'").unwrap();
+        assert_eq!(t, "Char");
     }
 }
 

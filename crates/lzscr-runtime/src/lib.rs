@@ -855,7 +855,7 @@ fn to_str_like(env: &Env, v: &Value) -> String {
         Value::Float(f) => f.to_string(),
     Value::Bool(b) => b.to_string(),
     Value::Str(s) => s.to_string(),
-    Value::Char(c) => c.to_string(),
+    Value::Char(c) => char_literal_string(*c),
         Value::Symbol(id) => env.symbol_name(*id),
         Value::Raised(b) => format!("^({})", to_str_like(env, b)),
         Value::Ctor { name, args } => {
@@ -907,6 +907,13 @@ fn to_str_like(env: &Env, v: &Value) -> String {
         // Thunk は上で force 済みのはずだが、安全のため
         _ => "<thunk>".into(),
     }
+}
+
+fn char_literal_string(c: i32) -> String {
+    let ch = char::from_u32(c as u32).unwrap_or('\u{FFFD}');
+    let mut tmp = String::new();
+    tmp.push(ch);
+    format!("'{}'", tmp.escape_default())
 }
 
 fn sym_true(env: &Env) -> Value {
@@ -968,7 +975,7 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 Ok(Value::Unit)
             }
             Value::Char(c) => {
-                print!("{}", c);
+                print!("{}", char_literal_string(c));
                 Ok(Value::Unit)
             }
             Value::Symbol(id) => {
@@ -1067,7 +1074,7 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 Ok(Value::Unit)
             }
             Value::Char(c) => {
-                println!("{}", c);
+                println!("{}", char_literal_string(c));
                 Ok(Value::Unit)
             }
             Value::Symbol(id) => {
@@ -1243,6 +1250,10 @@ fn match_pattern(
         },
         PatternKind::Str(st) => match &v {
             Value::Str(s2) if s2.eq_str(st) => Some(HashMap::new()),
+            _ => None,
+        },
+        PatternKind::Char(cc) => match &v {
+            Value::Char(c2) if *c2 == *cc => Some(HashMap::new()),
             _ => None,
         },
         PatternKind::Bool(b) => match &v {
@@ -1451,6 +1462,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             TypeExpr::Float => "Float".into(),
             TypeExpr::Bool => "Bool".into(),
             TypeExpr::Str => "Str".into(),
+            TypeExpr::Char => "Char".into(),
             TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(Some(a)) => format!("?{}", a),
             TypeExpr::Hole(opt) => {
@@ -1490,6 +1502,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Int(n) => Ok(Value::Int(*n)),
     ExprKind::Str(s) => Ok(Value::Str(env.intern_string(s))),
         ExprKind::Float(f) => Ok(Value::Float(*f)),
+    ExprKind::Char(c) => Ok(Value::Char(*c)),
         ExprKind::LetGroup { bindings, body } => {
             // 遅延束縛により非関数の再帰もサポート
             let mut env2 = env.clone();
@@ -1515,6 +1528,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     | PatternKind::Int(_)
                     | PatternKind::Float(_)
                     | PatternKind::Str(_)
+                    | PatternKind::Char(_)
                     | PatternKind::Bool(_) => {}
                     PatternKind::TypeBind { pat, .. } => {
                         collect_vars(pat, out);

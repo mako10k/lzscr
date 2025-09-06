@@ -7,3 +7,4 @@ license = "MIT"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 lzscr-ast = { path = "../lzscr-ast" }
+thiserror = "1"

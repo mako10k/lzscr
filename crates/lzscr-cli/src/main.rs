@@ -3,7 +3,7 @@ use lzscr_analyzer::{
     analyze_ctor_arity, analyze_duplicates, analyze_shadowing, analyze_unbound_refs,
     analyze_unused_params, default_allowlist, AnalyzeOptions,
 };
-use lzscr_coreir::{lower_expr_to_core, print_term};
+use lzscr_coreir::{lower_expr_to_core, print_term, eval_term, print_ir_value};
 use lzscr_parser::parse_expr;
 use lzscr_ast::{ast::*, pretty::print_expr};
 use lzscr_runtime::{eval, Env, Value};
@@ -76,6 +76,10 @@ struct Opt {
     /// Dump Core IR as JSON
     #[arg(long = "dump-coreir-json", default_value_t = false)]
     dump_coreir_json: bool,
+
+    /// Evaluate via Core IR evaluator (PoC)
+    #[arg(long = "eval-coreir", default_value_t = false)]
+    eval_coreir: bool,
 
     /// Disable static typechecking (inference) before execution
     #[arg(long = "no-typecheck", default_value_t = false)]
@@ -202,13 +206,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let ast = parse_expr(&code).map_err(|e| format!("{}", e))?;
-        // Core IR dump modes take precedence over analyze/execute
-        if opt.dump_coreir || opt.dump_coreir_json {
+        // Core IR dump/eval modes take precedence over analyze/execute
+        if opt.dump_coreir || opt.dump_coreir_json || opt.eval_coreir {
             let term = lower_expr_to_core(&ast);
             if opt.dump_coreir_json {
                 println!("{}", serde_json::to_string_pretty(&term)?);
-            } else {
+            } else if opt.dump_coreir {
                 println!("{}", print_term(&term));
+            } else if opt.eval_coreir {
+                match eval_term(&term) {
+                    Ok(v) => println!("{}", print_ir_value(&v)),
+                    Err(e) => {
+                        eprintln!("coreir eval error: {}", e);
+                        std::process::exit(2);
+                    }
+                }
             }
             return Ok(());
         }
@@ -324,13 +336,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let val = eval(&env, &ast).map_err(|e| format!("{e}"))?;
     fn val_to_string(env: &Env, v: &Value) -> String {
+            fn char_literal_string(c: i32) -> String {
+                let ch = char::from_u32(c as u32).unwrap_or('\u{FFFD}');
+                let mut tmp = String::new();
+                tmp.push(ch);
+                format!("'{}'", tmp.escape_default())
+            }
             match v {
                 Value::Unit => "()".into(),
                 Value::Int(n) => n.to_string(),
                 Value::Float(f) => f.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Str(s) => s.to_string(),
-        Value::Char(c) => c.to_string(),
+        Value::Char(c) => char_literal_string(*c),
                 Value::Symbol(id) => env.symbol_name(*id),
                 Value::Raised(b) => format!("^({})", val_to_string(env, b)),
                 Value::Thunk { .. } => "<thunk>".into(),
@@ -440,12 +458,12 @@ fn expand_requires_in_expr(e: &Expr, search_paths: &[PathBuf], stack: &mut Vec<S
         Some(Err(msg)) => {
             return Err(msg);
         }
-        None => {}
+    _ => {}
     }
     // Otherwise, recurse children
     use ExprKind::*;
     let k = match &e.kind {
-        Unit | Int(_) | Float(_) | Str(_) | Ref(_) | Symbol(_) | TypeVal(_) => e.kind.clone(),
+        Unit | Int(_) | Float(_) | Str(_) | Char(_) | Ref(_) | Symbol(_) | TypeVal(_) => e.kind.clone(),
         Annot { ty, expr } => Annot { ty: ty.clone(), expr: Box::new(expand_requires_in_expr(expr, search_paths, stack)?) },
         Lambda { param, body } => Lambda { param: param.clone(), body: Box::new(expand_requires_in_expr(body, search_paths, stack)?) },
         Apply { func, arg } => Apply {
@@ -553,6 +571,7 @@ fn node_kind_name(k: &ExprKind) -> &'static str {
         ExprKind::Int(_) => "Int",
         ExprKind::Float(_) => "Float",
         ExprKind::Str(_) => "Str",
+    ExprKind::Char(_) => "Char",
         ExprKind::Ref(_) => "Ref",
         ExprKind::Symbol(_) => "Symbol",
         ExprKind::Annot { .. } => "Annot",

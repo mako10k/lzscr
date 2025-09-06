@@ -24,6 +24,7 @@ pub mod ast {
         Float,
         Bool,
         Str,
+    Char,
         List(Box<TypeExpr>),
         Tuple(Vec<TypeExpr>),
         Record(Vec<(String, TypeExpr)>),
@@ -44,6 +45,7 @@ pub mod ast {
         Int(i64),
         Float(f64),
         Str(String),
+    Char(i32),
         Bool(bool),
         Record(Vec<(String, Pattern)>), // { k: p, ... }
         As(Box<Pattern>, Box<Pattern>), // p1 @ p2
@@ -71,6 +73,7 @@ pub mod ast {
         Int(i64),
         Float(f64),
         Str(String),
+    Char(i32),
         Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
     // 型注釈: %{T} e （恒等）
@@ -152,6 +155,12 @@ pub mod pretty {
             PatternKind::Int(n) => format!("{}", n),
             PatternKind::Float(f) => format!("{}", f),
             PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
+            PatternKind::Char(c) => {
+                let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
+                let mut tmp = String::new();
+                tmp.push(ch);
+                format!("'{}'", tmp.escape_default())
+            }
             PatternKind::Bool(b) => format!("{}", b),
             PatternKind::Record(fields) => {
                 let inner = fields
@@ -185,6 +194,12 @@ pub mod pretty {
             ExprKind::Int(n) => format!("{n}"),
             ExprKind::Float(f) => format!("{}", f),
             ExprKind::Str(s) => format!("\"{}\"", s.escape_default()),
+            ExprKind::Char(c) => {
+                let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
+                let mut tmp = String::new();
+                tmp.push(ch);
+                format!("'{}'", tmp.escape_default())
+            }
             ExprKind::Ref(n) => format!("~{n}"),
             ExprKind::Symbol(s) => s.clone(),
             ExprKind::Annot { ty, expr } => {
@@ -234,6 +249,7 @@ pub mod pretty {
             TypeExpr::Float => "Float".into(),
             TypeExpr::Bool => "Bool".into(),
             TypeExpr::Str => "Str".into(),
+            TypeExpr::Char => "Char".into(),
             TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(opt) => {
                 if let Some(a) = opt { format!("?{}", a) } else { "?".into() }
