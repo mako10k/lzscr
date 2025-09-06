@@ -27,6 +27,26 @@ impl RtStr {
             .map(|s| s.chars().count())
             .unwrap_or_else(|_| String::from_utf8_lossy(self.as_bytes()).chars().count())
     }
+    fn char_boundaries(s: &str) -> Vec<usize> {
+        // boundaries[ci] = byte index at char index ci; includes trailing s.len()
+        let mut b: Vec<usize> = s.char_indices().map(|(i, _)| i).collect();
+        b.push(s.len());
+        b
+    }
+    pub fn slice_chars(&self, start_chars: usize, len_chars: usize) -> Option<RtStr> {
+        let s = std::str::from_utf8(self.as_bytes()).ok()?;
+        let boundaries = RtStr::char_boundaries(s);
+        let total_chars = boundaries.len() - 1;
+        if start_chars > total_chars { return None; }
+        if start_chars + len_chars > total_chars { return None; }
+        let begin_b = boundaries[start_chars];
+        let end_b = boundaries[start_chars + len_chars];
+        Some(RtStr {
+            data: self.data.clone(),
+            start: self.start + begin_b,
+            len: end_b.saturating_sub(begin_b),
+        })
+    }
 }
 
 impl std::fmt::Display for RtStr {
@@ -614,6 +634,45 @@ impl Env {
                 f: |env, args| match (&args[0], &args[1]) {
                     (Value::Str(a), Value::Str(b)) => {
                         Ok(Value::Str(env.intern_string(format!("{}{}", a, b))))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+        string_ns.insert(
+            "slice".into(),
+            Value::Native {
+                arity: 3,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1], &args[2]) {
+                    (Value::Str(s), Value::Int(st), Value::Int(ln)) => {
+                        if *st < 0 || *ln < 0 { return Err(EvalError::TypeError); }
+                        let st_usize = *st as usize;
+                        let ln_usize = *ln as usize;
+                        if let Some(sub) = s.slice_chars(st_usize, ln_usize) {
+                            Ok(Value::Str(sub))
+                        } else {
+                            Err(EvalError::TypeError)
+                        }
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+        string_ns.insert(
+            "cmp".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Str(a), Value::Str(b)) => {
+                        let ord = a.as_bytes().cmp(b.as_bytes());
+                        let v = match ord {
+                            std::cmp::Ordering::Less => -1,
+                            std::cmp::Ordering::Equal => 0,
+                            std::cmp::Ordering::Greater => 1,
+                        };
+                        Ok(Value::Int(v))
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -1767,6 +1826,64 @@ mod tests {
 
     fn ref_expr(name: &str) -> Expr {
         Expr::new(ExprKind::Ref(name.into()), Span::new(0, 0))
+    }
+
+    #[test]
+    fn string_len_concat_slice_cmp() {
+        let env = Env::with_builtins();
+        // Access Builtins.string namespace
+        let string_ns = match env.vars.get("Builtins").cloned().unwrap() {
+            Value::Record(m) => m.get("string").cloned().unwrap(),
+            _ => panic!("Builtins missing"),
+        };
+        let (len_f, concat_f, slice_f, cmp_f) = match string_ns.clone() {
+            Value::Record(m) => (
+                m.get("len").cloned().unwrap(),
+                m.get("concat").cloned().unwrap(),
+                m.get("slice").cloned().unwrap(),
+                m.get("cmp").cloned().unwrap(),
+            ),
+            _ => panic!("string ns not a record"),
+        };
+
+        let s = Value::Str(env.intern_string("hé😺llo"));
+        // len = 6 (h é 😺 l l o)
+        let v = apply_value(&env, len_f.clone(), s.clone()).unwrap();
+        match v { Value::Int(n) => assert_eq!(n, 6), _ => panic!() }
+
+        // concat("ab","c") = "abc"
+        let v = apply_value(&env, concat_f.clone(), Value::Str(env.intern_string("ab")))
+            .and_then(|f| apply_value(&env, f, Value::Str(env.intern_string("c"))))
+            .unwrap();
+        match v { Value::Str(rs) => assert_eq!(rs.to_string(), "abc"), _ => panic!() }
+
+        // slice: start=1, len=2 => "é😺"
+        let v = apply_value(&env, slice_f.clone(), s.clone())
+            .and_then(|f| apply_value(&env, f, Value::Int(1)))
+            .and_then(|f| apply_value(&env, f, Value::Int(2)))
+            .unwrap();
+        match v { Value::Str(rs) => assert_eq!(rs.to_string(), "é😺"), _ => panic!() }
+
+        // cmp: "abc" vs "abd" -> -1
+        let a = Value::Str(env.intern_string("abc"));
+        let b = Value::Str(env.intern_string("abd"));
+        let v = apply_value(&env, cmp_f.clone(), a)
+            .and_then(|f| apply_value(&env, f, b))
+            .unwrap();
+        match v { Value::Int(n) => assert_eq!(n, -1), _ => panic!() }
+
+        // cmp: "é" > "f" in UTF-8 byte order
+        let v = apply_value(&env, cmp_f.clone(), Value::Str(env.intern_string("é")))
+            .and_then(|f| apply_value(&env, f, Value::Str(env.intern_string("f"))))
+            .unwrap();
+        match v { Value::Int(n) => assert_eq!(n, 1), _ => panic!() }
+
+        // slice OOB -> TypeError
+        let err = apply_value(&env, slice_f, s)
+            .and_then(|f| apply_value(&env, f, Value::Int(10)))
+            .and_then(|f| apply_value(&env, f, Value::Int(1)))
+            .unwrap_err();
+        matches!(err, EvalError::TypeError);
     }
     fn int_expr(n: i64) -> Expr {
         Expr::new(ExprKind::Int(n), Span::new(0, 0))
