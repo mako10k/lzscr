@@ -1014,6 +1014,7 @@ fn match_pattern(
     }
     match &p.kind {
         PatternKind::Wildcard => Some(std::collections::HashMap::new()),
+    PatternKind::TypeBind { pat, .. } => match_pattern(env, pat, &v),
         PatternKind::Var(n) => {
             let mut m = std::collections::HashMap::new();
             m.insert(n.clone(), v.clone());
@@ -1332,6 +1333,9 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     | PatternKind::Float(_)
                     | PatternKind::Str(_)
                     | PatternKind::Bool(_) => {}
+                    PatternKind::TypeBind { pat, .. } => {
+                        collect_vars(pat, out);
+                    }
                     PatternKind::Var(n) => out.push(n.clone()),
                     PatternKind::Tuple(xs) | PatternKind::List(xs) => {
                         for x in xs {

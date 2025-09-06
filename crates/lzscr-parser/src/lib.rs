@@ -49,6 +49,33 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         ) -> Result<Pattern, ParseError> {
             let t = bump(i, toks).ok_or_else(|| ParseError::Generic("expected pattern".into()))?;
             Ok(match &t.tok {
+                Tok::TypeOpen => {
+                    // %{ 'a, 'b, ?x } pattern
+                    let mut tvars: Vec<String> = Vec::new();
+                    // zero or more entries until '}'
+                    if let Some(nxt) = toks.get(*i) {
+                        if matches!(nxt.tok, Tok::RBrace) { let _= bump(i, toks); } else {
+                            loop {
+                                let nv = bump(i, toks).ok_or_else(|| ParseError::Generic("expected type var in %{...}".into()))?;
+                                match &nv.tok {
+                                    Tok::TyVar(name) => tvars.push(name.clone()),
+                                    Tok::Question => {
+                                        if let Some(nx) = toks.get(*i) {
+                                            if matches!(nx.tok, Tok::Ident) { tvars.push(nx.text.to_string()); let _ = bump(i, toks); } else { tvars.push("".into()); }
+                                        } else { tvars.push("".into()); }
+                                    }
+                                    _ => return Err(ParseError::Generic("expected 'a or ?x in %{...}".into())),
+                                }
+                                let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("expected , or } in %{...}".into()))?;
+                                match sep.tok { Tok::Comma => continue, Tok::RBrace => break, _ => return Err(ParseError::Generic("expected , or } in %{...}".into())) }
+                            }
+                        }
+                    }
+                    // next: a pattern
+                    let pat = parse_pattern(i, toks)?;
+                    let span = Span::new(t.span.offset, pat.span.offset + pat.span.len - t.span.offset);
+                    Pattern::new(PatternKind::TypeBind { tvars, pat: Box::new(pat) }, span)
+                }
                 Tok::LBracket => {
                     // [p1, p2, ...] or []
                     if let Some(nxt) = toks.get(*i) {
@@ -371,6 +398,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                     other => TypeExpr::Ctor { tag: other.to_string(), args: vec![] },
                                 }
                             }
+                            Tok::TyVar(name) => TypeExpr::Var(name.clone()),
                             Tok::Member(name) => TypeExpr::Ctor { tag: name.clone(), args: vec![] },
                             Tok::LBracket => {
                                 // [T]

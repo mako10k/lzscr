@@ -380,7 +380,6 @@ fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatI
             Ok(PatInfo { bindings: binds, subst: s })
         }
         PatternKind::Symbol(sym) => {
-            // treat as ctor with zero args in patterns
             let want = Type::Ctor { tag: sym.clone(), payload: vec![] };
             let s = unify(scrutinee, &want)?;
             Ok(PatInfo { bindings: vec![], subst: s })
@@ -391,6 +390,10 @@ fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatI
             let mut binds = pa.bindings; binds.extend(pb.bindings);
             Ok(PatInfo { bindings: binds, subst: pb.subst.compose(pa.subst) })
         }
+        PatternKind::TypeBind { pat, .. } => {
+            // Transparent for pattern typing; scoping handled by callers (lambda/let/alt-lambda)
+            infer_pattern(tv, pat, scrutinee)
+        }
     }
 }
 
@@ -399,52 +402,96 @@ fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatI
 struct InferCtx {
     tv: TvGen,
     env: TypeEnv,
+    tyvars: Vec<HashMap<String, TvId>>, // stack of frames; lookup is from last to first
+}
+
+fn lookup_tyvar(ctx: &InferCtx, name: &str) -> Option<TvId> {
+    for frame in ctx.tyvars.iter().rev() {
+        if let Some(id) = frame.get(name) {
+            return Some(*id);
+        }
+    }
+    None
+}
+
+fn push_tyvars_from_pattern<'a>(ctx: &mut InferCtx, p: &'a Pattern) -> (&'a Pattern, usize) {
+    let mut cur = p;
+    let mut pushed = 0usize;
+    loop {
+        match &cur.kind {
+            PatternKind::TypeBind { tvars, pat } => {
+                let mut frame = HashMap::new();
+                for nm in tvars {
+                    // '' (empty) represents anonymous '?', we still allocate a distinct id but not bound to a name for lookup
+                    if nm.is_empty() { continue; }
+                    let Type::Var(id) = ctx.tv.fresh() else { unreachable!() };
+                    frame.insert(nm.clone(), id);
+                }
+                ctx.tyvars.push(frame);
+                pushed += 1;
+                cur = pat;
+            }
+            _ => break,
+        }
+    }
+    (cur, pushed)
+}
+
+fn pop_tyvars(ctx: &mut InferCtx, n: usize) {
+    for _ in 0..n { let _ = ctx.tyvars.pop(); }
 }
 
 fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> {
-    match &e.kind {
-        ExprKind::Annot { ty, expr } => {
-            // Convert TypeExpr to Type (holes become fresh vars; named holes share map)
-            fn conv(te: &TypeExpr, fresh: &mut TvGen, holes: &mut HashMap<String, TvId>) -> Type {
-                match te {
-                    TypeExpr::Unit => Type::Unit,
-                    TypeExpr::Int => Type::Int,
-                    TypeExpr::Float => Type::Float,
-                    TypeExpr::Bool => Type::Bool,
-                    TypeExpr::Str => Type::Str,
-                    TypeExpr::List(t) => Type::List(Box::new(conv(t, fresh, holes))),
-                    TypeExpr::Tuple(xs) => Type::Tuple(xs.iter().map(|t| conv(t, fresh, holes)).collect()),
-                    TypeExpr::Record(fs) => {
-                        let mut m = BTreeMap::new();
-                        for (k, v) in fs { m.insert(k.clone(), conv(v, fresh, holes)); }
-                        Type::Record(m)
-                    }
-                    TypeExpr::Fun(a, b) => Type::fun(conv(a, fresh, holes), conv(b, fresh, holes)),
-                    TypeExpr::Ctor { tag, args } => Type::Ctor { tag: tag.clone(), payload: args.iter().map(|t| conv(t, fresh, holes)).collect() },
-                    TypeExpr::Var(name) => {
-                        let key = format!("'{}", name);
-                        let id = holes.entry(key).or_insert_with(|| { let Type::Var(v) = fresh.fresh() else { unreachable!() }; v });
-                        Type::Var(*id)
-                    }
-                    TypeExpr::Hole(Some(n)) => {
-                        let key = format!("?{}", n);
-                        let id = holes.entry(key).or_insert_with(|| { let Type::Var(v) = fresh.fresh() else { unreachable!() }; v });
-                        Type::Var(*id)
-                    }
-                    TypeExpr::Hole(None) => { let Type::Var(v) = fresh.fresh() else { unreachable!() }; Type::Var(v) }
+    // Helper: convert TypeExpr to Type using ctx.tyvars and a local holes table for '?'
+    fn conv_typeexpr(ctx: &mut InferCtx, te: &TypeExpr, holes: &mut HashMap<String, TvId>) -> Type {
+        match te {
+            TypeExpr::Unit => Type::Unit,
+            TypeExpr::Int => Type::Int,
+            TypeExpr::Float => Type::Float,
+            TypeExpr::Bool => Type::Bool,
+            TypeExpr::Str => Type::Str,
+            TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr(ctx, t, holes))),
+            TypeExpr::Tuple(xs) => Type::Tuple(xs.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect()),
+            TypeExpr::Record(fs) => {
+                let mut m = BTreeMap::new();
+                for (k, v) in fs { m.insert(k.clone(), conv_typeexpr(ctx, v, holes)); }
+                Type::Record(m)
+            }
+            TypeExpr::Fun(a, b) => Type::fun(conv_typeexpr(ctx, a, holes), conv_typeexpr(ctx, b, holes)),
+            TypeExpr::Ctor { tag, args } => {
+                let payload = args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect();
+                Type::Ctor { tag: tag.clone(), payload }
+            }
+            TypeExpr::Var(name) => {
+                if let Some(id) = lookup_tyvar(ctx, name) { Type::Var(id) } else {
+                    // Unbound type var in annotation: treat as a shared hole keyed by the name
+                    let key = format!("'{}", name);
+                    let id = holes.entry(key).or_insert_with(|| { let Type::Var(v) = ctx.tv.fresh() else { unreachable!() }; v });
+                    Type::Var(*id)
                 }
             }
-            let mut holes = HashMap::new();
-            let want = conv(ty, &mut ctx.tv, &mut holes);
+            TypeExpr::Hole(opt) => {
+                if let Some(n) = opt.as_ref() {
+                    let key = format!("?{}", n);
+                    let id = holes.entry(key).or_insert_with(|| { let Type::Var(v) = ctx.tv.fresh() else { unreachable!() }; v });
+                    Type::Var(*id)
+                } else {
+                    let Type::Var(v) = ctx.tv.fresh() else { unreachable!() };
+                    Type::Var(v)
+                }
+            }
+        }
+    }
+
+    match &e.kind {
+        ExprKind::Annot { ty, expr } => {
             let (got, s) = infer_expr(ctx, expr)?;
+            let mut holes = HashMap::new();
+            let want = conv_typeexpr(ctx, ty, &mut holes);
             let s2 = unify(&got.apply(&s), &want)?;
             Ok((want.apply(&s2), s2.compose(s)))
         }
-        ExprKind::TypeVal(_ty) => {
-            // First-class type value: we model it as Str pretty-printed for now to avoid adding a Type-of-Types runtime type.
-            // This keeps future extension open while making it typeable as Str.
-            Ok((Type::Str, Subst::new()))
-        }
+        ExprKind::TypeVal(_ty) => Ok((Type::Str, Subst::new())),
         ExprKind::Unit => Ok((Type::Unit, Subst::new())),
         ExprKind::Int(_) => Ok((Type::Int, Subst::new())),
         ExprKind::Float(_) => Ok((Type::Float, Subst::new())),
@@ -454,19 +501,20 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
             Ok((instantiate(&mut ctx.tv, &s), Subst::new()))
         }
         ExprKind::Symbol(name) => {
-            // Treat bare symbol as constructor variable; type is polymorphic function from payload to Ctor
-            // arity unknown at type level; model as a type variable function: a1 -> a2 -> ... -> Ctor
-            // MVP: assume arity 0 to allow usage as value; payload will be built via application elsewhere.
+            // Treat bare symbol as ctor value of arity 0 at type level
             Ok((Type::Ctor { tag: name.clone(), payload: vec![] }, Subst::new()))
         }
         ExprKind::Lambda { param, body } => {
+            // Handle pattern-level type binders: push frames while inferring param and body
+            let (p_core, pushed) = push_tyvars_from_pattern(ctx, param);
             let a = ctx.tv.fresh();
-            let pi = infer_pattern(&mut ctx.tv, param, &a)?;
+            let pi = infer_pattern(&mut ctx.tv, p_core, &a)?;
             let mut env2 = ctx.env.clone();
             for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
             let prev = std::mem::replace(&mut ctx.env, env2);
             let (bt, s_body) = infer_expr(ctx, body)?;
             ctx.env = prev;
+            pop_tyvars(ctx, pushed);
             let ty = Type::fun(a.apply(&s_body).apply(&pi.subst), bt.apply(&s_body));
             Ok((ty, s_body.compose(pi.subst)))
         }
@@ -484,40 +532,37 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
             let mut s = Subst::new();
             for it in items {
                 let (ti, si) = infer_expr(ctx, it)?;
-                let s1 = unify(&ti.apply(&s), &a.apply(&s))?;
+                let s1 = unify(&ti.apply(&s).apply(&si), &a.apply(&s).apply(&si))?;
                 s = s1.compose(si).compose(s);
             }
             Ok((Type::List(Box::new(a.apply(&s))), s))
         }
-    ExprKind::LetGroup { bindings, body } => {
-            // Simple non-recursive sequencing for MVP: evaluate bindings in order in extended env
-            // Note: Full LetRec requires placeholder vars and mutual recursion handling.
+        ExprKind::LetGroup { bindings, body } => {
+            // Non-recursive sequencing MVP
             let env_prev = ctx.env.clone();
             let mut env = ctx.env.clone();
             for (p, ex) in bindings {
-        // infer RHS under current extended env
-        let saved = std::mem::replace(&mut ctx.env, env.clone());
-        let (t_rhs, s_rhs) = infer_expr(ctx, ex)?;
-        ctx.env = saved;
+                // Push typevars from pattern during RHS inference and binding
+                let (p_core, pushed) = push_tyvars_from_pattern(ctx, p);
+                let saved = std::mem::replace(&mut ctx.env, env.clone());
+                let (t_rhs, s_rhs) = infer_expr(ctx, ex)?;
+                ctx.env = saved;
                 let a = ctx.tv.fresh();
-                // p : a  and unify a with t_rhs
-                let pi = infer_pattern(&mut ctx.tv, p, &a.apply(&s_rhs))?;
+                let pi = infer_pattern(&mut ctx.tv, p_core, &a.apply(&s_rhs))?;
                 let s = unify(&a.apply(&pi.subst), &t_rhs.apply(&pi.subst))?;
                 let subst_all = s.compose(pi.subst).compose(s_rhs);
-                // bind variables
                 for (n, t) in pi.bindings {
                     let sc = generalize(&env, &t.apply(&subst_all));
                     env.insert(n, sc);
                 }
+                pop_tyvars(ctx, pushed);
             }
-            // body under env
-            let _ = std::mem::replace(&mut ctx.env, env);
+            let _ = std::mem::replace(&mut ctx.env, env.clone());
             let res = infer_expr(ctx, body);
             ctx.env = env_prev;
             res
         }
         ExprKind::Raise(inner) => {
-            // model as bottom: type of inner unconstrained, result fresh var
             let (_t, s) = infer_expr(ctx, inner)?;
             let r = ctx.tv.fresh();
             Ok((r, s))
@@ -531,7 +576,6 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
         }
         ExprKind::Catch { left, right } => {
             let (tl, sl) = infer_expr(ctx, left)?;
-            // right: gamma -> r  (approximate) — MVP: treat as function from any to result type
             let a = ctx.tv.fresh();
             let r = ctx.tv.fresh();
             let (tr, sr) = infer_expr(ctx, right)?;
@@ -541,55 +585,41 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
             Ok((r.apply(&s), s))
         }
         ExprKind::AltLambda { left, right } => {
-            // Special handling for Ctor-union when lambda patterns are constructor-only.
-            // Pattern-check fast path: both sides must be Lambda.
-            let (pl, bl) = match &left.kind {
-                ExprKind::Lambda { param, body } => (param, body),
-                _ => return Err(TypeError::MixedAltBranches),
-            };
-            let (pr, br) = match &right.kind {
-                ExprKind::Lambda { param, body } => (param, body),
-                _ => return Err(TypeError::MixedAltBranches),
-            };
+            // Both sides must be Lambda
+            let (pl, bl) = match &left.kind { ExprKind::Lambda { param, body } => (param, body), _ => return Err(TypeError::MixedAltBranches) };
+            let (pr, br) = match &right.kind { ExprKind::Lambda { param, body } => (param, body), _ => return Err(TypeError::MixedAltBranches) };
 
-            // detect ctor-only or wildcard/default
-            fn is_ctor_like(p: &PatternKind) -> bool {
-                matches!(p, PatternKind::Ctor { .. } | PatternKind::Symbol(_))
-            }
-            let left_ctor = is_ctor_like(&pl.kind) || matches!(pl.kind, PatternKind::Wildcard);
-            let right_ctor = is_ctor_like(&pr.kind) || matches!(pr.kind, PatternKind::Wildcard);
-            if !(left_ctor && right_ctor) {
-                return Err(TypeError::MixedAltBranches);
-            }
+            // Peel typebinders and push frames per branch scope
+            let (pl_core, l_pushed) = push_tyvars_from_pattern(ctx, pl);
+            let (pr_core, r_pushed) = push_tyvars_from_pattern(ctx, pr);
 
-            // Build union of ctor tags; wildcard does not add variants.
+            fn is_ctor_like(p: &PatternKind) -> bool { matches!(p, PatternKind::Ctor { .. } | PatternKind::Symbol(_)) }
+            let left_ctor = is_ctor_like(&pl_core.kind) || matches!(pl_core.kind, PatternKind::Wildcard);
+            let right_ctor = is_ctor_like(&pr_core.kind) || matches!(pr_core.kind, PatternKind::Wildcard);
+            if !(left_ctor && right_ctor) { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::MixedAltBranches); }
+
             let mut variants: Vec<(String, Vec<Type>)> = vec![];
             let mut seen = HashSet::<String>::new();
-            let mut param_ty = ctx.tv.fresh(); // will be replaced by SumCtor if variants present
-
+            let mut param_ty = ctx.tv.fresh();
             let mut s_all = Subst::new();
-
             let mut branch_ret = ctx.tv.fresh();
 
-            // process left branch
-            match &pl.kind {
+            // Left branch
+            match &pl_core.kind {
                 PatternKind::Wildcard => {
-                    let pi = infer_pattern(&mut ctx.tv, pl, &param_ty.apply(&s_all))?;
+                    let pi = infer_pattern(&mut ctx.tv, pl_core, &param_ty.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, bl)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
-                    // consume s_all to silence assignment warning and propagate
                     param_ty = param_ty.apply(&s_all);
                     branch_ret = branch_ret.apply(&s_all);
                 }
                 PatternKind::Ctor { name, args } => {
                     let payload: Vec<Type> = (0..args.len()).map(|_| ctx.tv.fresh()).collect();
-                    if !seen.insert(name.clone()) {
-                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
-                    }
+                    if !seen.insert(name.clone()) { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::DuplicateCtorTag { tag: name.clone() }); }
                     variants.push((name.clone(), payload.clone()));
                     let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
-                    let pi = infer_pattern(&mut ctx.tv, pl, &scr.apply(&s_all))?;
+                    let pi = infer_pattern(&mut ctx.tv, pl_core, &scr.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, bl)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
@@ -597,25 +627,23 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
                     branch_ret = branch_ret.apply(&s_all);
                 }
                 PatternKind::Symbol(name) => {
-                    if !seen.insert(name.clone()) {
-                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
-                    }
+                    if !seen.insert(name.clone()) { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::DuplicateCtorTag { tag: name.clone() }); }
                     variants.push((name.clone(), vec![]));
                     let scr = Type::Ctor { tag: name.clone(), payload: vec![] };
-                    let pi = infer_pattern(&mut ctx.tv, pl, &scr.apply(&s_all))?;
+                    let pi = infer_pattern(&mut ctx.tv, pl_core, &scr.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, bl)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                     branch_ret = branch_ret.apply(&s_all);
                 }
-                _ => return Err(TypeError::MixedAltBranches),
+                _ => { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::MixedAltBranches); }
             }
 
-            // process right branch
-            match &pr.kind {
+            // Right branch
+            match &pr_core.kind {
                 PatternKind::Wildcard => {
-                    let pi = infer_pattern(&mut ctx.tv, pr, &param_ty.apply(&s_all))?;
+                    let pi = infer_pattern(&mut ctx.tv, pr_core, &param_ty.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, br)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
@@ -624,12 +652,10 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
                 }
                 PatternKind::Ctor { name, args } => {
                     let payload: Vec<Type> = (0..args.len()).map(|_| ctx.tv.fresh()).collect();
-                    if !seen.insert(name.clone()) {
-                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
-                    }
+                    if !seen.insert(name.clone()) { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::DuplicateCtorTag { tag: name.clone() }); }
                     variants.push((name.clone(), payload.clone()));
                     let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
-                    let pi = infer_pattern(&mut ctx.tv, pr, &scr.apply(&s_all))?;
+                    let pi = infer_pattern(&mut ctx.tv, pr_core, &scr.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, br)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
@@ -637,25 +663,23 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> 
                     branch_ret = branch_ret.apply(&s_all);
                 }
                 PatternKind::Symbol(name) => {
-                    if !seen.insert(name.clone()) {
-                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
-                    }
+                    if !seen.insert(name.clone()) { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::DuplicateCtorTag { tag: name.clone() }); }
                     variants.push((name.clone(), vec![]));
                     let scr = Type::Ctor { tag: name.clone(), payload: vec![] };
-                    let pi = infer_pattern(&mut ctx.tv, pr, &scr.apply(&s_all))?;
+                    let pi = infer_pattern(&mut ctx.tv, pr_core, &scr.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, br)?;
                     let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                     branch_ret = branch_ret.apply(&s_all);
                 }
-                _ => return Err(TypeError::MixedAltBranches),
+                _ => { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::MixedAltBranches); }
             }
 
-            // If we collected any ctor variants, parameter type is SumCtor of them; otherwise keep fresh param
-            if !variants.is_empty() {
-                param_ty = Type::SumCtor(variants);
-            }
+            pop_tyvars(ctx, r_pushed);
+            pop_tyvars(ctx, l_pushed);
+
+            if !variants.is_empty() { param_ty = Type::SumCtor(variants); }
             Ok((Type::fun(param_ty.apply(&s_all), branch_ret.apply(&s_all)), s_all))
         }
     }
@@ -708,7 +732,7 @@ pub mod api {
 
     pub fn infer_program(src: &str) -> Result<String, String> {
         let ast = parse_expr(src).map_err(|e| format!("parse error: {e}"))?;
-        let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env() };
+    let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![] };
         match infer_expr(&mut ctx, &ast) {
             Ok((t, _s)) => Ok(pp_type(&t)),
             Err(e) => Err(format!("{e}")),

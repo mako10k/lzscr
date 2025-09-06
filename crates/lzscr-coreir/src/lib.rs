@@ -115,6 +115,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                 "[{}]",
                 xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
             ),
+            PatternKind::TypeBind { pat, .. } => print_pattern(pat),
             PatternKind::Ctor { name, args } => {
                 if args.is_empty() {
                     name.clone()

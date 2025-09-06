@@ -78,6 +78,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                 fn pp(p: &Pattern) -> String {
                     match &p.kind {
                         PatternKind::Wildcard => "_".into(),
+                        PatternKind::TypeBind { pat, .. } => pp(pat),
                         PatternKind::Var(n) => format!("~{}", n),
                         PatternKind::Unit => "()".into(),
                         PatternKind::Tuple(xs) => {
@@ -292,6 +293,9 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
                         | PatternKind::Bool(_) => {}
+                        PatternKind::TypeBind { pat, .. } => {
+                            binds(pat, acc);
+                        }
                         PatternKind::Var(n) => {
                             acc.insert(n.clone());
                         }
@@ -372,6 +376,9 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
                         | PatternKind::Bool(_) => {}
+                        PatternKind::TypeBind { pat, .. } => {
+                            binds(pat, acc);
+                        }
                         PatternKind::Var(n) => {
                             acc.insert(n.clone());
                         }
@@ -437,6 +444,9 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
                         | PatternKind::Bool(_) => {}
+                        PatternKind::TypeBind { pat, .. } => {
+                            pat_idents(pat, out);
+                        }
                         PatternKind::Var(n) => out.push(n.clone()),
                         PatternKind::Tuple(xs) => {
                             for x in xs {
@@ -499,6 +509,9 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
                         | PatternKind::Bool(_) => {}
+                        PatternKind::TypeBind { pat, .. } => {
+                            pat_idents(pat, outn);
+                        }
                         PatternKind::Var(n) => outn.push(n.clone()),
                         PatternKind::Tuple(xs) | PatternKind::List(xs) => {
                             for x in xs {
@@ -601,6 +614,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             | PatternKind::Float(_)
             | PatternKind::Str(_)
             | PatternKind::Bool(_) => false,
+            PatternKind::TypeBind { pat, .. } => binds_param(pat, name),
             PatternKind::Var(n) => n == name,
             PatternKind::Tuple(xs) => xs.iter().any(|x| binds_param(x, name)),
             PatternKind::List(xs) => xs.iter().any(|x| binds_param(x, name)),
@@ -623,6 +637,9 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
                         | PatternKind::Bool(_) => {}
+                        PatternKind::TypeBind { pat, .. } => {
+                            collect(pat, outn);
+                        }
                         PatternKind::Var(n) => outn.push(n.clone()),
                         PatternKind::Tuple(xs) => {
                             for x in xs {
@@ -712,5 +729,21 @@ mod tests {
             },
         );
         assert!(d.iter().any(|f| f.count >= 2 && f.size >= 3));
+    }
+
+    #[test]
+    fn unused_param_with_typebind_pattern() {
+        // \%{ 'a } ~x -> 1  => x は未使用
+        let e = parse_expr("(\\%{ 'a } ~x -> 1)").unwrap();
+        let issues = analyze_unused_params(&e);
+        assert!(issues.iter().any(|u| u.name == "x"));
+    }
+
+    #[test]
+    fn shadowing_with_typebind_param() {
+        // \\~x -> (\\%{ 'a } ~x -> ~x) ~x  => 内側ラムダの x が外側をシャドー
+        let e = parse_expr("(\\~x -> (\\%{ 'a } ~x -> ~x) ~x)").unwrap();
+        let issues = analyze_shadowing(&e);
+        assert!(issues.iter().any(|s| s.name == "x"));
     }
 }

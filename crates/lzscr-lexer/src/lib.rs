@@ -114,6 +114,10 @@ pub enum Tok {
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident,
 
+    // Type variable like 'a, 'foo (captures the name without leading apostrophe)
+    #[regex(r"'[a-zA-Z_][a-zA-Z0-9_]*", |lex| Some(lex.slice()[1..].to_string()))]
+    TyVar(String),
+
     // Member-ish symbol like .println or .env
     #[regex(r"\.[a-zA-Z_][a-zA-Z0-9_]*", |lex| Some(lex.slice().to_string()))]
     Member(String),

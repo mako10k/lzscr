@@ -50,6 +50,8 @@ pub mod ast {
         // List patterns
         List(Vec<Pattern>),               // [p1, p2, ...]
         Cons(Box<Pattern>, Box<Pattern>), // h : t
+    // Type variable binder for pattern scope: %{ 'a, ?x } p
+    TypeBind { tvars: Vec<String>, pat: Box<Pattern> },
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -167,6 +169,14 @@ pub mod pretty {
                 )
             }
             PatternKind::Cons(h, t) => format!("{} : {}", print_pattern(h), print_pattern(t)),
+            PatternKind::TypeBind { tvars, pat } => {
+                let inner = tvars
+                    .iter()
+                    .map(|s| format!("'{}", s))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("%{{{}}} {}", inner, print_pattern(pat))
+            }
         }
     }
     pub fn print_expr(e: &Expr) -> String {
@@ -225,8 +235,9 @@ pub mod pretty {
             TypeExpr::Bool => "Bool".into(),
             TypeExpr::Str => "Str".into(),
             TypeExpr::Var(a) => format!("'{}", a),
-            TypeExpr::Hole(Some(a)) => format!("?{}", a),
-            TypeExpr::Hole(None) => "?".into(),
+            TypeExpr::Hole(opt) => {
+                if let Some(a) = opt { format!("?{}", a) } else { "?".into() }
+            }
             TypeExpr::List(x) => format!("[{}]", print_type(x)),
             TypeExpr::Tuple(xs) => {
                 format!(
