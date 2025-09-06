@@ -1260,7 +1260,48 @@ fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalError> 
 }
 
 pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
+    fn print_type_expr(t: &TypeExpr) -> String {
+        match t {
+            TypeExpr::Unit => "Unit".into(),
+            TypeExpr::Int => "Int".into(),
+            TypeExpr::Float => "Float".into(),
+            TypeExpr::Bool => "Bool".into(),
+            TypeExpr::Str => "Str".into(),
+            TypeExpr::Var(a) => format!("'{}", a),
+            TypeExpr::Hole(Some(a)) => format!("?{}", a),
+            TypeExpr::Hole(opt) => {
+                if let Some(a) = opt { format!("?{}", a) } else { "?".into() }
+            }
+            TypeExpr::List(x) => format!("[{}]", print_type_expr(x)),
+            TypeExpr::Tuple(xs) => {
+                let inner = xs.iter().map(print_type_expr).collect::<Vec<_>>().join(", ");
+                format!("({})", inner)
+            }
+            TypeExpr::Record(fields) => {
+                let inner = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, print_type_expr(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", inner)
+            }
+            TypeExpr::Fun(a, b) => format!("{} -> {}", print_type_expr(a), print_type_expr(b)),
+            TypeExpr::Ctor { tag, args } => {
+                if args.is_empty() {
+                    tag.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        tag,
+                        args.iter().map(print_type_expr).collect::<Vec<_>>().join(" ")
+                    )
+                }
+            }
+        }
+    }
     match &e.kind {
+        ExprKind::Annot { ty: _, expr } => eval(env, expr),
+        ExprKind::TypeVal(ty) => Ok(Value::Str(print_type_expr(ty))),
         ExprKind::Unit => Ok(Value::Unit),
         ExprKind::Int(n) => Ok(Value::Int(*n)),
         ExprKind::Str(s) => Ok(Value::Str(s.clone())),

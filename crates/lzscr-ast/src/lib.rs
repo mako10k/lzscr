@@ -18,6 +18,22 @@ pub mod ast {
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub enum TypeExpr {
+        Unit,
+        Int,
+        Float,
+        Bool,
+        Str,
+        List(Box<TypeExpr>),
+        Tuple(Vec<TypeExpr>),
+        Record(Vec<(String, TypeExpr)>),
+        Fun(Box<TypeExpr>, Box<TypeExpr>),
+        Ctor { tag: String, args: Vec<TypeExpr> },
+        Var(String),             // 'a 等（構文は %{...} 内でのみ）
+        Hole(Option<String>),    // ? または ?a
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum PatternKind {
         Wildcard,                                  // _
         Var(String),                               // ~x（パース時は ~ident で生成）
@@ -55,6 +71,10 @@ pub mod ast {
         Str(String),
         Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
+    // 型注釈: %{T} e （恒等）
+    Annot { ty: TypeExpr, expr: Box<Expr> },
+    // 型値の第一級表現: %{T}
+    TypeVal(TypeExpr),
         Lambda {
             param: Pattern,
             body: Box<Expr>,
@@ -157,6 +177,12 @@ pub mod pretty {
             ExprKind::Str(s) => format!("\"{}\"", s.escape_default()),
             ExprKind::Ref(n) => format!("~{n}"),
             ExprKind::Symbol(s) => s.clone(),
+            ExprKind::Annot { ty, expr } => {
+                format!("%{{{}}} {}", print_type(ty), print_expr(expr))
+            }
+            ExprKind::TypeVal(ty) => {
+                format!("%{{{}}}", print_type(ty))
+            }
             ExprKind::Lambda { param, body } => {
                 format!("\\{} -> {}", print_pattern(param), print_expr(body))
             }
@@ -187,6 +213,46 @@ pub mod pretty {
             }
             ExprKind::Catch { left, right } => {
                 format!("({} ^| {})", print_expr(left), print_expr(right))
+            }
+        }
+    }
+
+    fn print_type(t: &TypeExpr) -> String {
+        match t {
+            TypeExpr::Unit => "Unit".into(),
+            TypeExpr::Int => "Int".into(),
+            TypeExpr::Float => "Float".into(),
+            TypeExpr::Bool => "Bool".into(),
+            TypeExpr::Str => "Str".into(),
+            TypeExpr::Var(a) => format!("'{}", a),
+            TypeExpr::Hole(Some(a)) => format!("?{}", a),
+            TypeExpr::Hole(None) => "?".into(),
+            TypeExpr::List(x) => format!("[{}]", print_type(x)),
+            TypeExpr::Tuple(xs) => {
+                format!(
+                    "({})",
+                    xs.iter().map(print_type).collect::<Vec<_>>().join(", ")
+                )
+            }
+            TypeExpr::Record(fields) => {
+                let inner = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, print_type(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", inner)
+            }
+            TypeExpr::Fun(a, b) => format!("{} -> {}", print_type(a), print_type(b)),
+            TypeExpr::Ctor { tag, args } => {
+                if args.is_empty() {
+                    tag.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        tag,
+                        args.iter().map(print_type).collect::<Vec<_>>().join(" ")
+                    )
+                }
             }
         }
     }

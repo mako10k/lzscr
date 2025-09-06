@@ -60,6 +60,48 @@ pub struct Module {
 }
 
 pub fn lower_expr_to_core(e: &Expr) -> Term {
+    fn print_type_expr(t: &TypeExpr) -> String {
+        match t {
+            TypeExpr::Unit => "Unit".into(),
+            TypeExpr::Int => "Int".into(),
+            TypeExpr::Float => "Float".into(),
+            TypeExpr::Bool => "Bool".into(),
+            TypeExpr::Str => "Str".into(),
+            TypeExpr::Var(a) => format!("'{}", a),
+            TypeExpr::Hole(opt) => {
+                if let Some(a) = opt { format!("?{}", a) } else { "?".into() }
+            }
+            TypeExpr::List(x) => format!("[{}]", print_type_expr(x)),
+            TypeExpr::Tuple(xs) => {
+                let inner = xs
+                    .iter()
+                    .map(print_type_expr)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({})", inner)
+            }
+            TypeExpr::Record(fields) => {
+                let inner = fields
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, print_type_expr(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", inner)
+            }
+            TypeExpr::Fun(a, b) => format!("{} -> {}", print_type_expr(a), print_type_expr(b)),
+            TypeExpr::Ctor { tag, args } => {
+                if args.is_empty() {
+                    tag.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        tag,
+                        args.iter().map(print_type_expr).collect::<Vec<_>>().join(" ")
+                    )
+                }
+            }
+        }
+    }
     fn print_pattern(p: &Pattern) -> String {
         match &p.kind {
             PatternKind::Wildcard => "_".into(),
@@ -102,6 +144,8 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         }
     }
     match &e.kind {
+    ExprKind::Annot { ty: _, expr } => lower_expr_to_core(expr),
+    ExprKind::TypeVal(ty) => Term::new(Op::Str(print_type_expr(ty))),
         ExprKind::Unit => Term::new(Op::Unit),
         ExprKind::Int(n) => Term::new(Op::Int(*n)),
         ExprKind::Float(f) => Term::new(Op::Float(*f)),

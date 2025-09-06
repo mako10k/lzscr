@@ -354,6 +354,113 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     ) -> Result<Expr, ParseError> {
         let t = bump(i, toks).ok_or_else(|| ParseError::Generic("unexpected EOF".into()))?;
         Ok(match &t.tok {
+            Tok::TypeOpen => {
+                // %{ TypeExpr } [Expr?]
+                fn parse_type<'b>(j: &mut usize, toks: &'b [lzscr_lexer::Lexed<'b>]) -> Result<TypeExpr, ParseError> {
+                    // Pratt for -> (right-assoc), with atoms: Unit/Int/Float/Bool/Str/Ident/Member, tuple, list, record, holes
+                    fn parse_type_atom<'c>(j: &mut usize, toks: &'c [lzscr_lexer::Lexed<'c>]) -> Result<TypeExpr, ParseError> {
+                        let t = bump(j, toks).ok_or_else(|| ParseError::Generic("expected type".into()))?;
+                        Ok(match &t.tok {
+                            Tok::Ident => {
+                                match t.text {
+                                    "Unit" => TypeExpr::Unit,
+                                    "Int" => TypeExpr::Int,
+                                    "Float" => TypeExpr::Float,
+                                    "Bool" => TypeExpr::Bool,
+                                    "Str" => TypeExpr::Str,
+                                    other => TypeExpr::Ctor { tag: other.to_string(), args: vec![] },
+                                }
+                            }
+                            Tok::Member(name) => TypeExpr::Ctor { tag: name.clone(), args: vec![] },
+                            Tok::LBracket => {
+                                // [T]
+                                let inner = parse_type(j, toks)?;
+                                let rb = bump(j, toks).ok_or_else(|| ParseError::Generic("] expected in type".into()))?;
+                                if !matches!(rb.tok, Tok::RBracket) { return Err(ParseError::Generic("] expected in type".into())); }
+                                TypeExpr::List(Box::new(inner))
+                            }
+                            Tok::LParen => {
+                                // () or (T1, T2, ...)
+                                if let Some(nxt) = toks.get(*j) { if matches!(nxt.tok, Tok::RParen) {
+                                    let _ = bump(j, toks);
+                                    return Ok(TypeExpr::Tuple(vec![]));
+                                }}
+                                let first = parse_type(j, toks)?;
+                                let mut items = vec![first];
+                                loop {
+                                    let Some(nxt) = toks.get(*j) else { return Err(ParseError::Generic(") expected in type".into())); };
+                                    match nxt.tok {
+                                        Tok::Comma => { let _ = bump(j, toks); let t2 = parse_type(j, toks)?; items.push(t2); }
+                                        Tok::RParen => { let _ = bump(j, toks); break; }
+                                        _ => return Err(ParseError::Generic("expected , or ) in type".into())),
+                                    }
+                                }
+                                TypeExpr::Tuple(items)
+                            }
+                            Tok::LBrace => {
+                                // { k: T, ... }
+                                if let Some(nxt) = toks.get(*j) { if matches!(nxt.tok, Tok::RBrace) { let _= bump(j, toks); return Ok(TypeExpr::Record(vec![])); } }
+                                let mut fields = Vec::new();
+                                loop {
+                                    let k = bump(j, toks).ok_or_else(|| ParseError::Generic("expected key in type record".into()))?;
+                                    let key = match &k.tok { Tok::Ident => k.text.to_string(), _ => return Err(ParseError::Generic("expected ident key in type record".into())) };
+                                    let col = bump(j, toks).ok_or_else(|| ParseError::Generic(": expected in type record".into()))?;
+                                    if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected in type record".into())); }
+                                    let tv = parse_type(j, toks)?;
+                                    fields.push((key, tv));
+                                    let sep = bump(j, toks).ok_or_else(|| ParseError::Generic("expected , or } in type record".into()))?;
+                                    match sep.tok { Tok::Comma => continue, Tok::RBrace => break, _ => return Err(ParseError::Generic("expected , or } in type record".into())), }
+                                }
+                                TypeExpr::Record(fields)
+                            }
+                            Tok::Question => {
+                                // ? or ?name
+                                let name = if let Some(nx) = toks.get(*j) { if matches!(nx.tok, Tok::Ident) { let n = nx.text.to_string(); let _ = bump(j, toks); Some(n) } else { None } } else { None };
+                                TypeExpr::Hole(name)
+                            }
+                            _ => return Err(ParseError::Generic("unexpected token in type".into())),
+                        })
+                    }
+                    fn parse_type_bp<'c>(j: &mut usize, toks: &'c [lzscr_lexer::Lexed<'c>], bp: u8) -> Result<TypeExpr, ParseError> {
+                        let mut lhs = parse_type_atom(j, toks)?;
+                        loop {
+                            let Some(nxt) = toks.get(*j) else { break };
+                            // only -> with right associativity
+                            if matches!(nxt.tok, Tok::Arrow) {
+                                if 5 < bp { break; }
+                                let _ = bump(j, toks);
+                                let rhs = parse_type_bp(j, toks, 5)?;
+                                lhs = TypeExpr::Fun(Box::new(lhs), Box::new(rhs));
+                                continue;
+                            }
+                            break;
+                        }
+                        Ok(lhs)
+                    }
+                    parse_type_bp(j, toks, 0)
+                }
+                let mut j = *i;
+                let ty = parse_type(&mut j, toks)?;
+                let rb = bump(&mut j, toks).ok_or_else(|| ParseError::Generic("} expected after type".into()))?;
+                if !matches!(rb.tok, Tok::RBrace) { return Err(ParseError::Generic("} expected after type".into())); }
+                // lookahead for an expression atom to annotate; if next token begins an atom/lambda/ref/etc, parse it
+                if let Some(nxt) = toks.get(j) {
+                    match nxt.tok {
+                        Tok::LParen | Tok::LBracket | Tok::LBrace | Tok::Int(_) | Tok::Float(_) | Tok::Str(_) | Tok::Tilde | Tok::Backslash | Tok::Ident | Tok::Member(_) | Tok::Bang | Tok::Caret | Tok::TypeOpen => {
+                            // annotation applies to following atom/expression (parse full expr at top level bp)
+                            *i = j;
+                            let ex = parse_expr_bp(i, toks, 0)?;
+                            let span = Span::new(t.span.offset, ex.span.offset + ex.span.len - t.span.offset);
+                            return Ok(Expr::new(ExprKind::Annot { ty, expr: Box::new(ex) }, span));
+                        }
+                        _ => {}
+                    }
+                }
+                // otherwise, type value
+                *i = j;
+                let span = Span::new(t.span.offset, rb.span.offset + rb.span.len - t.span.offset);
+                Expr::new(ExprKind::TypeVal(ty), span)
+            }
             Tok::LBracket => {
                 // list literal: [ e1, e2, ... ]
                 if let Some(nxt) = peek(*i, toks) {
@@ -947,6 +1054,38 @@ mod tests {
         let r = parse_expr(src).unwrap();
         // We can't easily inspect without eval, but ensure it parses
         let _ = r;
+    }
+
+    #[test]
+    fn type_annotation_parses() {
+        let src = "%{Int} 1";
+        let r = parse_expr(src).unwrap();
+        match r.kind {
+            ExprKind::Annot { ty, expr } => {
+                match ty {
+                    TypeExpr::Int => {}
+                    other => panic!("expected Int type, got {:?}", other),
+                }
+                matches!(expr.kind, ExprKind::Int(1));
+            }
+            other => panic!("expected Annot, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn type_value_parses() {
+        let src = "%{Int -> Int}";
+        let r = parse_expr(src).unwrap();
+        match r.kind {
+            ExprKind::TypeVal(ty) => match ty {
+                TypeExpr::Fun(a, b) => {
+                    matches!(*a, TypeExpr::Int);
+                    matches!(*b, TypeExpr::Int);
+                }
+                other => panic!("expected Fun(Int, Int), got {:?}", other),
+            },
+            other => panic!("expected TypeVal, got {:?}", other),
+        }
     }
 
     #[test]

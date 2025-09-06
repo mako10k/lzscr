@@ -25,6 +25,9 @@ pub enum Tok {
     LBracket,
     #[token("]")]
     RBracket,
+    // Type annotation open: "%{" (close uses the regular RBrace '}')
+    #[token("%{")]
+    TypeOpen,
     #[token(",")]
     Comma,
     #[token(";")]
@@ -48,6 +51,9 @@ pub enum Tok {
     Bang,
     #[token("\\")]
     Backslash,
+    // For type holes like ?a
+    #[token("?")]
+    Question,
     // Infix operators
     #[token("+")]
     Plus,

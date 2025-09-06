@@ -403,6 +403,48 @@ struct InferCtx {
 
 fn infer_expr(ctx: &mut InferCtx, e: &Expr) -> Result<(Type, Subst), TypeError> {
     match &e.kind {
+        ExprKind::Annot { ty, expr } => {
+            // Convert TypeExpr to Type (holes become fresh vars; named holes share map)
+            fn conv(te: &TypeExpr, fresh: &mut TvGen, holes: &mut HashMap<String, TvId>) -> Type {
+                match te {
+                    TypeExpr::Unit => Type::Unit,
+                    TypeExpr::Int => Type::Int,
+                    TypeExpr::Float => Type::Float,
+                    TypeExpr::Bool => Type::Bool,
+                    TypeExpr::Str => Type::Str,
+                    TypeExpr::List(t) => Type::List(Box::new(conv(t, fresh, holes))),
+                    TypeExpr::Tuple(xs) => Type::Tuple(xs.iter().map(|t| conv(t, fresh, holes)).collect()),
+                    TypeExpr::Record(fs) => {
+                        let mut m = BTreeMap::new();
+                        for (k, v) in fs { m.insert(k.clone(), conv(v, fresh, holes)); }
+                        Type::Record(m)
+                    }
+                    TypeExpr::Fun(a, b) => Type::fun(conv(a, fresh, holes), conv(b, fresh, holes)),
+                    TypeExpr::Ctor { tag, args } => Type::Ctor { tag: tag.clone(), payload: args.iter().map(|t| conv(t, fresh, holes)).collect() },
+                    TypeExpr::Var(name) => {
+                        let key = format!("'{}", name);
+                        let id = holes.entry(key).or_insert_with(|| { let Type::Var(v) = fresh.fresh() else { unreachable!() }; v });
+                        Type::Var(*id)
+                    }
+                    TypeExpr::Hole(Some(n)) => {
+                        let key = format!("?{}", n);
+                        let id = holes.entry(key).or_insert_with(|| { let Type::Var(v) = fresh.fresh() else { unreachable!() }; v });
+                        Type::Var(*id)
+                    }
+                    TypeExpr::Hole(None) => { let Type::Var(v) = fresh.fresh() else { unreachable!() }; Type::Var(v) }
+                }
+            }
+            let mut holes = HashMap::new();
+            let want = conv(ty, &mut ctx.tv, &mut holes);
+            let (got, s) = infer_expr(ctx, expr)?;
+            let s2 = unify(&got.apply(&s), &want)?;
+            Ok((want.apply(&s2), s2.compose(s)))
+        }
+        ExprKind::TypeVal(_ty) => {
+            // First-class type value: we model it as Str pretty-printed for now to avoid adding a Type-of-Types runtime type.
+            // This keeps future extension open while making it typeable as Str.
+            Ok((Type::Str, Subst::new()))
+        }
         ExprKind::Unit => Ok((Type::Unit, Subst::new())),
         ExprKind::Int(_) => Ok((Type::Int, Subst::new())),
         ExprKind::Float(_) => Ok((Type::Float, Subst::new())),

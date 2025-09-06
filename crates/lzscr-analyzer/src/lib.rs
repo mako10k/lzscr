@@ -35,7 +35,9 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             | ExprKind::Float(_)
             | ExprKind::Str(_)
             | ExprKind::Ref(_)
-            | ExprKind::Symbol(_) => 1,
+            | ExprKind::Symbol(_)
+            | ExprKind::TypeVal(_) => 1,
+            ExprKind::Annot { expr, .. } => 1 + walk(expr, tbl),
             ExprKind::Raise(inner) => 1 + walk(inner, tbl),
             ExprKind::OrElse { left, right } => 1 + walk(left, tbl) + walk(right, tbl),
             ExprKind::AltLambda { left, right } => 1 + walk(left, tbl) + walk(right, tbl),
@@ -60,6 +62,8 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             ExprKind::Str(s) => format!("s:\"{}\"", s),
             ExprKind::Ref(n) => format!("r:{n}"),
             ExprKind::Symbol(s) => format!("y:{s}"),
+            ExprKind::TypeVal(_) => "typeval".into(),
+            ExprKind::Annot { expr, .. } => format!("annot[{}]", expr.span.len),
             ExprKind::Raise(inner) => format!("raise[{}]", inner.span.len),
             ExprKind::OrElse { left, right } => {
                 format!("orelse({},{})", left.span.len, right.span.len)
@@ -77,10 +81,16 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                         PatternKind::Var(n) => format!("~{}", n),
                         PatternKind::Unit => "()".into(),
                         PatternKind::Tuple(xs) => {
-                            format!("({})", xs.iter().map(pp).collect::<Vec<_>>().join(", "))
+                            format!(
+                                "({})",
+                                xs.iter().map(pp).collect::<Vec<_>>().join(", ")
+                            )
                         }
                         PatternKind::List(xs) => {
-                            format!("[{}]", xs.iter().map(pp).collect::<Vec<_>>().join(", "))
+                            format!(
+                                "[{}]",
+                                xs.iter().map(pp).collect::<Vec<_>>().join(", ")
+                            )
                         }
                         PatternKind::Record(fields) => {
                             let inner = fields
@@ -200,28 +210,23 @@ pub fn analyze_ctor_arity(
         arities: &std::collections::HashMap<String, usize>,
         out: &mut Vec<CtorArityIssue>,
     ) {
+        // Only check value-level constructor applications
         if let Some((head, args)) = head_and_args(e) {
             if let ExprKind::Symbol(name) = &head.kind {
-                let key_a = name.clone();
-                let key_b = if name.starts_with('.') {
-                    name.clone()
-                } else {
-                    format!(".{name}")
-                };
-                if let Some(&exp) = arities.get(&key_a).or_else(|| arities.get(&key_b)) {
+                if let Some(exp) = arities.get(name) {
                     let got = args.len();
-                    if exp == 0 && got > 0 {
+                    if *exp == 0 && got > 0 {
                         out.push(CtorArityIssue {
                             name: name.clone(),
-                            expected: exp,
+                            expected: 0,
                             got,
                             span: e.span,
                             kind: "zero-arity-applied".into(),
                         });
-                    } else if got > exp {
+            } else if got > *exp {
                         out.push(CtorArityIssue {
                             name: name.clone(),
-                            expected: exp,
+                expected: *exp,
                             got,
                             span: e.span,
                             kind: "over".into(),
@@ -243,6 +248,8 @@ pub fn analyze_ctor_arity(
                 check(body, arities, out);
             }
             ExprKind::Block(inner) => check(inner, arities, out),
+            ExprKind::Annot { expr, .. } => check(expr, arities, out),
+            ExprKind::TypeVal(_) => {}
             _ => {}
         }
     }
@@ -255,7 +262,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
     let mut out = Vec::new();
     fn walk(
         e: &Expr,
-        scopes: &mut Vec<HashSet<String>>,
+        scopes: &mut Vec<HashSet<String>>, 
         allow: &HashSet<String>,
         out: &mut Vec<UnboundRef>,
     ) {
@@ -264,7 +271,11 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
             | ExprKind::Int(_)
             | ExprKind::Float(_)
             | ExprKind::Str(_)
-            | ExprKind::Symbol(_) => {}
+            | ExprKind::Symbol(_)
+            | ExprKind::TypeVal(_) => {}
+            ExprKind::Annot { expr, .. } => {
+                walk(expr, scopes, allow, out);
+            }
             ExprKind::List(xs) => {
                 for x in xs {
                     walk(x, scopes, allow, out);
@@ -551,6 +562,8 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                 walk(right, scopes, out);
             }
             ExprKind::Block(inner) => walk(inner, scopes, out),
+            ExprKind::Annot { expr, .. } => walk(expr, scopes, out),
+            ExprKind::TypeVal(_) => {}
             _ => {}
         }
     }
@@ -574,6 +587,8 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             ExprKind::AltLambda { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::Catch { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::Block(inner) => used_in(inner, target),
+            ExprKind::Annot { expr, .. } => used_in(expr, target),
+            ExprKind::TypeVal(_) => false,
             _ => false,
         }
     }
@@ -643,23 +658,15 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
                 collect(param, &mut names);
                 for n in names.iter() {
                     if !used_in(body, n) {
-                        out.push(UnusedParam {
-                            name: n.clone(),
-                            lambda_span: e.span,
-                        });
+                        out.push(UnusedParam { name: n.clone(), lambda_span: e.span });
                     }
                 }
                 walk(body, out);
             }
+            ExprKind::Annot { expr, .. } => walk(expr, out),
             ExprKind::Apply { func, arg } => {
                 walk(func, out);
                 walk(arg, out);
-            }
-            ExprKind::LetGroup { bindings, body } => {
-                walk(body, out);
-                for (_p, ex) in bindings {
-                    walk(ex, out);
-                }
             }
             ExprKind::List(xs) => {
                 for x in xs {
@@ -680,6 +687,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
                 walk(right, out);
             }
             ExprKind::Block(inner) => walk(inner, out),
+            ExprKind::TypeVal(_) => {}
             _ => {}
         }
     }
