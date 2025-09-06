@@ -659,7 +659,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             // Pratt parser: handle infix precedence
             let (op_bp, op_kind) = match nxt.tok.clone() {
                 // lowest precedence for catch and or-else
-                Tok::Pipe => (1, Some("|")),
+                Tok::PipePipe => (1, Some("||")),
                 Tok::Colon => (6, Some(":")),
                 Tok::Plus => (10, Some("+")),
                 Tok::Minus => (10, Some("-")),
@@ -688,7 +688,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 // consume op
                 let _ = bump(i, toks);
                 // special case: '^|' should be parsed as a single operator token sequence '^' '|' when used infix
-                if op == "|" {
+                if op == "||" {
                     // parse RHS normally
                     let rhs = parse_expr_bp(i, toks, op_bp + 1)?;
                     let span = Span::new(

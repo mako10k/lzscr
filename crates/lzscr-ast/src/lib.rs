@@ -174,7 +174,7 @@ pub mod pretty {
             }
             ExprKind::Raise(inner) => format!("^({})", print_expr(inner)),
             ExprKind::OrElse { left, right } => {
-                format!("({} | {})", print_expr(left), print_expr(right))
+                format!("({} || {})", print_expr(left), print_expr(right))
             }
             ExprKind::Catch { left, right } => {
                 format!("({} ^| {})", print_expr(left), print_expr(right))

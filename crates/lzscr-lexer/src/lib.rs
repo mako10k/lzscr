@@ -25,6 +25,8 @@ pub enum Tok {
     Semicolon,
     #[token("^")]
     Caret,
+    #[token("||")]
+    PipePipe,
     #[token("|")]
     Pipe,
     #[token(":")]
