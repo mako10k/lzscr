@@ -35,7 +35,7 @@
 	(\[] -> ~init) | (\( ~h : ~t ) -> ~foldl ~f (~f ~init ~h) ~t)
 ) ~xs;
 
-# String ヘルパ（長さや結合などを Builtins に委譲）
+# String helpers (length and concatenation delegated to Builtins)
 
 # Builtins 経由の委譲（推奨: ユーザは Builtins を直接参照せず prelude を使う）
 ~Str     = ~Builtins .string;
