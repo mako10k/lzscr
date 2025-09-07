@@ -42,6 +42,7 @@
 
 # skip spaces
 ~skip_spaces = \~sc -> ~take_while ~is_space ~sc;
+~skip_spaces1 = \~sc -> ~take_while1 ~is_space ~sc;
 
 {
   char: {
@@ -66,6 +67,7 @@
   token: {
     take_ident: ~take_ident,
     take_number: ~take_number,
-  skip_spaces: ~skip_spaces
+  skip_spaces: ~skip_spaces,
+  skip_spaces1: ~skip_spaces1
   }
 }

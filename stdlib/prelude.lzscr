@@ -35,6 +35,29 @@
 	(\[] -> ~init) | (\( ~h : ~t ) -> ~foldl ~f (~f ~init ~h) ~t)
 ) ~xs;
 
+# 右畳み込み（foldr）
+~foldr = \~f -> \~init -> \~xs -> (
+        (\[] -> ~init) | (\( ~h : ~t ) -> ~f ~h (~foldr ~f ~init ~t))
+) ~xs;
+
+# List 基本操作
+~map = \~f -> \~xs -> (
+        (\[] -> []) | (\( ~h : ~t ) -> (~cons (~f ~h) (~map ~f ~t)))
+) ~xs;
+
+~append = \~xs -> \~ys -> ~foldr (\~x -> \~acc -> (~cons ~x ~acc)) ~ys ~xs;
+~reverse = \~xs -> ~foldl (\~acc -> \~x -> (~cons ~x ~acc)) [] ~xs;
+
+# ブール集約（map不要・構築不要な形で定義）
+~any = \~p -> \~xs -> ~foldl (\~acc -> \~x -> ~bool_or ~acc (~p ~x)) ~false ~xs;
+~all = \~p -> \~xs -> ~foldl (\~acc -> \~x -> ~bool_and ~acc (~p ~x)) ~true ~xs;
+
+# 汎用関数操作
+~const = \~x -> \~_ -> ~x;
+~flip = \~f -> \~b -> \~a -> ~f ~b ~a;
+~compose2 = \~f -> \~g -> \~x -> \~y -> ~f (~g ~x ~y);
+~pipe = \~x -> \~f -> ~f ~x;  # x |> f の代替
+
 # String helpers (length and concatenation delegated to Builtins)
 
 # Builtins 経由の委譲（推奨: ユーザは Builtins を直接参照せず prelude を使う）
@@ -81,6 +104,20 @@
         head_opt: ~head_opt,
         tail_opt: ~tail_opt,
         foldl: ~foldl,
+        foldr: ~foldr,
+        map: ~map,
+        append: ~append,
+        reverse: ~reverse,
+        any: ~any,
+        all: ~all,
+
+        # function helpers
+        id: ~id,
+        compose: ~compose,
+        compose2: ~compose2,
+        flip: ~flip,
+        const: ~const,
+        pipe: ~pipe,
 
         # unicode
         cp_of_int: ~Unicode .of_int,
