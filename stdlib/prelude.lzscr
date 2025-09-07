@@ -10,7 +10,7 @@
 ~bool_or  = \~a -> \~b -> ~or ~a ~b;
 ~bool_not = \~a -> ~not ~a;
 
-# Result 風
+# Result helpers
 ~result_is_ok = \~r -> ((\ .Ok _ -> ~true) | (\ .Err _ -> ~false)) ~r;
 ~result_is_err = \~r -> ((\ .Ok _ -> ~false) | (\ .Err _ -> ~true)) ~r;
 ~result_map = \~f -> \~r -> ((\ .Ok ~x -> .Ok (~f ~x)) | (\ .Err ~e -> .Err ~e)) ~r;
