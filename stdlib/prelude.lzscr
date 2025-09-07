@@ -41,14 +41,20 @@
 ~Str     = ~Builtins .string;
 ~Math    = ~Builtins .math;
 ~Unicode = ~Builtins .unicode;
+~Char    = ~Builtins .char;
+~Scan    = ~Builtins .scan;
 
 {
         string: ~Str,
         math: ~Math,
         unicode: ~Unicode,
+        scan: ~Scan,
+        char: ~Char,
 
         str_len: ~Str .len,
         str_concat: ~Str .concat,
+        str_slice: ~Str .slice,
+        str_char_at: ~Str .char_at,
 
         # bool
         bool_and: ~bool_and,
@@ -78,5 +84,12 @@
 
         # unicode
         cp_of_int: ~Unicode .of_int,
-        cp_to_int: ~Unicode .to_int
+        cp_to_int: ~Unicode .to_int,
+
+        # char classification helpers
+        char_is_alpha: ~Char .is_alpha,
+        char_is_digit: ~Char .is_digit,
+        char_is_alnum: ~Char .is_alnum,
+        char_is_space: ~Char .is_space,
+        char_between: ~Char .between
 }

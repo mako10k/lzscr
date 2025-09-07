@@ -1,0 +1,71 @@
+# stdlib: lexer helpers built atop Builtins.char and Builtins.scan
+
+~B = ~Builtins;
+~Char = ~B .char;
+~Scan = ~B .scan;
+
+# predicate combinators
+~is_lower = \~c -> ~Char .between ~c (97) (122);   # 'a'..'z'
+~is_upper = \~c -> ~Char .between ~c (65) (90);    # 'A'..'Z'
+~is_letter = \~c -> ~Char .is_alpha ~c;            # unicode aware
+~is_digit = \~c -> ~Char .is_digit ~c;             # ASCII digit
+~is_alnum = \~c -> ~Char .is_alnum ~c;
+~is_space = \~c -> ~Char .is_space ~c;
+
+# scanning primitives re-export
+~new = ~Scan .new;
+~eof = ~Scan .eof;
+~pos = ~Scan .pos;
+~set_pos = ~Scan .set_pos;
+~peek = ~Scan .peek;
+~next = ~Scan .next;
+~take_if = ~Scan .take_if;
+~take_while = ~Scan .take_while;
+~take_while1 = ~Scan .take_while1;
+
+# identifier: [A-Za-z_][A-Za-z0-9_]* (ASCII subset for bootstrap)
+# use boolean or (||), not alt-lambda (|), inside predicates
+~is_ident_start = \~c -> (~is_letter ~c) || (~Char .between ~c (95) (95)); # '_'
+~is_ident_rest  = \~c -> (~is_alnum  ~c) || (~Char .between ~c (95) (95));
+
+~take_ident = \~sc -> (
+  (\ .Some (., _ ~sc1) ->
+     (
+  (\ ., ~rest ~sc2 ->
+          .Some ((~Scan .slice_span ~sc (~Scan .pos ~sc) (~Scan .pos ~sc2), ~sc2))
+       ) (~Scan .take_while ~is_ident_rest ~sc1)
+     )
+  ) | (\ .None -> .None)
+) (~Scan .take_if ~is_ident_start ~sc);
+# number: [0-9]+
+~take_number = \~sc -> ~take_while1 ~is_digit ~sc;
+
+# skip spaces
+~skip_spaces = \~sc -> ~take_while ~is_space ~sc;
+
+{
+  char: {
+    is_lower: ~is_lower,
+    is_upper: ~is_upper,
+    is_letter: ~is_letter,
+    is_digit: ~is_digit,
+    is_alnum: ~is_alnum,
+  is_space: ~is_space
+  },
+  scan: {
+    new: ~new,
+    eof: ~eof,
+    pos: ~pos,
+    set_pos: ~set_pos,
+    peek: ~peek,
+    next: ~next,
+    take_if: ~take_if,
+    take_while: ~take_while,
+  take_while1: ~take_while1
+  },
+  token: {
+    take_ident: ~take_ident,
+    take_number: ~take_number,
+  skip_spaces: ~skip_spaces
+  }
+}

@@ -108,7 +108,7 @@ pub enum Value {
     },
     Native {
         arity: usize,
-        f: fn(&Env, &[Value]) -> Result<Value, EvalError>,
+            f: fn(&Env, &[Value]) -> Result<Value, EvalError>,
         args: Vec<Value>,
     },
     Closure {
@@ -645,6 +645,52 @@ impl Env {
                 },
             },
         );
+        // slice by char indices: slice(str, start_chars, len_chars) -> Str
+        string_ns.insert(
+            "slice".into(),
+            Value::Native {
+                arity: 3,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1], &args[2]) {
+                    (Value::Str(s), Value::Int(st), Value::Int(le)) => {
+                        let stc = *st as usize;
+                        let lec = *le as usize;
+                        if let Some(sl) = s.slice_chars(stc, lec) {
+                            Ok(Value::Str(sl))
+                        } else {
+                            Err(EvalError::TypeError)
+                        }
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+        // char_at(str, index_chars) -> .Some(Char) | .None
+        string_ns.insert(
+            "char_at".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Str(s), Value::Int(idx)) => {
+                        let s_utf = match std::str::from_utf8(s.as_bytes()) {
+                            Ok(v) => v,
+                            Err(_) => return Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
+                        };
+                        let mut it = s_utf.chars();
+                        let mut i = 0i64;
+                        while let Some(ch) = it.next() {
+                            if i == *idx {
+                                return Ok(Value::Ctor { name: ".Some".into(), args: vec![Value::Char(ch as i32)] });
+                            }
+                            i += 1;
+                        }
+                        Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
     // keep builtins minimal: only len/concat for strings for now
 
         // math namespace (reuse existing natives where possible)
@@ -659,9 +705,257 @@ impl Env {
             }
         }
 
+        // char classification namespace
+        let mut char_ns: BTreeMap<String, Value> = BTreeMap::new();
+        // helpers to convert bool -> Symbol("True"|"False")
+        fn to_sym_bool(env: &Env, b: bool) -> Value { if b { sym_true(env) } else { sym_false(env) } }
+        char_ns.insert(
+            "is_alpha".into(),
+            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
+                Value::Char(c) => {
+                    let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
+                    Ok(to_sym_bool(env, ch.is_alphabetic()))
+                }
+                _ => Err(EvalError::TypeError),
+            }},
+        );
+        char_ns.insert(
+            "is_digit".into(),
+            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
+                Value::Char(c) => {
+                    let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
+                    Ok(to_sym_bool(env, ch.is_ascii_digit()))
+                }
+                _ => Err(EvalError::TypeError),
+            }},
+        );
+        char_ns.insert(
+            "is_alnum".into(),
+            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
+                Value::Char(c) => {
+                    let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
+                    Ok(to_sym_bool(env, ch.is_ascii_alphanumeric()))
+                }
+                _ => Err(EvalError::TypeError),
+            }},
+        );
+        char_ns.insert(
+            "is_space".into(),
+            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
+                Value::Char(c) => {
+                    let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
+                    Ok(to_sym_bool(env, ch.is_whitespace()))
+                }
+                _ => Err(EvalError::TypeError),
+            }},
+        );
+        char_ns.insert(
+            "between".into(),
+            Value::Native { arity: 3, args: vec![], f: |env, args| match (&args[0], &args[1], &args[2]) {
+                (Value::Char(c), Value::Int(lo), Value::Int(hi)) => {
+                    let code = *c as i64;
+                    Ok(to_sym_bool(env, code >= *lo && code <= *hi))
+                }
+                _ => Err(EvalError::TypeError),
+            }},
+        );
+
         let mut builtins: BTreeMap<String, Value> = BTreeMap::new();
         builtins.insert("string".into(), Value::Record(string_ns));
         builtins.insert("math".into(), Value::Record(math_ns));
+        builtins.insert("char".into(), Value::Record(char_ns));
+
+        // scan namespace: functional scanner over UTF-8 string (char-index based)
+        let mut scan_ns: BTreeMap<String, Value> = BTreeMap::new();
+        // Helpers to extract scan record fields
+        fn get_scan<'a>(v: &'a Value) -> Option<(&'a RtStr, usize)> {
+            if let Value::Record(m) = v {
+                let s = m.get("s");
+                let i = m.get("i");
+                if let (Some(Value::Str(rs)), Some(Value::Int(ix))) = (s, i) {
+                    return Some((rs, *ix as usize));
+                }
+            }
+            None
+        }
+    fn make_scan(s: RtStr, i: usize) -> Value {
+            let mut m = BTreeMap::new();
+            m.insert("s".into(), Value::Str(s));
+            m.insert("i".into(), Value::Int(i as i64));
+            Value::Record(m)
+        }
+        // new : Str -> Scan
+        scan_ns.insert(
+            "new".into(),
+            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
+                Value::Str(s) => {
+                    let mut m = BTreeMap::new();
+                    m.insert("s".into(), Value::Str(s.clone()));
+                    m.insert("i".into(), Value::Int(0));
+                    Ok(Value::Record(m))
+                }
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        // eof : Scan -> Symbol("True"|"False")
+        scan_ns.insert(
+            "eof".into(),
+            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
+                v if get_scan(v).is_some() => {
+                    let (s, i) = get_scan(v).unwrap();
+                    let at_end = i >= s.char_count();
+                    Ok(if at_end { sym_true(env) } else { sym_false(env) })
+                }
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        // pos : Scan -> Int
+        scan_ns.insert(
+            "pos".into(),
+            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
+                v if get_scan(v).is_some() => Ok(Value::Int(get_scan(v).unwrap().1 as i64)),
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        // set_pos : Scan -> Int -> Scan
+        scan_ns.insert(
+            "set_pos".into(),
+            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) {
+                (v, Value::Int(p)) if get_scan(v).is_some() => {
+                    let (s, _i) = get_scan(v).unwrap();
+                    let total = s.char_count();
+                    let np = (*p).clamp(0, total as i64) as usize;
+                    Ok(make_scan(s.clone(), np))
+                }
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        // peek : Scan -> .Some(Char) | .None
+        scan_ns.insert(
+            "peek".into(),
+            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
+                v if get_scan(v).is_some() => {
+                    let (s, i) = get_scan(v).unwrap();
+                    let utf = match std::str::from_utf8(s.as_bytes()) { Ok(u) => u, Err(_) => "" };
+                    let ch = utf.chars().nth(i);
+                    match ch {
+                        Some(c) => Ok(Value::Ctor { name: ".Some".into(), args: vec![Value::Char(c as i32)] }),
+                        None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
+                    }
+                }
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        // next : Scan -> .Some((Char, Scan)) | .None
+        scan_ns.insert(
+            "next".into(),
+            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
+                v if get_scan(v).is_some() => {
+                    let (s, i) = get_scan(v).unwrap();
+                    let utf = match std::str::from_utf8(s.as_bytes()) { Ok(u) => u, Err(_) => "" };
+                    let mut it = utf.chars();
+                    let c = it.nth(i);
+                    match c {
+                        Some(ch) => {
+                            let ns = make_scan(s.clone(), i + 1);
+                            let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Char(ch as i32), ns] };
+                            Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
+                        }
+                        None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
+                    }
+                }
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        // take_if : (Char -> Bool) -> Scan -> .Some((Char, Scan)) | .None
+        scan_ns.insert(
+            "take_if".into(),
+            Value::Native { arity: 2, args: vec![], f: |env, args| match (&args[0], &args[1]) {
+                (pred, v) if get_scan(v).is_some() => {
+                    let (s, i) = get_scan(v).unwrap();
+                    let utf = match std::str::from_utf8(s.as_bytes()) { Ok(u) => u, Err(_) => "" };
+                    if let Some(ch) = utf.chars().nth(i) {
+                        let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
+                        if as_bool(env, &res)? {
+                            let ns = make_scan(s.clone(), i + 1);
+                            let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Char(ch as i32), ns] };
+                            return Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] });
+                        }
+                    }
+                    Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                }
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        // take_while : (Char -> Bool) -> Scan -> (Str, Scan)
+        scan_ns.insert(
+            "take_while".into(),
+            Value::Native { arity: 2, args: vec![], f: |env, args| match (&args[0], &args[1]) {
+                (pred, v) if get_scan(v).is_some() => {
+                    let (s, mut i) = get_scan(v).unwrap();
+                    let utf = match std::str::from_utf8(s.as_bytes()) { Ok(u) => u.to_string(), Err(_) => String::new() };
+                    let mut out = String::new();
+                    for (ci, ch) in utf.chars().enumerate().skip(i) {
+                        let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
+                        if as_bool(env, &res)? {
+                            out.push(ch);
+                            i = ci + 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    let ns = make_scan(s.clone(), i);
+                    let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Str(env.intern_string(out)), ns] };
+                    Ok(pair)
+                }
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        // take_while1 : (Char -> Bool) -> Scan -> .Some((Str, Scan)) | .None
+        scan_ns.insert(
+            "take_while1".into(),
+            Value::Native { arity: 2, args: vec![], f: |env, args| match (&args[0], &args[1]) {
+                (pred, v) if get_scan(v).is_some() => {
+                    let (s, i0) = get_scan(v).unwrap();
+                    let utf = match std::str::from_utf8(s.as_bytes()) { Ok(u) => u.to_string(), Err(_) => String::new() };
+                    let mut out = String::new();
+                    let mut i = i0;
+                    for (ci, ch) in utf.chars().enumerate().skip(i0) {
+                        let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
+                        if as_bool(env, &res)? {
+                            out.push(ch);
+                            i = ci + 1;
+                        } else { break; }
+                    }
+                    if out.is_empty() {
+                        Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                    } else {
+                        let ns = make_scan(s.clone(), i);
+                        let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Str(env.intern_string(out)), ns] };
+                        Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
+                    }
+                }
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        // slice_span : Scan -> Int -> Int -> Str
+        scan_ns.insert(
+            "slice_span".into(),
+            Value::Native { arity: 3, args: vec![], f: |env, args| match (&args[0], &args[1], &args[2]) {
+                (v, Value::Int(a), Value::Int(b)) if get_scan(v).is_some() => {
+                    let (s, _i) = get_scan(v).unwrap();
+                    let a = *a as usize;
+                    let b = *b as usize;
+                    if b >= a {
+                        if let Some(part) = s.slice_chars(a, b - a) { Ok(Value::Str(part)) } else { Err(EvalError::TypeError) }
+                    } else {
+                        Err(EvalError::TypeError)
+                    }
+                }
+                _ => Err(EvalError::TypeError),
+            } },
+        );
+        builtins.insert("scan".into(), Value::Record(scan_ns));
         // unicode/codepoint namespace (Char conversions)
         let mut uni_ns: BTreeMap<String, Value> = BTreeMap::new();
         uni_ns.insert(
