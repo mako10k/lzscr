@@ -84,6 +84,8 @@ pub enum EvalError {
     UnknownEffect(String),
     #[error("raised: {0}")]
     Raised(String),
+    #[error("runtime error with trace")]
+    Traced { kind: Box<EvalError>, spans: Vec<lzscr_ast::span::Span> },
 }
 
 #[derive(Debug, Clone)]
@@ -1934,12 +1936,28 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                 }
             }
 
-            let f = eval(env, func)?;
+            let f = match eval(env, func) {
+                Ok(v) => v,
+                Err(err) => {
+                    return Err(match err {
+                        EvalError::Traced { mut kind, mut spans } => { spans.push(func.span); EvalError::Traced { kind, spans } }
+                        other => EvalError::Traced { kind: Box::new(other), spans: vec![func.span] },
+                    })
+                }
+            };
             // If func evaluates to a Raised, propagate as-is (attempting to apply a raised value raises the whole)
             if let Value::Raised(_) = f {
                 return Ok(f);
             }
-            let a = eval(env, arg)?;
+            let a = match eval(env, arg) {
+                Ok(v) => v,
+                Err(err) => {
+                    return Err(match err {
+                        EvalError::Traced { mut kind, mut spans } => { spans.push(arg.span); EvalError::Traced { kind, spans } }
+                        other => EvalError::Traced { kind: Box::new(other), spans: vec![arg.span] },
+                    })
+                }
+            };
             if let Value::Raised(_) = a {
                 return Ok(a);
             }
@@ -1959,7 +1977,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         if let Some(v) = map.remove(&k) {
                             Ok(v)
                         } else {
-                            Err(EvalError::TypeError)
+                            Err(EvalError::Traced { kind: Box::new(EvalError::TypeError), spans: vec![e.span] })
                         }
                     } else {
                         Err(EvalError::TypeError)
@@ -1975,7 +1993,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         .or_else(|| env.ctor_arity.get(&format!(".{name}")))
                     {
                         if k == 0 {
-                            return Err(EvalError::TypeError);
+                            return Err(EvalError::Traced { kind: Box::new(EvalError::TypeError), spans: vec![e.span] });
                         }
                     }
                     Ok(Value::Ctor {
@@ -2002,17 +2020,20 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     if args.len() < arity {
                         Ok(Value::Native { arity, f, args })
                     } else if args.len() == arity {
-                        f(env, &args)
+                        match f(env, &args) {
+                            Ok(v) => Ok(v),
+                            Err(err) => Err(match err { EvalError::Traced { .. } => err, other => EvalError::Traced { kind: Box::new(other), spans: vec![e.span] } })
+                        }
                     } else {
                         // over-application: apply result to remaining args
                         let (first_args, rest) = args.split_at(arity);
-                        let mut res = f(env, first_args)?;
+                        let mut res = match f(env, first_args) { Ok(v) => v, Err(err) => return Err(match err { EvalError::Traced { .. } => err, other => EvalError::Traced { kind: Box::new(other), spans: vec![e.span] } }) };
                         for v in rest.iter().cloned() {
                             res = match res {
                                 Value::Native { arity, f, mut args } => {
                                     args.push(v);
                                     if args.len() == arity {
-                                        f(env, &args)?
+                                        match f(env, &args) { Ok(x) => x, Err(err) => return Err(match err { EvalError::Traced { .. } => err, other => EvalError::Traced { kind: Box::new(other), spans: vec![e.span] } }) }
                                     } else {
                                         Value::Native { arity, f, args }
                                     }
@@ -2026,7 +2047,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                                         for (k, vv) in bind {
                                             env.vars.insert(k, vv);
                                         }
-                                        eval(&env, &body)?
+                                        match eval(&env, &body) { Ok(x) => x, Err(err) => return Err(match err { EvalError::Traced { mut kind, mut spans } => { spans.push(body.span); EvalError::Traced { kind, spans } }, other => EvalError::Traced { kind: Box::new(other), spans: vec![body.span] } }) }
                                     } else {
                                         Value::Raised(Box::new(v))
                                     }
@@ -2046,7 +2067,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         for (k, v) in bind {
                             env.vars.insert(k, v);
                         }
-                        eval(&env, &body)
+                        match eval(&env, &body) { Ok(v) => Ok(v), Err(err) => Err(match err { EvalError::Traced { mut kind, mut spans } => { spans.push(body.span); EvalError::Traced { kind, spans } }, other => EvalError::Traced { kind: Box::new(other), spans: vec![body.span] } }) }
                     } else {
                         Ok(Value::Raised(Box::new(a)))
                     }

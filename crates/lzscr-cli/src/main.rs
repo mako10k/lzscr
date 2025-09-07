@@ -373,7 +373,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if opt.strict_effects {
             env.strict_effects = true;
         }
-        let val = eval(&env, &ast).map_err(|e| format!("{e}"))?;
+        let val = match eval(&env, &ast) {
+            Ok(v) => v,
+            Err(e) => {
+                // Pretty-print traced errors if available
+                match e {
+                    lzscr_runtime::EvalError::Traced { kind, spans } => {
+                        eprintln!("runtime error: {kind}");
+                        // Build line/col index once
+                        let src = &code;
+                        let lines: Vec<&str> = src.lines().collect();
+                        let mut acc = 0usize;
+                        let mut offsets: Vec<usize> = Vec::with_capacity(lines.len());
+                        for ln in &lines { offsets.push(acc); acc += ln.len() + 1; }
+                        for (idx, sp) in spans.iter().enumerate() {
+                            // find line by binary search
+                            let mut line_no = 0usize;
+                            for (i, off) in offsets.iter().enumerate() { if *off <= sp.offset { line_no = i; } else { break; } }
+                            let col = sp.offset - offsets.get(line_no).copied().unwrap_or(0);
+                            let ltxt = lines.get(line_no).copied().unwrap_or("");
+                            eprintln!("  at {}:{}:{}", line_no + 1, col + 1, sp.len);
+                            eprintln!("    {}", ltxt);
+                            let mut caret = String::new();
+                            for _ in 0..col { caret.push(' '); }
+                            if sp.len > 0 { caret.push('^'); for _ in 1..sp.len { caret.push('~'); } }
+                            eprintln!("    {}", caret);
+                            if idx + 1 == spans.len() { eprintln!("  (most recent call last)"); }
+                        }
+                        std::process::exit(2);
+                    }
+                    other => {
+                        eprintln!("runtime error: {}", other);
+                        std::process::exit(2);
+                    }
+                }
+            }
+        };
     fn val_to_string(env: &Env, v: &Value) -> String {
             fn char_literal_string(c: i32) -> String {
                 let ch = char::from_u32(c as u32).unwrap_or('\u{FFFD}');
@@ -489,7 +524,12 @@ fn expand_requires_in_expr(e: &Expr, search_paths: &[PathBuf], stack: &mut Vec<S
         stack.push(canon);
         // Wrap like file rule: ( <content> )
         let wrapped = format!("({})", content);
-        let parsed = parse_expr(&wrapped).map_err(|e| format!("parse error in required module '{}': {e}", rel))?;
+        let parsed = match parse_expr(&wrapped) {
+            Ok(x) => x,
+            Err(e) => {
+                return Err(format!("parse error in required module '{}': {}", rel, e));
+            }
+        };
         let expanded = expand_requires_in_expr(&parsed, search_paths, stack)?;
         stack.pop();
         return Ok(expanded);

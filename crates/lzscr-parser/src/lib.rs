@@ -6,6 +6,8 @@ use lzscr_preast as preast;
 pub enum ParseError {
     #[error("parse error: {0}")]
     Generic(String),
+    #[error("parse error: {msg} at ({span_offset}, {span_len})")]
+    WithSpan { msg: String, span_offset: usize, span_len: usize },
 }
 
 pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
@@ -864,16 +866,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 }
             }
             Tok::Ident => {
-                return Err(ParseError::Generic(format!(
+                return Err(ParseError::WithSpan { msg: format!(
                     "bare identifier '{}' cannot be used as a symbol; use ~{} for a ref or .{} for a symbol",
                     t.text, t.text, t.text
-                )))
+                ), span_offset: t.span.offset, span_len: t.span.len })
             }
             _ => {
-                return Err(ParseError::Generic(format!(
+                return Err(ParseError::WithSpan { msg: format!(
                     "unexpected token: {:?}",
                     t.tok
-                )))
+                ), span_offset: t.span.offset, span_len: t.span.len })
             }
         })
     }
