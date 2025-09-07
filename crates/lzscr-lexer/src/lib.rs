@@ -124,7 +124,8 @@ pub enum Tok {
     #[regex(r"%[a-zA-Z_][a-zA-Z0-9_]*", |lex| Some(lex.slice()[1..].to_string()))]
     TyVar(String),
 
-    // Member-ish symbol like .println or .env
+    // Member-ish symbol like .println or .env, and special tuple operator symbol ",." used in desugaring
+    #[token(".,", |lex| Some(lex.slice().to_string()))]
     #[regex(r"\.[a-zA-Z_][a-zA-Z0-9_]*", |lex| Some(lex.slice().to_string()))]
     Member(String),
 }
@@ -167,7 +168,7 @@ fn parse_char(lex: &mut Lexer<Tok>) -> Option<i32> {
                     // expect {HEX+}
                     if chars.next()? != '{' { return None; }
                     let mut hex = String::new();
-                    while let Some(ch) = chars.next() {
+                    for ch in chars {
                         if ch == '}' { break; }
                         hex.push(ch);
                     }
@@ -179,7 +180,7 @@ fn parse_char(lex: &mut Lexer<Tok>) -> Option<i32> {
         }
         other => other as u32,
     };
-    Some((c & 0xFFFF_FFFF) as i32)
+    Some(c as i32)
 }
 
 fn parse_block_comment(lex: &mut Lexer<Tok>) -> Option<()> {

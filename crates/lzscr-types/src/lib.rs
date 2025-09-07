@@ -220,8 +220,8 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
         (Type::List(x), Type::List(y)) => unify(x, y),
         (Type::Tuple(xs), Type::Tuple(ys)) if xs.len() == ys.len() => {
             let mut s = Subst::new();
-            let mut it = xs.iter().zip(ys.iter());
-            while let Some((x, y)) = it.next() {
+            let it = xs.iter().zip(ys.iter());
+            for (x, y) in it {
                 let s1 = unify(&x.apply(&s), &y.apply(&s))?;
                 s = s1.compose(s);
             }
@@ -422,22 +422,17 @@ fn lookup_tyvar(ctx: &InferCtx, name: &str) -> Option<TvId> {
 fn push_tyvars_from_pattern<'a>(ctx: &mut InferCtx, p: &'a Pattern) -> (&'a Pattern, usize) {
     let mut cur = p;
     let mut pushed = 0usize;
-    loop {
-        match &cur.kind {
-            PatternKind::TypeBind { tvars, pat } => {
-                let mut frame = HashMap::new();
-                for nm in tvars {
-                    // '' (empty) represents anonymous '?', we still allocate a distinct id but not bound to a name for lookup
-                    if nm.is_empty() { continue; }
-                    let Type::Var(id) = ctx.tv.fresh() else { unreachable!() };
-                    frame.insert(nm.clone(), id);
-                }
-                ctx.tyvars.push(frame);
-                pushed += 1;
-                cur = pat;
-            }
-            _ => break,
+    while let PatternKind::TypeBind { tvars, pat } = &cur.kind {
+        let mut frame = HashMap::new();
+        for nm in tvars {
+            // '' (empty) represents anonymous '?', we still allocate a distinct id but not bound to a name for lookup
+            if nm.is_empty() { continue; }
+            let Type::Var(id) = ctx.tv.fresh() else { unreachable!() };
+            frame.insert(nm.clone(), id);
         }
+        ctx.tyvars.push(frame);
+        pushed += 1;
+        cur = pat;
     }
     (cur, pushed)
 }

@@ -43,40 +43,40 @@
 ~Unicode = ~Builtins .unicode;
 
 {
-        string: ~Str;
-        math: ~Math;
-        unicode: ~Unicode;
+        string: ~Str,
+        math: ~Math,
+        unicode: ~Unicode,
 
-        str_len: ~Str .len;
-        str_concat: ~Str .concat;
+        str_len: ~Str .len,
+        str_concat: ~Str .concat,
 
         # bool
-        bool_and: ~bool_and;
-        bool_or: ~bool_or;
-        bool_not: ~bool_not;
+        bool_and: ~bool_and,
+        bool_or: ~bool_or,
+        bool_not: ~bool_not,
 
         # option
-        option_is_some: ~option_is_some;
-        option_is_none: ~option_is_none;
-        option_map: ~option_map;
-        option_bind: ~option_bind;
-        option_unwrap_or: ~option_unwrap_or;
+        option_is_some: ~option_is_some,
+        option_is_none: ~option_is_none,
+        option_map: ~option_map,
+        option_bind: ~option_bind,
+        option_unwrap_or: ~option_unwrap_or,
 
         # result
-        result_is_ok: ~result_is_ok;
-        result_is_err: ~result_is_err;
-        result_map: ~result_map;
-        result_map_err: ~result_map_err;
-        result_bind: ~result_bind;
-        result_unwrap_or: ~result_unwrap_or;
+        result_is_ok: ~result_is_ok,
+        result_is_err: ~result_is_err,
+        result_map: ~result_map,
+        result_map_err: ~result_map_err,
+        result_bind: ~result_bind,
+        result_unwrap_or: ~result_unwrap_or,
 
         # list
-        length: ~length;
-        head_opt: ~head_opt;
-        tail_opt: ~tail_opt;
-        foldl: ~foldl;
+        length: ~length,
+        head_opt: ~head_opt,
+        tail_opt: ~tail_opt,
+        foldl: ~foldl,
 
         # unicode
-        cp_of_int: ~Unicode .of_int;
-        cp_to_int: ~Unicode .to_int;
+        cp_of_int: ~Unicode .of_int,
+        cp_to_int: ~Unicode .to_int
 }

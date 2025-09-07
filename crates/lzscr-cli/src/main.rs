@@ -128,6 +128,10 @@ struct Opt {
     /// Duplicate detection: minimum occurrences
     #[arg(long = "dup-min-count", default_value_t = 2)]
     dup_min_count: usize,
+
+    /// Skip duplicate detection pass (useful for large files)
+    #[arg(long = "no-dup", default_value_t = false)]
+    no_dup: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -136,7 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mut code, _from_file) = if let Some(c) = opt.eval {
         (c, false)
     } else if let Some(ref p) = opt.file {
-        let raw = fs::read_to_string(&p)?;
+        let raw = fs::read_to_string(p)?;
         if opt.format_code {
             // For formatting, keep raw; formatter has its own file-aware handling
             (raw, true)
@@ -222,7 +226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            return Ok(());
+            return Ok(())
         }
     if opt.analyze {
             #[derive(Serialize)]
@@ -233,14 +237,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 unused_params: &'a [lzscr_analyzer::UnusedParam],
                 ctor_arity: Vec<lzscr_analyzer::CtorArityIssue>,
             }
-            // duplicates
-            let dups = analyze_duplicates(
-                &ast,
-                AnalyzeOptions {
-                    min_size: opt.dup_min_size,
-                    min_count: opt.dup_min_count,
-                },
-            );
+            // duplicates (optionally skipped)
+            let dups = if opt.no_dup {
+                Vec::new()
+            } else {
+                analyze_duplicates(
+                    &ast,
+                    AnalyzeOptions {
+                        min_size: opt.dup_min_size,
+                        min_count: opt.dup_min_count,
+                    },
+                )
+            };
             // unbound refs
             let unb = analyze_unbound_refs(&ast, &default_allowlist());
             // shadowing
@@ -400,19 +408,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         let out = val_to_string(&env, &val);
-        println!("{out}");
-        return Ok(());
+    println!("{out}");
+    Ok(())
     }
 }
 
 // ---------- ~require expansion ----------
 
-fn build_module_search_paths(stdlib_dir: &PathBuf, module_path: Option<&str>) -> Vec<PathBuf> {
+use std::path::Path;
+fn build_module_search_paths(stdlib_dir: &Path, module_path: Option<&str>) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     // 1) current directory
     paths.push(PathBuf::from("."));
     // 2) stdlib dir (may not exist)
-    paths.push(stdlib_dir.clone());
+    paths.push(stdlib_dir.to_path_buf());
     // 3) user-provided module-path (colon-separated)
     if let Some(spec) = module_path {
         for seg in spec.split(':') {

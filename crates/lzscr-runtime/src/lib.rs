@@ -13,12 +13,7 @@ impl RtStr {
     pub fn as_bytes(&self) -> &[u8] {
         &self.data[self.start..self.start + self.len]
     }
-    pub fn to_string(&self) -> String {
-        // Strings created from parser are valid UTF-8; fall back to lossless if ever not
-        std::str::from_utf8(self.as_bytes())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|_| String::from_utf8_lossy(self.as_bytes()).into_owned())
-    }
+    // Removed inherent to_string to avoid shadowing Display
     pub fn eq_str(&self, s: &str) -> bool {
         self.as_bytes() == s.as_bytes()
     }
@@ -51,7 +46,10 @@ impl RtStr {
 
 impl std::fmt::Display for RtStr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.to_string(), f)
+        match std::str::from_utf8(self.as_bytes()) {
+            Ok(s) => f.write_str(s),
+            Err(_) => f.write_str(&String::from_utf8_lossy(self.as_bytes())),
+        }
     }
 }
 
@@ -206,7 +204,7 @@ impl Env {
         self.str_intern
             .borrow_mut()
             .insert(key.to_string(), arc.clone());
-        RtStr { data: arc, start: 0, len: key.as_bytes().len() }
+    RtStr { data: arc, start: 0, len: key.len() }
     }
 
     pub fn declare_ctor_arity(&mut self, name: &str, arity: usize) {
