@@ -10,6 +10,14 @@
 ~bool_or  = \~a -> \~b -> ~or ~a ~b;
 ~bool_not = \~a -> ~not ~a;
 
+# Result 風
+~result_is_ok = \~r -> ((\ .Ok _ -> ~true) | (\ .Err _ -> ~false)) ~r;
+~result_is_err = \~r -> ((\ .Ok _ -> ~false) | (\ .Err _ -> ~true)) ~r;
+~result_map = \~f -> \~r -> ((\ .Ok ~x -> .Ok (~f ~x)) | (\ .Err ~e -> .Err ~e)) ~r;
+~result_map_err = \~f -> \~r -> ((\ .Ok ~x -> .Ok ~x) | (\ .Err ~e -> .Err (~f ~e))) ~r;
+~result_bind = \~f -> \~r -> ((\ .Ok ~x -> ~f ~x) | (\ .Err ~e -> .Err ~e)) ~r;
+~result_unwrap_or = \~d -> \~r -> ((\ .Ok ~x -> ~x) | (\ .Err _ -> ~d)) ~r;
+
 # Option 風（Ctor は .Some / .None を使用）。AltLambdaで分配。
 ~option_is_some = \~o -> ((\ .Some _ -> ~true) | (\ .None -> ~false)) ~o;
 ~option_map = \~f -> \~o -> ((\ .Some ~x -> .Some (~f ~x)) | (\ .None -> .None)) ~o;
@@ -27,29 +35,48 @@
 	(\[] -> ~init) | (\( ~h : ~t ) -> ~foldl ~f (~f ~init ~h) ~t)
 ) ~xs;
 
-# String ヘルパ（to_str のみに留める）
-# 将来、明確な結合APIを導入するまで concat は提供しない
+# String ヘルパ（長さや結合などを Builtins に委譲）
 
 # Builtins 経由の委譲（推奨: ユーザは Builtins を直接参照せず prelude を使う）
-~Str  = ~Builtins .string;
-~Math = ~Builtins .math;
+~Str     = ~Builtins .string;
+~Math    = ~Builtins .math;
+~Unicode = ~Builtins .unicode;
 
 {
-	string: ~Str;
-	math: ~Math;
+        string: ~Str;
+        math: ~Math;
+        unicode: ~Unicode;
 
-	str_len: ~Str .len;
+        str_len: ~Str .len;
+        str_concat: ~Str .concat;
 
-	# option
-	option_is_some: ~option_is_some;
-	option_is_none: ~option_is_none;
-	option_map: ~option_map;
-	option_bind: ~option_bind;
-	option_unwrap_or: ~option_unwrap_or;
+        # bool
+        bool_and: ~bool_and;
+        bool_or: ~bool_or;
+        bool_not: ~bool_not;
 
-	# list
-	length: ~length;
-	head_opt: ~head_opt;
-	tail_opt: ~tail_opt;
-	foldl: ~foldl;
+        # option
+        option_is_some: ~option_is_some;
+        option_is_none: ~option_is_none;
+        option_map: ~option_map;
+        option_bind: ~option_bind;
+        option_unwrap_or: ~option_unwrap_or;
+
+        # result
+        result_is_ok: ~result_is_ok;
+        result_is_err: ~result_is_err;
+        result_map: ~result_map;
+        result_map_err: ~result_map_err;
+        result_bind: ~result_bind;
+        result_unwrap_or: ~result_unwrap_or;
+
+        # list
+        length: ~length;
+        head_opt: ~head_opt;
+        tail_opt: ~tail_opt;
+        foldl: ~foldl;
+
+        # unicode
+        cp_of_int: ~Unicode .of_int;
+        cp_to_int: ~Unicode .to_int;
 }
