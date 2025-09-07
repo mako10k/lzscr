@@ -13,6 +13,90 @@ use std::path::PathBuf;
 use std::fs;
 use std::time::Instant;
 
+// Map span offsets to their originating source (filename and text), supporting modules.
+struct SourceRegistry {
+    primary_name: String,
+    primary_text: String,
+    next_base: usize,
+    modules: Vec<RegisteredSource>,
+}
+
+struct RegisteredSource {
+    name: String,
+    text: String,
+    base: usize,
+}
+
+impl SourceRegistry {
+    fn new(primary_name: String, primary_text: String) -> Self {
+        // Place module bases after the primary text, aligned to 4KB for simplicity
+        let len = primary_text.len();
+        let align = 4096usize;
+        let next_base = ((len + align) / align) * align;
+        Self { primary_name, primary_text, next_base, modules: Vec::new() }
+    }
+
+    fn register_module(&mut self, name: String, text: String) -> usize {
+        let base = self.next_base;
+        // Advance next_base by aligned size of this module
+        let align = 4096usize;
+        let size = ((text.len() + align) / align) * align;
+        self.next_base = base + size;
+        self.modules.push(RegisteredSource { name, text, base });
+        base
+    }
+
+    fn format_span_block(&self, offset: usize, len: usize) -> String {
+        // Decide which source contains this offset
+        if offset < self.primary_text.len() {
+            return format_span_caret(&self.primary_text, &self.primary_name, offset, len);
+        }
+        for m in &self.modules {
+            if offset >= m.base && offset < m.base + m.text.len() {
+                let rel = offset - m.base;
+                return format_span_caret(&m.text, &m.name, rel, len);
+            }
+        }
+        // Fallback to primary
+        format_span_caret(&self.primary_text, &self.primary_name, offset.min(self.primary_text.len()), len)
+    }
+}
+
+fn format_span_caret(src: &str, name: &str, offset: usize, len: usize) -> String {
+    // Build line starts
+    let mut starts = Vec::new();
+    starts.push(0usize);
+    for (i, ch) in src.char_indices() {
+        if ch == '\n' { starts.push(i + 1); }
+    }
+    // Find line by binary search
+    let mut line_idx = 0usize;
+    for (i, &st) in starts.iter().enumerate() {
+        if st <= offset { line_idx = i; } else { break; }
+    }
+    let line_start = *starts.get(line_idx).unwrap_or(&0);
+    // Extract line text (until next newline)
+    let line_end = src[line_start..].find('\n').map(|k| line_start + k).unwrap_or(src.len());
+    let line_txt = &src[line_start..line_end];
+    let col = offset.saturating_sub(line_start);
+    let mut caret = String::new();
+    for _ in 0..col { caret.push(' '); }
+    if len > 0 {
+        caret.push('^');
+        for _ in 1..len { caret.push('~'); }
+    } else {
+        caret.push('^');
+    }
+    format!(
+        "at {}:{}:{}\n    {}\n    {}",
+        name,
+        line_idx + 1,
+        col + 1,
+        line_txt,
+        caret
+    )
+}
+
 fn parse_ctor_arity_spec(spec: &str) -> (HashMap<String, usize>, Vec<String>) {
     let mut map = HashMap::new();
     let mut warnings = Vec::new();
@@ -142,16 +226,16 @@ struct Opt {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
     // Select input source: -e or --file
-    let (mut code, _from_file) = if let Some(c) = opt.eval {
-        (c, false)
+    let (mut code, input_name) = if let Some(c) = opt.eval {
+        (c, "(eval)".to_string())
     } else if let Some(ref p) = opt.file {
         let raw = fs::read_to_string(p)?;
         if opt.format_code {
             // For formatting, keep raw; formatter has its own file-aware handling
-            (raw, true)
+            (raw, p.display().to_string())
         } else {
             // Wrap in parens so top-level becomes a let-block when it contains bindings
-            (format!("({})", raw), true)
+            (format!("({})", raw), p.display().to_string())
         }
     } else {
         eprintln!("no input; try -e '...' or --file path");
@@ -179,7 +263,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     {
         // Formatting mode: run formatter first and exit
-        if opt.format_code {
+    if opt.format_code {
             let from_file = opt.file.is_some();
             let fmt_opts = lzscr_format::FormatOptions {
                 indent: opt.fmt_indent.unwrap_or(2),
@@ -202,15 +286,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Expand ~require before parsing for subsequent phases (dump/analyze/exec)
+        // Parse first to surface nice errors with caret; then expand ~require
         let t_req_start = Instant::now();
         let module_search_paths = build_module_search_paths(&resolved_stdlib_dir, opt.module_path.as_deref());
-        let ast = match expand_requires_to_ast(&code, &module_search_paths) {
-            Ok(expanded_ast) => expanded_ast,
+    let ast0 = match lzscr_parser::parse_expr(&code) {
+            Ok(x) => x,
             Err(e) => {
-                eprintln!("require error: {}", e);
+                use lzscr_parser::ParseError;
+                match e {
+                    ParseError::WithSpan { msg, span_offset, span_len } => {
+                        eprintln!("parse error: {}", msg);
+                        eprintln!("{}", format_span_caret(&code, &input_name, span_offset, span_len));
+                    }
+                    other => {
+                        eprintln!("parse error: {}", other);
+                    }
+                }
                 std::process::exit(2);
             }
+        };
+    // Build source registry and expand requires while rebasing spans for modules
+    let mut src_reg = SourceRegistry::new(input_name.clone(), code.clone());
+    let ast = match expand_requires_in_expr(&ast0, &module_search_paths, &mut Vec::new(), &mut src_reg) {
+            Ok(x) => x,
+            Err(e) => { eprintln!("require error: {}", e); std::process::exit(2); }
         };
         if opt.analyze_trace { eprintln!("trace: require-expand+parse {} ms", t_req_start.elapsed().as_millis()); }
         let ast_nodes = {
@@ -343,8 +442,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     // Optional typechecking phase
         if !opt.no_typecheck {
-            let ty_res = lzscr_types::api::infer_program(&code);
-            match ty_res {
+            match lzscr_types::api::infer_ast(&ast) {
                 Ok(t) => {
                     if opt.types == "json" {
                         #[derive(Serialize)]
@@ -355,7 +453,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("type error: {e}");
+                    use lzscr_types::TypeError;
+                    match e {
+                        TypeError::Mismatch { span_offset, span_len, .. } | TypeError::EffectNotAllowed { span_offset, span_len } => {
+                            eprintln!("type error: {}", e);
+                            let block = src_reg.format_span_block(span_offset, span_len);
+                            eprintln!("{}", block);
+                        }
+                        other => {
+                            eprintln!("type error: {}", other);
+                        }
+                    }
                     std::process::exit(2);
                 }
             }
@@ -380,24 +488,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match e {
                     lzscr_runtime::EvalError::Traced { kind, spans } => {
                         eprintln!("runtime error: {kind}");
-                        // Build line/col index once
-                        let src = &code;
-                        let lines: Vec<&str> = src.lines().collect();
-                        let mut acc = 0usize;
-                        let mut offsets: Vec<usize> = Vec::with_capacity(lines.len());
-                        for ln in &lines { offsets.push(acc); acc += ln.len() + 1; }
+                        // Use source registry so spans from required modules show correct filenames
                         for (idx, sp) in spans.iter().enumerate() {
-                            // find line by binary search
-                            let mut line_no = 0usize;
-                            for (i, off) in offsets.iter().enumerate() { if *off <= sp.offset { line_no = i; } else { break; } }
-                            let col = sp.offset - offsets.get(line_no).copied().unwrap_or(0);
-                            let ltxt = lines.get(line_no).copied().unwrap_or("");
-                            eprintln!("  at {}:{}:{}", line_no + 1, col + 1, sp.len);
-                            eprintln!("    {}", ltxt);
-                            let mut caret = String::new();
-                            for _ in 0..col { caret.push(' '); }
-                            if sp.len > 0 { caret.push('^'); for _ in 1..sp.len { caret.push('~'); } }
-                            eprintln!("    {}", caret);
+                            let block = src_reg.format_span_block(sp.offset, sp.len);
+                            eprintln!("  {}", block.replace('\n', "\n  "));
                             if idx + 1 == spans.len() { eprintln!("  (most recent call last)"); }
                         }
                         std::process::exit(2);
@@ -498,13 +592,7 @@ fn build_module_search_paths(stdlib_dir: &Path, module_path: Option<&str>) -> Ve
     paths
 }
 
-fn expand_requires_to_ast(src: &str, search_paths: &[PathBuf]) -> Result<Expr, String> {
-    let ast = parse_expr(src).map_err(|e| format!("parse error before require expansion: {e}"))?;
-    let mut stack: Vec<String> = Vec::new();
-    expand_requires_in_expr(&ast, search_paths, &mut stack)
-}
-
-fn expand_requires_in_expr(e: &Expr, search_paths: &[PathBuf], stack: &mut Vec<String>) -> Result<Expr, String> {
+fn expand_requires_in_expr(e: &Expr, search_paths: &[PathBuf], stack: &mut Vec<String>, src_reg: &mut SourceRegistry) -> Result<Expr, String> {
     // First, handle ~builtin path: expand to a Ref of a generated alias name.
     if let Some(alias) = match_builtin_call(e) {
         return Ok(Expr { kind: ExprKind::Ref(alias), span: e.span });
@@ -527,10 +615,22 @@ fn expand_requires_in_expr(e: &Expr, search_paths: &[PathBuf], stack: &mut Vec<S
         let parsed = match parse_expr(&wrapped) {
             Ok(x) => x,
             Err(e) => {
-                return Err(format!("parse error in required module '{}': {}", rel, e));
+                use lzscr_parser::ParseError;
+                return Err(match e {
+                    ParseError::WithSpan { msg, span_offset, span_len } => {
+                        let // adjust for leading '('
+                        adj_off = span_offset.saturating_sub(1);
+                        let block = format_span_caret(&content, &rel, adj_off, span_len);
+                        format!("parse error in required module '{}': {}\n{}", rel, msg, block)
+                    }
+                    other => format!("parse error in required module '{}': {}", rel, other),
+                });
             }
         };
-        let expanded = expand_requires_in_expr(&parsed, search_paths, stack)?;
+        // Register module source and rebase spans so they map to this module's filename
+        let base = src_reg.register_module(rel.clone(), content);
+        let parsed_rebased = rebase_expr_spans_with_minus(&parsed, base, 1);
+        let expanded = expand_requires_in_expr(&parsed_rebased, search_paths, stack, src_reg)?;
         stack.pop();
         return Ok(expanded);
         }
@@ -543,36 +643,99 @@ fn expand_requires_in_expr(e: &Expr, search_paths: &[PathBuf], stack: &mut Vec<S
     use ExprKind::*;
     let k = match &e.kind {
         Unit | Int(_) | Float(_) | Str(_) | Char(_) | Ref(_) | Symbol(_) | TypeVal(_) => e.kind.clone(),
-        Annot { ty, expr } => Annot { ty: ty.clone(), expr: Box::new(expand_requires_in_expr(expr, search_paths, stack)?) },
-        Lambda { param, body } => Lambda { param: param.clone(), body: Box::new(expand_requires_in_expr(body, search_paths, stack)?) },
+        Annot { ty, expr } => Annot { ty: ty.clone(), expr: Box::new(expand_requires_in_expr(expr, search_paths, stack, src_reg)?) },
+        Lambda { param, body } => Lambda { param: param.clone(), body: Box::new(expand_requires_in_expr(body, search_paths, stack, src_reg)?) },
         Apply { func, arg } => Apply {
-            func: Box::new(expand_requires_in_expr(func, search_paths, stack)?),
-            arg: Box::new(expand_requires_in_expr(arg, search_paths, stack)?),
+            func: Box::new(expand_requires_in_expr(func, search_paths, stack, src_reg)?),
+            arg: Box::new(expand_requires_in_expr(arg, search_paths, stack, src_reg)?),
         },
-        Block(inner) => Block(Box::new(expand_requires_in_expr(inner, search_paths, stack)?)),
-        List(xs) => List(xs.iter().map(|x| expand_requires_in_expr(x, search_paths, stack)).collect::<Result<Vec<_>, _>>()?),
+        Block(inner) => Block(Box::new(expand_requires_in_expr(inner, search_paths, stack, src_reg)?)),
+        List(xs) => List(xs.iter().map(|x| expand_requires_in_expr(x, search_paths, stack, src_reg)).collect::<Result<Vec<_>, _>>()?),
         LetGroup { bindings, body } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
-                new_bs.push((p.clone(), expand_requires_in_expr(ex, search_paths, stack)?));
+                new_bs.push((p.clone(), expand_requires_in_expr(ex, search_paths, stack, src_reg)?));
             }
-            LetGroup { bindings: new_bs, body: Box::new(expand_requires_in_expr(body, search_paths, stack)?) }
+            LetGroup { bindings: new_bs, body: Box::new(expand_requires_in_expr(body, search_paths, stack, src_reg)?) }
         }
-        Raise(inner) => Raise(Box::new(expand_requires_in_expr(inner, search_paths, stack)?)),
+        Raise(inner) => Raise(Box::new(expand_requires_in_expr(inner, search_paths, stack, src_reg)?)),
         AltLambda { left, right } => AltLambda {
-            left: Box::new(expand_requires_in_expr(left, search_paths, stack)?),
-            right: Box::new(expand_requires_in_expr(right, search_paths, stack)?),
+            left: Box::new(expand_requires_in_expr(left, search_paths, stack, src_reg)?),
+            right: Box::new(expand_requires_in_expr(right, search_paths, stack, src_reg)?),
         },
         OrElse { left, right } => OrElse {
-            left: Box::new(expand_requires_in_expr(left, search_paths, stack)?),
-            right: Box::new(expand_requires_in_expr(right, search_paths, stack)?),
+            left: Box::new(expand_requires_in_expr(left, search_paths, stack, src_reg)?),
+            right: Box::new(expand_requires_in_expr(right, search_paths, stack, src_reg)?),
         },
         Catch { left, right } => Catch {
-            left: Box::new(expand_requires_in_expr(left, search_paths, stack)?),
-            right: Box::new(expand_requires_in_expr(right, search_paths, stack)?),
+            left: Box::new(expand_requires_in_expr(left, search_paths, stack, src_reg)?),
+            right: Box::new(expand_requires_in_expr(right, search_paths, stack, src_reg)?),
         },
     };
     Ok(Expr { kind: k, span: e.span })
+}
+
+fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
+    use ExprKind::*;
+    let map_expr = |x: &Expr| rebase_expr_spans_with_minus(x, add, minus);
+    let map_box = |x: &Expr| Box::new(map_expr(x));
+    let map_list = |xs: &Vec<Expr>| xs.iter().map(|x| map_expr(x)).collect::<Vec<_>>();
+    let kind = match &e.kind {
+        Unit => Unit,
+        Int(n) => Int(*n),
+        Float(f) => Float(*f),
+        Str(s) => Str(s.clone()),
+        Char(c) => Char(*c),
+        Ref(n) => Ref(n.clone()),
+        Symbol(s) => Symbol(s.clone()),
+        Annot { ty, expr } => Annot { ty: ty.clone(), expr: map_box(expr) },
+        TypeVal(t) => TypeVal(t.clone()),
+        Lambda { param, body } => Lambda { param: rebase_pattern_with_minus(param, add, minus), body: map_box(body) },
+        Apply { func, arg } => Apply { func: map_box(func), arg: map_box(arg) },
+        Block(b) => Block(map_box(b)),
+        List(xs) => List(map_list(xs)),
+        LetGroup { bindings, body } => {
+            let mut new_bs = Vec::with_capacity(bindings.len());
+            for (p, ex) in bindings.iter() {
+                new_bs.push((rebase_pattern_with_minus(p, add, minus), map_expr(ex)));
+            }
+            LetGroup { bindings: new_bs, body: map_box(body) }
+        }
+        Raise(inner) => Raise(map_box(inner)),
+        AltLambda { left, right } => AltLambda { left: map_box(left), right: map_box(right) },
+        OrElse { left, right } => OrElse { left: map_box(left), right: map_box(right) },
+        Catch { left, right } => Catch { left: map_box(left), right: map_box(right) },
+    };
+    let new_span = lzscr_ast::span::Span { offset: add + e.span.offset.saturating_sub(minus), len: e.span.len };
+    Expr { kind, span: new_span }
+}
+
+fn rebase_pattern_with_minus(p: &Pattern, add: usize, minus: usize) -> Pattern {
+    use PatternKind::*;
+    let kind = match &p.kind {
+        Wildcard => Wildcard,
+        Var(s) => Var(s.clone()),
+        Unit => Unit,
+        Tuple(xs) => Tuple(xs.iter().map(|x| rebase_pattern_with_minus(x, add, minus)).collect()),
+        Ctor { name, args } => Ctor { name: name.clone(), args: args.iter().map(|x| rebase_pattern_with_minus(x, add, minus)).collect() },
+        Symbol(s) => Symbol(s.clone()),
+        Int(n) => Int(*n),
+        Float(f) => Float(*f),
+        Str(s) => Str(s.clone()),
+        Char(c) => Char(*c),
+        Bool(b) => Bool(*b),
+        Record(fields) => {
+            let mut new = Vec::with_capacity(fields.len());
+            for (k, v) in fields.iter() { new.push((k.clone(), rebase_pattern_with_minus(v, add, minus))); }
+            Record(new)
+        }
+        As(a, b) => As(Box::new(rebase_pattern_with_minus(a, add, minus)), Box::new(rebase_pattern_with_minus(b, add, minus))),
+        List(xs) => List(xs.iter().map(|x| rebase_pattern_with_minus(x, add, minus)).collect()),
+        Cons(h, t) => Cons(Box::new(rebase_pattern_with_minus(h, add, minus)), Box::new(rebase_pattern_with_minus(t, add, minus))),
+        TypeBind { tvars, pat } => TypeBind { tvars: tvars.clone(), pat: Box::new(rebase_pattern_with_minus(pat, add, minus)) },
+    };
+    let new_span = lzscr_ast::span::Span { offset: add + p.span.offset.saturating_sub(minus), len: p.span.len };
+    Pattern { kind, span: new_span }
 }
 
 fn match_require_call(e: &Expr) -> Option<Result<Vec<String>, String>> {

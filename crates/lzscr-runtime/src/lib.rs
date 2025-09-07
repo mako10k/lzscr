@@ -943,7 +943,7 @@ impl Env {
         // slice_span : Scan -> Int -> Int -> Str
         scan_ns.insert(
             "slice_span".into(),
-            Value::Native { arity: 3, args: vec![], f: |env, args| match (&args[0], &args[1], &args[2]) {
+            Value::Native { arity: 3, args: vec![], f: |_env, args| match (&args[0], &args[1], &args[2]) {
                 (v, Value::Int(a), Value::Int(b)) if get_scan(v).is_some() => {
                     let (s, _i) = get_scan(v).unwrap();
                     let a = *a as usize;
@@ -1940,7 +1940,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                 Ok(v) => v,
                 Err(err) => {
                     return Err(match err {
-                        EvalError::Traced { mut kind, mut spans } => { spans.push(func.span); EvalError::Traced { kind, spans } }
+                        EvalError::Traced { kind, mut spans } => { spans.push(func.span); EvalError::Traced { kind, spans } }
                         other => EvalError::Traced { kind: Box::new(other), spans: vec![func.span] },
                     })
                 }
@@ -1953,7 +1953,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                 Ok(v) => v,
                 Err(err) => {
                     return Err(match err {
-                        EvalError::Traced { mut kind, mut spans } => { spans.push(arg.span); EvalError::Traced { kind, spans } }
+                        EvalError::Traced { kind, mut spans } => { spans.push(arg.span); EvalError::Traced { kind, spans } }
                         other => EvalError::Traced { kind: Box::new(other), spans: vec![arg.span] },
                     })
                 }
@@ -2047,7 +2047,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                                         for (k, vv) in bind {
                                             env.vars.insert(k, vv);
                                         }
-                                        match eval(&env, &body) { Ok(x) => x, Err(err) => return Err(match err { EvalError::Traced { mut kind, mut spans } => { spans.push(body.span); EvalError::Traced { kind, spans } }, other => EvalError::Traced { kind: Box::new(other), spans: vec![body.span] } }) }
+                                        match eval(&env, &body) { Ok(x) => x, Err(err) => return Err(match err { EvalError::Traced { kind, mut spans } => { spans.push(body.span); EvalError::Traced { kind, spans } }, other => EvalError::Traced { kind: Box::new(other), spans: vec![body.span] } }) }
                                     } else {
                                         Value::Raised(Box::new(v))
                                     }
@@ -2067,7 +2067,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         for (k, v) in bind {
                             env.vars.insert(k, v);
                         }
-                        match eval(&env, &body) { Ok(v) => Ok(v), Err(err) => Err(match err { EvalError::Traced { mut kind, mut spans } => { spans.push(body.span); EvalError::Traced { kind, spans } }, other => EvalError::Traced { kind: Box::new(other), spans: vec![body.span] } }) }
+                        match eval(&env, &body) { Ok(v) => Ok(v), Err(err) => Err(match err { EvalError::Traced { kind, mut spans } => { spans.push(body.span); EvalError::Traced { kind, spans } }, other => EvalError::Traced { kind: Box::new(other), spans: vec![body.span] } }) }
                     } else {
                         Ok(Value::Raised(Box::new(a)))
                     }

@@ -779,6 +779,15 @@ pub mod api {
         }
     }
 
+    // Prefer this from tools that already have an AST with precise spans (e.g., CLI after ~require expansion).
+    pub fn infer_ast(ast: &Expr) -> Result<String, super::TypeError> {
+        let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![] };
+        match infer_expr(&mut ctx, ast, false) {
+            Ok((t, _s)) => Ok(pp_type(&t)),
+            Err(e) => Err(e),
+        }
+    }
+
     fn prelude_env() -> TypeEnv {
         let mut env = TypeEnv::new();
         // Minimal builtins required by tests; most tests use pure lambdas.
