@@ -483,42 +483,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "duplicate: size={} count={} span=({},{}) repr={}",
                         f.size, f.count, f.span.offset, f.span.len, f.repr
                     );
+                    let block = src_reg.format_span_block(f.span.offset, f.span.len);
+                    eprintln!("{}", block);
                 }
                 for u in &unb {
                     eprintln!(
                         "unbound-ref: name={} span=({},{})",
                         u.name, u.span.offset, u.span.len
                     );
+                    let block = src_reg.format_span_block(u.span.offset, u.span.len);
+                    eprintln!("{}", block);
                 }
                 for s in &sh {
                     eprintln!(
                         "shadowing: name={} lambda_span=({},{})",
                         s.name, s.lambda_span.offset, s.lambda_span.len
                     );
+                    let block = src_reg.format_span_block(s.lambda_span.offset, s.lambda_span.len);
+                    eprintln!("{}", block);
                 }
                 for u in &up {
                     eprintln!(
                         "unused-param: name={} lambda_span=({},{})",
                         u.name, u.lambda_span.offset, u.lambda_span.len
                     );
+                    let block = src_reg.format_span_block(u.lambda_span.offset, u.lambda_span.len);
+                    eprintln!("{}", block);
                 }
                 for u in &ul {
                     eprintln!(
                         "unused-let: name={} binding_span=({},{})",
                         u.name, u.binding_span.offset, u.binding_span.len
                     );
+                    let block = src_reg.format_span_block(u.binding_span.offset, u.binding_span.len);
+                    eprintln!("{}", block);
                 }
                 for c in &lc {
                     eprintln!(
                         "let-collision: name={} group_span=({},{})",
                         c.name, c.group_span.offset, c.group_span.len
                     );
+                    let block = src_reg.format_span_block(c.group_span.offset, c.group_span.len);
+                    eprintln!("{}", block);
                 }
                 for c in &ca {
                     eprintln!(
                         "ctor-arity: name={} expected={} got={} span=({}, {}) kind={}",
                         c.name, c.expected, c.got, c.span.offset, c.span.len, c.kind
                     );
+                    let block = src_reg.format_span_block(c.span.offset, c.span.len);
+                    eprintln!("{}", block);
                 }
             }
             return Ok(());
