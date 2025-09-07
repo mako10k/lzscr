@@ -638,15 +638,13 @@ impl Env {
                                 return Ok(Value::Ctor { name: ".None".into(), args: vec![] })
                             }
                         };
-                        let mut i = 0i64;
-                        for ch in s_utf.chars() {
-                            if i == *idx {
+                        for (i, ch) in s_utf.chars().enumerate() {
+                            if (i as i64) == *idx {
                                 return Ok(Value::Ctor {
                                     name: ".Some".into(),
                                     args: vec![Value::Char(ch as i32)],
                                 });
                             }
-                            i += 1;
                         }
                         Ok(Value::Ctor { name: ".None".into(), args: vec![] })
                     }
@@ -844,10 +842,7 @@ impl Env {
                 f: |_env, args| match &args[0] {
                     v if get_scan(v).is_some() => {
                         let (s, i) = get_scan(v).unwrap();
-                        let utf = match std::str::from_utf8(s.as_bytes()) {
-                            Ok(u) => u,
-                            Err(_) => "",
-                        };
+                        let utf = std::str::from_utf8(s.as_bytes()).unwrap_or_default();
                         let ch = utf.chars().nth(i);
                         match ch {
                             Some(c) => Ok(Value::Ctor {
@@ -870,10 +865,7 @@ impl Env {
                 f: |_env, args| match &args[0] {
                     v if get_scan(v).is_some() => {
                         let (s, i) = get_scan(v).unwrap();
-                        let utf = match std::str::from_utf8(s.as_bytes()) {
-                            Ok(u) => u,
-                            Err(_) => "",
-                        };
+                        let utf = std::str::from_utf8(s.as_bytes()).unwrap_or_default();
                         let mut it = utf.chars();
                         let c = it.nth(i);
                         match c {
@@ -901,10 +893,7 @@ impl Env {
                 f: |env, args| match (&args[0], &args[1]) {
                     (pred, v) if get_scan(v).is_some() => {
                         let (s, i) = get_scan(v).unwrap();
-                        let utf = match std::str::from_utf8(s.as_bytes()) {
-                            Ok(u) => u,
-                            Err(_) => "",
-                        };
+                        let utf = std::str::from_utf8(s.as_bytes()).unwrap_or_default();
                         if let Some(ch) = utf.chars().nth(i) {
                             let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
                             if as_bool(env, &res)? {

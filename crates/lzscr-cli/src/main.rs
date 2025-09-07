@@ -807,7 +807,7 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
     use ExprKind::*;
     let map_expr = |x: &Expr| rebase_expr_spans_with_minus(x, add, minus);
     let map_box = |x: &Expr| Box::new(map_expr(x));
-    let map_list = |xs: &Vec<Expr>| xs.iter().map(|x| map_expr(x)).collect::<Vec<_>>();
+    let map_list = |xs: &Vec<Expr>| xs.iter().map(map_expr).collect::<Vec<_>>();
     let kind = match &e.kind {
         Unit => Unit,
         Int(n) => Int(*n),

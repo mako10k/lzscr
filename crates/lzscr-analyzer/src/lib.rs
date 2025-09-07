@@ -223,10 +223,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
     }
 
     fn should_recurse(e: &Expr) -> bool {
-        match &e.kind {
-            ExprKind::TypeVal(_) => false,
-            _ => true,
-        }
+        !matches!(&e.kind, ExprKind::TypeVal(_))
     }
 
     fn collect(e: &Expr, opt: &AnalyzeOptions, map: &mut AHashMap<u64, Entry>) {
