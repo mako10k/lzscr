@@ -5,12 +5,13 @@ use lzscr_analyzer::{
 };
 use lzscr_coreir::{lower_expr_to_core, print_term, eval_term, print_ir_value};
 use lzscr_parser::parse_expr;
-use lzscr_ast::{ast::*, pretty::print_expr};
+use lzscr_ast::ast::*;
 use lzscr_runtime::{eval, Env, Value};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::fs;
+use std::time::Instant;
 
 fn parse_ctor_arity_spec(spec: &str) -> (HashMap<String, usize>, Vec<String>) {
     let mut map = HashMap::new();
@@ -132,6 +133,10 @@ struct Opt {
     /// Skip duplicate detection pass (useful for large files)
     #[arg(long = "no-dup", default_value_t = false)]
     no_dup: bool,
+
+    /// Print timing of analysis phases and sizes to stderr
+    #[arg(long = "analyze-trace", default_value_t = false)]
+    analyze_trace: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -198,20 +203,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Expand ~require before parsing for subsequent phases (dump/analyze/exec)
+        let t_req_start = Instant::now();
         let module_search_paths = build_module_search_paths(&resolved_stdlib_dir, opt.module_path.as_deref());
-        match expand_requires_in_source(&code, &module_search_paths) {
-            Ok(expanded) => {
-                code = expanded;
-            }
+        let ast = match expand_requires_to_ast(&code, &module_search_paths) {
+            Ok(expanded_ast) => expanded_ast,
             Err(e) => {
                 eprintln!("require error: {}", e);
                 std::process::exit(2);
             }
-        }
-
-        let ast = parse_expr(&code).map_err(|e| format!("{}", e))?;
+        };
+        if opt.analyze_trace { eprintln!("trace: require-expand+parse {} ms", t_req_start.elapsed().as_millis()); }
+        let ast_nodes = {
+            fn count(e: &Expr) -> usize {
+                use ExprKind::*;
+                match &e.kind {
+                    Unit | Int(_) | Float(_) | Str(_) | Char(_) | Ref(_) | Symbol(_) | TypeVal(_) => 1,
+                    Annot { expr, .. } => 1 + count(expr),
+                    Lambda { body, .. } => 1 + count(body),
+                    Apply { func, arg } => 1 + count(func) + count(arg),
+                    Block(inner) => 1 + count(inner),
+                    List(xs) => 1 + xs.iter().map(count).sum::<usize>(),
+                    LetGroup { bindings, body } => 1 + count(body) + bindings.iter().map(|(_, ex)| count(ex)).sum::<usize>(),
+                    Raise(inner) => 1 + count(inner),
+                    OrElse { left, right } | AltLambda { left, right } | Catch { left, right } => 1 + count(left) + count(right),
+                }
+            }
+            count(&ast)
+        };
+        if opt.analyze_trace { eprintln!("trace: ast-nodes {}", ast_nodes); }
         // Core IR dump/eval modes take precedence over analyze/execute
-        if opt.dump_coreir || opt.dump_coreir_json || opt.eval_coreir {
+    if opt.dump_coreir || opt.dump_coreir_json || opt.eval_coreir {
             let term = lower_expr_to_core(&ast);
             if opt.dump_coreir_json {
                 println!("{}", serde_json::to_string_pretty(&term)?);
@@ -238,6 +259,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ctor_arity: Vec<lzscr_analyzer::CtorArityIssue>,
             }
             // duplicates (optionally skipped)
+            let t_dup_start = Instant::now();
             let dups = if opt.no_dup {
                 Vec::new()
             } else {
@@ -249,12 +271,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 )
             };
+            if opt.analyze_trace { eprintln!("trace: duplicates {} ms ({} findings)", t_dup_start.elapsed().as_millis(), dups.len()); }
             // unbound refs
+            let t_unb_start = Instant::now();
             let unb = analyze_unbound_refs(&ast, &default_allowlist());
+            if opt.analyze_trace { eprintln!("trace: unbound-refs {} ms ({} findings)", t_unb_start.elapsed().as_millis(), unb.len()); }
             // shadowing
+            let t_sh_start = Instant::now();
             let sh = analyze_shadowing(&ast);
+            if opt.analyze_trace { eprintln!("trace: shadowing {} ms ({} findings)", t_sh_start.elapsed().as_millis(), sh.len()); }
             // unused params
+            let t_up_start = Instant::now();
             let up = analyze_unused_params(&ast);
+            if opt.analyze_trace { eprintln!("trace: unused-params {} ms ({} findings)", t_up_start.elapsed().as_millis(), up.len()); }
             let arities = {
                 let mut m = HashMap::new();
                 if let Some(spec) = &opt.ctor_arity {
@@ -266,7 +295,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 m
             };
+            let t_ca_start = Instant::now();
             let ca = analyze_ctor_arity(&ast, &arities);
+            if opt.analyze_trace { eprintln!("trace: ctor-arity {} ms ({} findings)", t_ca_start.elapsed().as_millis(), ca.len()); }
             if opt.format == "json" {
                 let out = AnalyzeOut {
                     duplicates: &dups,
@@ -432,11 +463,10 @@ fn build_module_search_paths(stdlib_dir: &Path, module_path: Option<&str>) -> Ve
     paths
 }
 
-fn expand_requires_in_source(src: &str, search_paths: &[PathBuf]) -> Result<String, String> {
+fn expand_requires_to_ast(src: &str, search_paths: &[PathBuf]) -> Result<Expr, String> {
     let ast = parse_expr(src).map_err(|e| format!("parse error before require expansion: {e}"))?;
     let mut stack: Vec<String> = Vec::new();
-    let expanded = expand_requires_in_expr(&ast, search_paths, &mut stack)?;
-    Ok(print_expr(&expanded))
+    expand_requires_in_expr(&ast, search_paths, &mut stack)
 }
 
 fn expand_requires_in_expr(e: &Expr, search_paths: &[PathBuf], stack: &mut Vec<String>) -> Result<Expr, String> {

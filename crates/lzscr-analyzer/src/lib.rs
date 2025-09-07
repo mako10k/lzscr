@@ -1,7 +1,8 @@
-use ahash::AHashMap;
+use ahash::{AHashMap, AHasher};
 use lzscr_ast::ast::*;
 use lzscr_ast::span::Span;
 use std::collections::HashSet;
+use std::hash::Hasher;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DupFinding {
@@ -27,137 +28,161 @@ impl Default for AnalyzeOptions {
 }
 
 pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
-    let mut table: AHashMap<String, (usize, lzscr_ast::span::Span, usize)> = AHashMap::new();
-    fn walk(e: &Expr, tbl: &mut AHashMap<String, (usize, lzscr_ast::span::Span, usize)>) -> usize {
-        let size = match &e.kind {
-            ExprKind::Unit
-            | ExprKind::Int(_)
-            | ExprKind::Float(_)
-            | ExprKind::Str(_)
-            | ExprKind::Char(_)
-            | ExprKind::Ref(_)
-            | ExprKind::Symbol(_)
-            | ExprKind::TypeVal(_) => 1,
-            ExprKind::Annot { expr, .. } => 1 + walk(expr, tbl),
-            ExprKind::Raise(inner) => 1 + walk(inner, tbl),
-            ExprKind::OrElse { left, right } => 1 + walk(left, tbl) + walk(right, tbl),
-            ExprKind::AltLambda { left, right } => 1 + walk(left, tbl) + walk(right, tbl),
-            ExprKind::Catch { left, right } => 1 + walk(left, tbl) + walk(right, tbl),
-            ExprKind::Lambda { body, .. } => 1 + walk(body, tbl),
-            ExprKind::Apply { func, arg } => 1 + walk(func, tbl) + walk(arg, tbl),
-            ExprKind::Block(inner) => 1 + walk(inner, tbl),
-            ExprKind::LetGroup { bindings, body } => {
-                let mut acc = 1 + walk(body, tbl);
-                for (_p, ex) in bindings {
-                    acc += walk(ex, tbl);
-                }
-                acc
-            }
-            ExprKind::List(xs) => 1 + xs.iter().map(|x| walk(x, tbl)).sum::<usize>(),
-        };
-        // very simple structural repr (not fully unique but works for heuristic)
-        let repr = match &e.kind {
-            ExprKind::Unit => "()".to_string(),
-            ExprKind::Int(n) => format!("i:{n}"),
-            ExprKind::Float(f) => format!("f:{}", f),
-            ExprKind::Str(s) => format!("s:\"{}\"", s),
-            ExprKind::Char(c) => format!("c:{}", c),
-            ExprKind::Ref(n) => format!("r:{n}"),
-            ExprKind::Symbol(s) => format!("y:{s}"),
-            ExprKind::TypeVal(_) => "typeval".into(),
-            ExprKind::Annot { expr, .. } => format!("annot[{}]", expr.span.len),
-            ExprKind::Raise(inner) => format!("raise[{}]", inner.span.len),
-            ExprKind::OrElse { left, right } => {
-                format!("orelse({},{})", left.span.len, right.span.len)
-            }
-            ExprKind::AltLambda { left, right } => {
-                format!("altlam({},{})", left.span.len, right.span.len)
-            }
-            ExprKind::Catch { left, right } => {
-                format!("catch({},{})", left.span.len, right.span.len)
-            }
-            ExprKind::Lambda { param, body } => {
-                fn pp(p: &Pattern) -> String {
-                    match &p.kind {
-                        PatternKind::Wildcard => "_".into(),
-                        PatternKind::TypeBind { pat, .. } => pp(pat),
-                        PatternKind::Var(n) => format!("~{}", n),
-                        PatternKind::Unit => "()".into(),
-                        PatternKind::Tuple(xs) => {
-                            format!(
-                                "({})",
-                                xs.iter().map(pp).collect::<Vec<_>>().join(", ")
-                            )
-                        }
-                        PatternKind::List(xs) => {
-                            format!(
-                                "[{}]",
-                                xs.iter().map(pp).collect::<Vec<_>>().join(", ")
-                            )
-                        }
-                        PatternKind::Record(fields) => {
-                            let inner = fields
-                                .iter()
-                                .map(|(k, v)| format!("{}: {}", k, pp(v)))
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            format!("{{{}}}", inner)
-                        }
-                        PatternKind::Ctor { name, args } => {
-                            if args.is_empty() {
-                                name.clone()
-                            } else {
-                                format!(
-                                    "{} {}",
-                                    name,
-                                    args.iter().map(pp).collect::<Vec<_>>().join(" ")
-                                )
-                            }
-                        }
-                        PatternKind::Cons(h, t) => format!("{} : {}", pp(h), pp(t)),
-                        PatternKind::Symbol(s) => s.clone(), // 現状パーサで禁止方向に寄せたが互換のため残置
-                        PatternKind::Int(n) => format!("{}", n),
-                        PatternKind::Float(f) => format!("{}", f),
-                        PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
-                        PatternKind::Char(c) => {
-                            let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
-                            let mut tmp = String::new();
-                            tmp.push(ch);
-                            format!("'{}'", tmp.escape_default())
-                        }
-                        PatternKind::Bool(b) => format!("{}", b),
-                        PatternKind::As(a, b) => format!("{} @ {}", pp(a), pp(b)),
-                    }
-                }
-                format!("lam {} -> [{}]", pp(param), body.span.len)
-            }
-            ExprKind::Apply { func, arg } => format!("ap({},{})", func.span.len, arg.span.len),
-            ExprKind::Block(inner) => format!("blk({})", inner.span.len),
-            ExprKind::LetGroup { bindings, body } => {
-                let bcount = bindings.len();
-                format!("letg[{};{}]", bcount, body.span.len)
-            }
-            ExprKind::List(xs) => format!("list({})", xs.len()),
-        };
-        let entry = tbl.entry(repr).or_insert((0, e.span, size));
-        entry.0 += 1;
-        entry.1 = e.span; // last span seen (heuristic)
-        entry.2 = size; // overwrite size (same repr should be same size)
-        size
-    }
-    let _ = walk(expr, &mut table);
-    let mut out = Vec::new();
-    for (repr, (count, span, size)) in table {
-        if size >= opt.min_size && count >= opt.min_count {
-            out.push(DupFinding {
-                span,
-                count,
-                size,
-                repr,
-            });
+    // Structural hasher for Expr (pattern shapes summarized; strings not fully embedded)
+    fn hash_pattern_shape(p: &Pattern, h: &mut AHasher) {
+        use PatternKind::*;
+        match &p.kind {
+            Wildcard => h.write_u8(1),
+            Unit => h.write_u8(2),
+            Symbol(_) => h.write_u8(3),
+            Int(_) => h.write_u8(4),
+            Float(_) => h.write_u8(5),
+            Str(s) => { h.write_u8(6); h.write_usize(s.len()); }
+            Char(c) => { h.write_u8(7); h.write_i32(*c); }
+            Bool(b) => { h.write_u8(8); h.write_u8(*b as u8); }
+            TypeBind { pat, .. } => { h.write_u8(9); hash_pattern_shape(pat, h); }
+            Var(_) => { h.write_u8(10); }
+            Tuple(xs) => { h.write_u8(11); h.write_usize(xs.len()); for x in xs { hash_pattern_shape(x, h); } }
+            List(xs) => { h.write_u8(12); h.write_usize(xs.len()); for x in xs { hash_pattern_shape(x, h); } }
+            Record(fs) => { h.write_u8(13); h.write_usize(fs.len()); for (k, v) in fs { h.write(k.as_bytes()); hash_pattern_shape(v, h); } }
+            Ctor { name, args } => { h.write_u8(14); h.write(name.as_bytes()); h.write_usize(args.len()); for a in args { hash_pattern_shape(a, h); } }
+            Cons(hd, tl) => { h.write_u8(15); hash_pattern_shape(hd, h); hash_pattern_shape(tl, h); }
+            As(a, b) => { h.write_u8(16); hash_pattern_shape(a, h); hash_pattern_shape(b, h); }
         }
     }
-    out.sort_by_key(|d| (usize::MAX - d.size, usize::MAX - d.count));
+    fn hash_expr(e: &Expr, size_out: &mut usize) -> u64 {
+        use ExprKind::*;
+        let mut hasher = AHasher::default();
+        fn go(e: &Expr, h: &mut AHasher, sz: &mut usize) {
+            *sz += 1;
+            match &e.kind {
+                Unit => { h.write_u8(1); }
+                Int(n) => { h.write_u8(2); h.write_i64(*n); }
+                Float(fv) => { h.write_u8(3); h.write_u64(fv.to_bits()); }
+                Str(s) => { h.write_u8(4); h.write_usize(s.len()); }
+                Char(c) => { h.write_u8(5); h.write_i32(*c); }
+                Ref(n) => { h.write_u8(6); h.write(n.as_bytes()); }
+                Symbol(s) => { h.write_u8(7); h.write(s.as_bytes()); }
+                TypeVal(_) => { h.write_u8(8); }
+                Annot { expr, .. } => { h.write_u8(9); go(expr, h, sz); }
+                Raise(inner) => { h.write_u8(10); go(inner, h, sz); }
+                OrElse { left, right } => { h.write_u8(11); go(left, h, sz); go(right, h, sz); }
+                AltLambda { left, right } => { h.write_u8(12); go(left, h, sz); go(right, h, sz); }
+                Catch { left, right } => { h.write_u8(13); go(left, h, sz); go(right, h, sz); }
+                Lambda { param, body } => { h.write_u8(14); hash_pattern_shape(param, h); go(body, h, sz); }
+                Apply { func, arg } => { h.write_u8(15); go(func, h, sz); go(arg, h, sz); }
+                Block(inner) => { h.write_u8(16); go(inner, h, sz); }
+                List(xs) => { h.write_u8(17); h.write_usize(xs.len()); for x in xs { go(x, h, sz); } }
+                LetGroup { bindings, body } => {
+                    h.write_u8(18);
+                    h.write_usize(bindings.len());
+                    for (p, ex) in bindings { hash_pattern_shape(p, h); go(ex, h, sz); }
+                    go(body, h, sz);
+                }
+            }
+        }
+        go(e, &mut hasher, size_out);
+        hasher.finish()
+    }
+    fn summary_repr(e: &Expr) -> String {
+        use ExprKind::*;
+        match &e.kind {
+            Unit => "()".to_string(),
+            Int(n) => format!("i:{n}"),
+            Float(f) => format!("f:{}", f),
+            Str(s) => format!("s(len={})", s.len()),
+            Char(c) => format!("c:{}", c),
+            Ref(n) => format!("r:{n}"),
+            Symbol(s) => format!("y:{s}"),
+            TypeVal(_) => "typeval".into(),
+            Annot { expr, .. } => format!("annot[{}]", expr.span.len),
+            Raise(inner) => format!("raise[{}]", inner.span.len),
+            OrElse { left, right } => format!("orelse({},{})", left.span.len, right.span.len),
+            AltLambda { left, right } => format!("altlam({},{})", left.span.len, right.span.len),
+            Catch { left, right } => format!("catch({},{})", left.span.len, right.span.len),
+            Lambda { body, .. } => format!("lam -> [{}]", body.span.len),
+            Apply { func, arg } => format!("ap({},{})", func.span.len, arg.span.len),
+            Block(inner) => format!("blk({})", inner.span.len),
+            LetGroup { bindings, body } => format!("letg[{};{}]", bindings.len(), body.span.len),
+            List(xs) => format!("list({})", xs.len()),
+        }
+    }
+
+    // Walk the AST, hash each sub-expression, and aggregate counts/sizes
+    #[derive(Clone)]
+    struct Entry {
+        count: usize,
+        span: Span,
+        size: usize,
+        repr: String,
+    }
+
+    fn should_recurse(e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::TypeVal(_) => false,
+            _ => true,
+        }
+    }
+
+    fn collect(e: &Expr, opt: &AnalyzeOptions, map: &mut AHashMap<u64, Entry>) {
+        // hash the current node
+        let mut size = 0usize;
+        let h = hash_expr(e, &mut size);
+        if size >= opt.min_size {
+            let ent = map.entry(h).or_insert_with(|| Entry {
+                count: 0,
+                span: e.span,
+                size,
+                repr: summary_repr(e),
+            });
+            ent.count += 1;
+            // keep the largest size/earliest span as a more informative exemplar
+            if size > ent.size { ent.size = size; ent.span = e.span; }
+        }
+        // recurse into children to index all sub-expressions
+        if !should_recurse(e) { return; }
+        match &e.kind {
+            ExprKind::Annot { expr, .. } => collect(expr, opt, map),
+            ExprKind::Raise(inner) => collect(inner, opt, map),
+            ExprKind::OrElse { left, right }
+            | ExprKind::AltLambda { left, right }
+            | ExprKind::Catch { left, right } => {
+                collect(left, opt, map);
+                collect(right, opt, map);
+            }
+            ExprKind::Lambda { body, .. } => {
+                collect(body, opt, map);
+            }
+            ExprKind::Apply { func, arg } => {
+                collect(func, opt, map);
+                collect(arg, opt, map);
+            }
+            ExprKind::Block(inner) => collect(inner, opt, map),
+            ExprKind::List(xs) => {
+                for x in xs { collect(x, opt, map); }
+            }
+            ExprKind::LetGroup { bindings, body } => {
+                for (_p, ex) in bindings { collect(ex, opt, map); }
+                collect(body, opt, map);
+            }
+            _ => {}
+        }
+    }
+
+    let mut map: AHashMap<u64, Entry> = AHashMap::new();
+    collect(expr, &opt, &mut map);
+    let mut out: Vec<DupFinding> = map
+        .into_iter()
+        .filter_map(|(_h, e)| {
+            if e.count >= opt.min_count && e.size >= opt.min_size {
+                Some(DupFinding { span: e.span, count: e.count, size: e.size, repr: e.repr })
+            } else {
+                None
+            }
+        })
+        .collect();
+    // sort by count desc, then size desc, then span start
+    out.sort_by(|a, b| b.count.cmp(&a.count).then(b.size.cmp(&a.size)).then(a.span.offset.cmp(&b.span.offset)));
     out
 }
 
@@ -197,7 +222,7 @@ pub struct CtorArityIssue {
     pub expected: usize,
     pub got: usize,
     pub span: Span,
-    pub kind: String, // "over" | "zero-arity-applied"
+    pub kind: String, // kinds: over | zero-arity-applied
 }
 
 pub fn analyze_ctor_arity(
@@ -225,13 +250,13 @@ pub fn analyze_ctor_arity(
                 if let Some(exp) = arities.get(name) {
                     let got = args.len();
                     if *exp == 0 && got > 0 {
-                        out.push(CtorArityIssue {
+            out.push(CtorArityIssue {
                             name: name.clone(),
                             expected: 0,
                             got,
                             span: e.span,
                             kind: "zero-arity-applied".into(),
-                        });
+            });
             } else if got > *exp {
                         out.push(CtorArityIssue {
                             name: name.clone(),
@@ -240,7 +265,7 @@ pub fn analyze_ctor_arity(
                             span: e.span,
                             kind: "over".into(),
                         });
-                    }
+            }
                 }
             }
         }
@@ -495,7 +520,7 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                 let is_shadow = scopes.iter().any(|s| ids.iter().any(|n| s.contains(n)));
                 if is_shadow {
                     out.push(Shadowing {
-                        name: ids.first().cloned().unwrap_or_else(|| "_".into()),
+                        name: ids.first().cloned().unwrap_or_else(|| "_".to_string()),
                         lambda_span: e.span,
                     });
                 }
@@ -558,7 +583,7 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                 let is_shadow = scopes.iter().any(|s| ids.iter().any(|n| s.contains(n)));
                 if is_shadow {
                     out.push(Shadowing {
-                        name: ids.first().cloned().unwrap_or_else(|| "_".into()),
+                        name: ids.first().cloned().unwrap_or_else(|| "_".to_string()),
                         lambda_span: e.span,
                     });
                 }
@@ -735,7 +760,7 @@ mod tests {
     #[test]
     fn detects_simple_duplicate_apply() {
         // (~add 1 2) (~add 1 2)
-        let e = parse_expr("((~add 1 2) (~add 1 2))").unwrap();
+    let e = parse_expr("((~add 1 2) (~add 1 2))").unwrap();
         let d = analyze_duplicates(
             &e,
             AnalyzeOptions {
