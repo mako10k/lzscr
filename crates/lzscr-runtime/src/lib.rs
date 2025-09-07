@@ -2523,6 +2523,7 @@ mod tests {
         let err = eval(&env_strict, &call).unwrap_err();
         match err {
             EvalError::EffectNotAllowed => {}
+            EvalError::Traced { kind, .. } if matches!(*kind, EvalError::EffectNotAllowed) => {}
             other => panic!("unexpected error: {other:?}"),
         }
     }

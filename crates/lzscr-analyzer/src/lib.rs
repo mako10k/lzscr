@@ -320,6 +320,18 @@ pub struct UnusedParam {
     pub lambda_span: Span,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UnusedLet {
+    pub name: String,
+    pub binding_span: Span,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LetCollision {
+    pub name: String,
+    pub group_span: Span,
+}
+
 pub fn default_allowlist() -> HashSet<String> {
     // Builtins available via ~name (keep in sync with runtime)
     [
@@ -861,6 +873,219 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             _ => {}
         }
     }
+    walk(expr, &mut out);
+    out
+}
+
+pub fn analyze_unused_let_bindings(expr: &Expr) -> Vec<UnusedLet> {
+    let mut out = Vec::new();
+
+    fn binds_name(p: &Pattern, name: &str) -> bool {
+        match &p.kind {
+            PatternKind::Var(n) => n == name,
+            PatternKind::TypeBind { pat, .. } => binds_name(pat, name),
+            PatternKind::Tuple(xs) | PatternKind::List(xs) => xs.iter().any(|x| binds_name(x, name)),
+            PatternKind::Record(fs) => fs.iter().any(|(_, v)| binds_name(v, name)),
+            PatternKind::Ctor { args, .. } => args.iter().any(|a| binds_name(a, name)),
+            PatternKind::Cons(h, t) => binds_name(h, name) || binds_name(t, name),
+            PatternKind::As(a, b) => binds_name(a, name) || binds_name(b, name),
+            _ => false,
+        }
+    }
+
+    fn used_in(e: &Expr, target: &str) -> bool {
+        match &e.kind {
+            ExprKind::Ref(n) => n == target,
+            ExprKind::Lambda { param, body } => {
+                // Shadowing by lambda param prevents counting inner uses
+                !binds_name(param, target) && used_in(body, target)
+            }
+            ExprKind::Apply { func, arg } => used_in(func, target) || used_in(arg, target),
+            ExprKind::Annot { expr, .. } => used_in(expr, target),
+            ExprKind::Raise(inner) => used_in(inner, target),
+            ExprKind::OrElse { left, right }
+            | ExprKind::AltLambda { left, right }
+            | ExprKind::Catch { left, right } => used_in(left, target) || used_in(right, target),
+            ExprKind::Block(inner) => used_in(inner, target),
+            ExprKind::List(xs) => xs.iter().any(|x| used_in(x, target)),
+            ExprKind::LetGroup { bindings, body } => {
+                let in_body = used_in(body, target);
+                let in_bindings = bindings.iter().any(|(_p, ex)| used_in(ex, target));
+                in_body || in_bindings
+            }
+            ExprKind::TypeVal(_) => false,
+            _ => false,
+        }
+    }
+
+    fn collect_vars(p: &Pattern, outn: &mut Vec<(String, Span)>) {
+        match &p.kind {
+            PatternKind::Var(n) => outn.push((n.clone(), p.span)),
+            PatternKind::TypeBind { pat, .. } => collect_vars(pat, outn),
+            PatternKind::Tuple(xs) | PatternKind::List(xs) => {
+                for x in xs {
+                    collect_vars(x, outn);
+                }
+            }
+            PatternKind::Record(fs) => {
+                for (_k, v) in fs {
+                    collect_vars(v, outn);
+                }
+            }
+            PatternKind::Ctor { args, .. } => {
+                for a in args {
+                    collect_vars(a, outn);
+                }
+            }
+            PatternKind::Cons(h, t) => {
+                collect_vars(h, outn);
+                collect_vars(t, outn);
+            }
+            PatternKind::As(a, b) => {
+                collect_vars(a, outn);
+                collect_vars(b, outn);
+            }
+            _ => {}
+        }
+    }
+
+    fn walk(e: &Expr, out: &mut Vec<UnusedLet>) {
+        match &e.kind {
+            ExprKind::LetGroup { bindings, body } => {
+                // gather all bound names in this group
+                let mut names = Vec::new();
+                for (p, _ex) in bindings.iter() {
+                    collect_vars(p, &mut names);
+                }
+                // check usage across body and all binding expressions
+                for (n, sp) in names {
+                    let mut used = used_in(body, &n);
+                    if !used {
+                        for (_p, ex) in bindings.iter() {
+                            if used_in(ex, &n) {
+                                used = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !used {
+                        out.push(UnusedLet { name: n, binding_span: sp });
+                    }
+                }
+                // recurse
+                for (_p, ex) in bindings.iter() {
+                    walk(ex, out);
+                }
+                walk(body, out);
+            }
+            ExprKind::Annot { expr, .. } => walk(expr, out),
+            ExprKind::Lambda { body, .. } => walk(body, out),
+            ExprKind::Apply { func, arg } => {
+                walk(func, out);
+                walk(arg, out);
+            }
+            ExprKind::List(xs) => {
+                for x in xs {
+                    walk(x, out);
+                }
+            }
+            ExprKind::Raise(inner) => walk(inner, out),
+            ExprKind::OrElse { left, right }
+            | ExprKind::AltLambda { left, right }
+            | ExprKind::Catch { left, right } => {
+                walk(left, out);
+                walk(right, out);
+            }
+            ExprKind::Block(inner) => walk(inner, out),
+            _ => {}
+        }
+    }
+
+    walk(expr, &mut out);
+    out
+}
+
+pub fn analyze_let_collisions(expr: &Expr) -> Vec<LetCollision> {
+    let mut out = Vec::new();
+
+    fn collect_vars(p: &Pattern, outn: &mut Vec<String>) {
+        match &p.kind {
+            PatternKind::Var(n) => outn.push(n.clone()),
+            PatternKind::TypeBind { pat, .. } => collect_vars(pat, outn),
+            PatternKind::Tuple(xs) | PatternKind::List(xs) => {
+                for x in xs {
+                    collect_vars(x, outn);
+                }
+            }
+            PatternKind::Record(fs) => {
+                for (_k, v) in fs {
+                    collect_vars(v, outn);
+                }
+            }
+            PatternKind::Ctor { args, .. } => {
+                for a in args {
+                    collect_vars(a, outn);
+                }
+            }
+            PatternKind::Cons(h, t) => {
+                collect_vars(h, outn);
+                collect_vars(t, outn);
+            }
+            PatternKind::As(a, b) => {
+                collect_vars(a, outn);
+                collect_vars(b, outn);
+            }
+            _ => {}
+        }
+    }
+
+    fn walk(e: &Expr, out: &mut Vec<LetCollision>) {
+        match &e.kind {
+            ExprKind::LetGroup { bindings, body } => {
+                let mut seen = std::collections::HashMap::<String, usize>::new();
+                let mut duped = std::collections::HashSet::<String>::new();
+                for (p, _ex) in bindings.iter() {
+                    let mut names = Vec::new();
+                    collect_vars(p, &mut names);
+                    for n in names {
+                        let c = seen.entry(n.clone()).or_insert(0);
+                        *c += 1;
+                        if *c > 1 {
+                            duped.insert(n);
+                        }
+                    }
+                }
+                for n in duped {
+                    out.push(LetCollision { name: n, group_span: e.span });
+                }
+                for (_p, ex) in bindings.iter() {
+                    walk(ex, out);
+                }
+                walk(body, out);
+            }
+            ExprKind::Annot { expr, .. } => walk(expr, out),
+            ExprKind::Lambda { body, .. } => walk(body, out),
+            ExprKind::Apply { func, arg } => {
+                walk(func, out);
+                walk(arg, out);
+            }
+            ExprKind::List(xs) => {
+                for x in xs {
+                    walk(x, out);
+                }
+            }
+            ExprKind::Raise(inner) => walk(inner, out),
+            ExprKind::OrElse { left, right }
+            | ExprKind::AltLambda { left, right }
+            | ExprKind::Catch { left, right } => {
+                walk(left, out);
+                walk(right, out);
+            }
+            ExprKind::Block(inner) => walk(inner, out),
+            _ => {}
+        }
+    }
+
     walk(expr, &mut out);
     out
 }

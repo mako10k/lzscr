@@ -15,7 +15,7 @@ fn chain_allows_multiple_exprs() {
 #[test]
 fn bind_types_like_apply() {
     // (~bind 1 (\x -> x)) : Int
-    let src = "(~bind 1 (\\x -> x))";
+    let src = "(~bind 1 (\\~x -> ~x))";
     let got = pretty(infer_program(src));
     assert_eq!(got, "Int");
 }

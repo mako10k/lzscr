@@ -1,6 +1,6 @@
 # lzscr Analyzer
 
-AST ベースの簡易静的解析。重複検出・未束縛参照・シャドーイング・未使用パラメータを報告します。
+AST ベースの簡易静的解析。重複検出・未束縛参照・シャドーイング・未使用パラメータ・未使用 let 束縛・let 内の重複束縛を報告します。
 
 - 実装: `crates/lzscr-analyzer`
 - CLI: `lzscr-cli -e "..." --analyze [--format json] [--dup-min-size N] [--dup-min-count M]`
@@ -13,6 +13,8 @@ AST ベースの簡易静的解析。重複検出・未束縛参照・シャド�
   - `unbound_refs: [{ name, span }]`
   - `shadowing: [{ name, lambda_span }]`
   - `unused_params: [{ name, lambda_span }]`
+  - `unused_let: [{ name, binding_span }]`
+  - `let_collisions: [{ name, group_span }]`
 
 ## 参考
 

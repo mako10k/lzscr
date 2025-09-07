@@ -375,6 +375,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 unbound_refs: &'a [lzscr_analyzer::UnboundRef],
                 shadowing: &'a [lzscr_analyzer::Shadowing],
                 unused_params: &'a [lzscr_analyzer::UnusedParam],
+                unused_let: &'a [lzscr_analyzer::UnusedLet],
+                let_collisions: &'a [lzscr_analyzer::LetCollision],
                 ctor_arity: Vec<lzscr_analyzer::CtorArityIssue>,
             }
             // duplicates (optionally skipped)
@@ -424,6 +426,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     up.len()
                 );
             }
+            // unused let bindings
+            let t_ul_start = Instant::now();
+            let ul = lzscr_analyzer::analyze_unused_let_bindings(&ast);
+            if opt.analyze_trace {
+                eprintln!(
+                    "trace: unused-let {} ms ({} findings)",
+                    t_ul_start.elapsed().as_millis(),
+                    ul.len()
+                );
+            }
+            // let binding name collisions
+            let t_lc_start = Instant::now();
+            let lc = lzscr_analyzer::analyze_let_collisions(&ast);
+            if opt.analyze_trace {
+                eprintln!(
+                    "trace: let-collisions {} ms ({} findings)",
+                    t_lc_start.elapsed().as_millis(),
+                    lc.len()
+                );
+            }
             let arities = {
                 let mut m = HashMap::new();
                 if let Some(spec) = &opt.ctor_arity {
@@ -450,6 +472,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     unbound_refs: &unb,
                     shadowing: &sh,
                     unused_params: &up,
+                    unused_let: &ul,
+                    let_collisions: &lc,
                     ctor_arity: ca,
                 };
                 println!("{}", serde_json::to_string_pretty(&out)?);
@@ -476,6 +500,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!(
                         "unused-param: name={} lambda_span=({},{})",
                         u.name, u.lambda_span.offset, u.lambda_span.len
+                    );
+                }
+                for u in &ul {
+                    eprintln!(
+                        "unused-let: name={} binding_span=({},{})",
+                        u.name, u.binding_span.offset, u.binding_span.len
+                    );
+                }
+                for c in &lc {
+                    eprintln!(
+                        "let-collision: name={} group_span=({},{})",
+                        c.name, c.group_span.offset, c.group_span.len
                     );
                 }
                 for c in &ca {
