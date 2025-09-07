@@ -1,6 +1,8 @@
 use lzscr_types::api::infer_program;
 
-fn pretty(r: Result<String, String>) -> String { r.unwrap_or_else(|e| format!("ERR:{e}")) }
+fn pretty(r: Result<String, String>) -> String {
+    r.unwrap_or_else(|e| format!("ERR:{e}"))
+}
 
 #[test]
 fn chain_allows_multiple_exprs() {

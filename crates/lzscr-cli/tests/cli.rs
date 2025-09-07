@@ -1,8 +1,8 @@
 use assert_cmd::prelude::*;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
-use std::process::Command;
 use std::io::Write;
+use std::process::Command;
 use tempfile::NamedTempFile;
 
 #[test]
@@ -32,18 +32,14 @@ fn dump_coreir_text_outputs_seq() {
     let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
     cmd.args(["-e", "(~seq 1 (~add 2 3))", "--dump-coreir"]);
     // expect a textual (~seq ...) in the output
-    cmd.assert()
-        .success()
-        .stdout(contains("(~seq 1 ((~add 2) 3))\n"));
+    cmd.assert().success().stdout(contains("(~seq 1 ((~add 2) 3))\n"));
 }
 
 #[test]
 fn dump_coreir_json_outputs_term() {
     let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
     cmd.args(["-e", "(~seq 1 (~add 2 3))", "--dump-coreir-json"]);
-    cmd.assert()
-        .success()
-        .stdout(contains("{\n").and(contains("\"Seq\"")));
+    cmd.assert().success().stdout(contains("{\n").and(contains("\"Seq\"")));
 }
 
 #[test]
@@ -51,11 +47,7 @@ fn file_option_executes_program() {
     // Create a temporary file with top-level bindings and an expression
     let mut tmp = NamedTempFile::new().unwrap();
     // body: define ~x then use it; parentheses wrapping in CLI should form a let-group
-    writeln!(
-        tmp,
-        "~x = 1; ~add ~x 2;"
-    )
-    .unwrap();
+    writeln!(tmp, "~x = 1; ~add ~x 2;").unwrap();
     let path = tmp.path();
 
     let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();

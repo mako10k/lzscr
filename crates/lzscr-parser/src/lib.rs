@@ -40,12 +40,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         toks: &'a [lzscr_lexer::Lexed<'a>],
     ) -> Result<Pattern, ParseError> {
         fn is_upper_initial(s: &str) -> bool {
-            s.chars()
-                .next()
-                .map(|c| c.is_ascii_uppercase())
-                .unwrap_or(false)
+            s.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false)
         }
-    fn parse_pat_atom<'c>(
+        fn parse_pat_atom<'c>(
             i: &mut usize,
             toks: &'c [lzscr_lexer::Lexed<'c>],
         ) -> Result<Pattern, ParseError> {
@@ -56,26 +53,52 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     let mut tvars: Vec<String> = Vec::new();
                     // zero or more entries until '}'
                     if let Some(nxt) = toks.get(*i) {
-                        if matches!(nxt.tok, Tok::RBrace) { let _= bump(i, toks); } else {
+                        if matches!(nxt.tok, Tok::RBrace) {
+                            let _ = bump(i, toks);
+                        } else {
                             loop {
-                                let nv = bump(i, toks).ok_or_else(|| ParseError::Generic("expected type var in %{...}".into()))?;
+                                let nv = bump(i, toks).ok_or_else(|| {
+                                    ParseError::Generic("expected type var in %{...}".into())
+                                })?;
                                 match &nv.tok {
                                     Tok::TyVar(name) => tvars.push(name.clone()),
                                     Tok::Question => {
                                         if let Some(nx) = toks.get(*i) {
-                                            if matches!(nx.tok, Tok::Ident) { tvars.push(nx.text.to_string()); let _ = bump(i, toks); } else { tvars.push("".into()); }
-                                        } else { tvars.push("".into()); }
+                                            if matches!(nx.tok, Tok::Ident) {
+                                                tvars.push(nx.text.to_string());
+                                                let _ = bump(i, toks);
+                                            } else {
+                                                tvars.push("".into());
+                                            }
+                                        } else {
+                                            tvars.push("".into());
+                                        }
                                     }
-                                    _ => return Err(ParseError::Generic("expected 'a or ?x in %{...}".into())),
+                                    _ => {
+                                        return Err(ParseError::Generic(
+                                            "expected 'a or ?x in %{...}".into(),
+                                        ))
+                                    }
                                 }
-                                let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("expected , or } in %{...}".into()))?;
-                                match sep.tok { Tok::Comma => continue, Tok::RBrace => break, _ => return Err(ParseError::Generic("expected , or } in %{...}".into())) }
+                                let sep = bump(i, toks).ok_or_else(|| {
+                                    ParseError::Generic("expected , or } in %{...}".into())
+                                })?;
+                                match sep.tok {
+                                    Tok::Comma => continue,
+                                    Tok::RBrace => break,
+                                    _ => {
+                                        return Err(ParseError::Generic(
+                                            "expected , or } in %{...}".into(),
+                                        ))
+                                    }
+                                }
                             }
                         }
                     }
                     // next: a pattern
                     let pat = parse_pattern(i, toks)?;
-                    let span = Span::new(t.span.offset, pat.span.offset + pat.span.len - t.span.offset);
+                    let span =
+                        Span::new(t.span.offset, pat.span.offset + pat.span.len - t.span.offset);
                     Pattern::new(PatternKind::TypeBind { tvars, pat: Box::new(pat) }, span)
                 }
                 Tok::LBracket => {
@@ -144,13 +167,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         ));
                     }
                 }
-                Tok::Member(m) => Pattern::new(
-                    PatternKind::Ctor {
-                        name: m.clone(),
-                        args: vec![],
-                    },
-                    t.span,
-                ),
+                Tok::Member(m) => {
+                    Pattern::new(PatternKind::Ctor { name: m.clone(), args: vec![] }, t.span)
+                }
                 Tok::LParen => {
                     // () or tuple pattern or grouped pattern
                     if let Some(nxt) = toks.get(*i) {
@@ -283,8 +302,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             | Tok::LParen
                             | Tok::Int(_)
                             | Tok::Float(_)
-                                | Tok::Str(_)
-                                | Tok::Char(_) => {
+                            | Tok::Str(_)
+                            | Tok::Char(_) => {
                                 let a = parse_pat_atom(i, toks)?;
                                 args.push(a);
                             }
@@ -298,10 +317,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         last.span.offset + last.span.len
                     };
                     return Ok(Pattern::new(
-                        PatternKind::Ctor {
-                            name: h.text.to_string(),
-                            args,
-                        },
+                        PatternKind::Ctor { name: h.text.to_string(), args },
                         Span::new(h.span.offset, end - h.span.offset),
                     ));
                 }
@@ -320,8 +336,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             | Tok::LParen
                             | Tok::Int(_)
                             | Tok::Float(_)
-                                | Tok::Str(_)
-                                | Tok::Char(_) => {
+                            | Tok::Str(_)
+                            | Tok::Char(_) => {
                                 let a = parse_pat_atom(i, toks)?;
                                 args.push(a);
                             }
@@ -335,10 +351,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         last.span.offset + last.span.len
                     };
                     return Ok(Pattern::new(
-                        PatternKind::Ctor {
-                            name: m.clone(),
-                            args,
-                        },
+                        PatternKind::Ctor { name: m.clone(), args },
                         Span::new(h.span.offset, end - h.span.offset),
                     ));
                 }
@@ -371,10 +384,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     left.span.offset,
                     right.span.offset + right.span.len - left.span.offset,
                 );
-                return Ok(Pattern::new(
-                    PatternKind::As(Box::new(left), Box::new(right)),
-                    sp,
-                ));
+                return Ok(Pattern::new(PatternKind::As(Box::new(left), Box::new(right)), sp));
             }
         }
         Ok(left)
@@ -929,10 +939,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         rhs.span.offset + rhs.span.len - lhs.span.offset,
                     );
                     lhs = Expr::new(
-                        ExprKind::OrElse {
-                            left: Box::new(lhs),
-                            right: Box::new(rhs),
-                        },
+                        ExprKind::OrElse { left: Box::new(lhs), right: Box::new(rhs) },
                         span,
                     );
                     continue;
@@ -951,10 +958,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 rhs.span.offset + rhs.span.len - lhs.span.offset,
                             );
                             lhs = Expr::new(
-                                ExprKind::AltLambda {
-                                    left: Box::new(lhs),
-                                    right: Box::new(rhs),
-                                },
+                                ExprKind::AltLambda { left: Box::new(lhs), right: Box::new(rhs) },
                                 span,
                             );
                             continue;
@@ -976,17 +980,11 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     // desugar (h : t) => ((~cons h) t)
                     let callee = Expr::new(ExprKind::Ref("cons".into()), nxt.span);
                     let app1 = Expr::new(
-                        ExprKind::Apply {
-                            func: Box::new(callee),
-                            arg: Box::new(lhs),
-                        },
+                        ExprKind::Apply { func: Box::new(callee), arg: Box::new(lhs) },
                         span,
                     );
                     lhs = Expr::new(
-                        ExprKind::Apply {
-                            func: Box::new(app1),
-                            arg: Box::new(rhs),
-                        },
+                        ExprKind::Apply { func: Box::new(app1), arg: Box::new(rhs) },
                         span,
                     );
                     continue;
@@ -1014,24 +1012,11 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     ".>=" => Expr::new(ExprKind::Ref("fge".into()), nxt.span),
                     _ => unreachable!(),
                 };
-                let span = Span::new(
-                    lhs.span.offset,
-                    rhs.span.offset + rhs.span.len - lhs.span.offset,
-                );
-                let app1 = Expr::new(
-                    ExprKind::Apply {
-                        func: Box::new(callee),
-                        arg: Box::new(lhs),
-                    },
-                    span,
-                );
-                lhs = Expr::new(
-                    ExprKind::Apply {
-                        func: Box::new(app1),
-                        arg: Box::new(rhs),
-                    },
-                    span,
-                );
+                let span =
+                    Span::new(lhs.span.offset, rhs.span.offset + rhs.span.len - lhs.span.offset);
+                let app1 =
+                    Expr::new(ExprKind::Apply { func: Box::new(callee), arg: Box::new(lhs) }, span);
+                lhs = Expr::new(ExprKind::Apply { func: Box::new(app1), arg: Box::new(rhs) }, span);
                 continue;
             }
             // parse '^|' as infix catch ONLY when the next token after '^' is '|'
@@ -1046,10 +1031,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             rhs.span.offset + rhs.span.len - lhs.span.offset,
                         );
                         lhs = Expr::new(
-                            ExprKind::Catch {
-                                left: Box::new(lhs),
-                                right: Box::new(rhs),
-                            },
+                            ExprKind::Catch { left: Box::new(lhs), right: Box::new(rhs) },
                             span,
                         );
                         continue;
@@ -1084,10 +1066,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         }
                     }
                     lhs = Expr::new(
-                        ExprKind::Apply {
-                            func: Box::new(lhs),
-                            arg: Box::new(arg),
-                        },
+                        ExprKind::Apply { func: Box::new(lhs), arg: Box::new(arg) },
                         span,
                     );
                 }
@@ -1117,11 +1096,9 @@ mod tests {
         let src = "{\"a\":1}";
         let r = parse_expr(src);
         match r {
-            Err(ParseError::Generic(msg)) => assert!(
-                msg.contains("expected ident key"),
-                "unexpected msg: {}",
-                msg
-            ),
+            Err(ParseError::Generic(msg)) => {
+                assert!(msg.contains("expected ident key"), "unexpected msg: {}", msg)
+            }
             other => panic!("expected Err(ParseError::Generic), got {:?}", other),
         }
     }
@@ -1269,9 +1246,15 @@ mod tests {
     #[test]
     fn char_literal_basic_and_escape() {
         let r = parse_expr("'a'").unwrap();
-        match r.kind { ExprKind::Char(c) => assert_eq!(c, 'a' as i32), _ => panic!("expected Char") }
+        match r.kind {
+            ExprKind::Char(c) => assert_eq!(c, 'a' as i32),
+            _ => panic!("expected Char"),
+        }
         let r2 = parse_expr("'\\n'").unwrap();
-        match r2.kind { ExprKind::Char(c) => assert_eq!(c, '\n' as i32), _ => panic!("expected Char") }
+        match r2.kind {
+            ExprKind::Char(c) => assert_eq!(c, '\n' as i32),
+            _ => panic!("expected Char"),
+        }
     }
 
     #[test]

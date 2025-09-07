@@ -24,14 +24,14 @@ pub mod ast {
         Float,
         Bool,
         Str,
-    Char,
+        Char,
         List(Box<TypeExpr>),
         Tuple(Vec<TypeExpr>),
         Record(Vec<(String, TypeExpr)>),
         Fun(Box<TypeExpr>, Box<TypeExpr>),
         Ctor { tag: String, args: Vec<TypeExpr> },
-    Var(String),             // %a 等（構文は %{...} 内でのみ）
-        Hole(Option<String>),    // ? または ?a
+        Var(String),          // %a 等（構文は %{...} 内でのみ）
+        Hole(Option<String>), // ? または ?a
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -45,15 +45,15 @@ pub mod ast {
         Int(i64),
         Float(f64),
         Str(String),
-    Char(i32),
+        Char(i32),
         Bool(bool),
         Record(Vec<(String, Pattern)>), // { k: p, ... }
         As(Box<Pattern>, Box<Pattern>), // p1 @ p2
         // List patterns
         List(Vec<Pattern>),               // [p1, p2, ...]
         Cons(Box<Pattern>, Box<Pattern>), // h : t
-    // Type variable binder for pattern scope: %{ 'a, ?x } p
-    TypeBind { tvars: Vec<String>, pat: Box<Pattern> },
+        // Type variable binder for pattern scope: %{ 'a, ?x } p
+        TypeBind { tvars: Vec<String>, pat: Box<Pattern> },
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -73,46 +73,28 @@ pub mod ast {
         Int(i64),
         Float(f64),
         Str(String),
-    Char(i32),
+        Char(i32),
         Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
-    // 型注釈: %{T} e （恒等）
-    Annot { ty: TypeExpr, expr: Box<Expr> },
-    // 型値の第一級表現: %{T}
-    TypeVal(TypeExpr),
-        Lambda {
-            param: Pattern,
-            body: Box<Expr>,
-        },
-        Apply {
-            func: Box<Expr>,
-            arg: Box<Expr>,
-        },
+        // 型注釈: %{T} e （恒等）
+        Annot { ty: TypeExpr, expr: Box<Expr> },
+        // 型値の第一級表現: %{T}
+        TypeVal(TypeExpr),
+        Lambda { param: Pattern, body: Box<Expr> },
+        Apply { func: Box<Expr>, arg: Box<Expr> },
         Block(Box<Expr>),
         // List literal: [e1, e2, ...]
         List(Vec<Expr>),
         // Let-group: (p1 = e1; ...; body; pN = eN; ...)
         // Bindings can mutually/recursively reference each other within the group scope.
-        LetGroup {
-            bindings: Vec<(Pattern, Expr)>,
-            body: Box<Expr>,
-        },
+        LetGroup { bindings: Vec<(Pattern, Expr)>, body: Box<Expr> },
         // Exceptions / control
         Raise(Box<Expr>), // ^(Expr)
         // Alternative lambda composition: (\p1 -> e1) | (\p2 -> e2)
         // Right-associative, lower precedence than || and ->
-        AltLambda {
-            left: Box<Expr>,
-            right: Box<Expr>,
-        },
-        OrElse {
-            left: Box<Expr>,
-            right: Box<Expr>,
-        }, // a || b
-        Catch {
-            left: Box<Expr>,
-            right: Box<Expr>,
-        }, // a ^| b
+        AltLambda { left: Box<Expr>, right: Box<Expr> },
+        OrElse { left: Box<Expr>, right: Box<Expr> }, // a || b
+        Catch { left: Box<Expr>, right: Box<Expr> },  // a ^| b
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -135,10 +117,7 @@ pub mod pretty {
             PatternKind::Var(n) => format!("~{}", n),
             PatternKind::Unit => "()".into(),
             PatternKind::Tuple(xs) => {
-                format!(
-                    "({})",
-                    xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
-                )
+                format!("({})", xs.iter().map(print_pattern).collect::<Vec<_>>().join(", "))
             }
             PatternKind::Ctor { name, args } => {
                 if args.is_empty() {
@@ -172,18 +151,11 @@ pub mod pretty {
             }
             PatternKind::As(a, b) => format!("{} @ {}", print_pattern(a), print_pattern(b)),
             PatternKind::List(xs) => {
-                format!(
-                    "[{}]",
-                    xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
-                )
+                format!("[{}]", xs.iter().map(print_pattern).collect::<Vec<_>>().join(", "))
             }
             PatternKind::Cons(h, t) => format!("{} : {}", print_pattern(h), print_pattern(t)),
             PatternKind::TypeBind { tvars, pat } => {
-                let inner = tvars
-                    .iter()
-                    .map(|s| format!("'{}", s))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let inner = tvars.iter().map(|s| format!("'{}", s)).collect::<Vec<_>>().join(", ");
                 format!("%{{{}}} {}", inner, print_pattern(pat))
             }
         }
@@ -216,10 +188,7 @@ pub mod pretty {
             }
             ExprKind::Block(inner) => format!("{{ {} }}", print_expr(inner)),
             ExprKind::List(xs) => {
-                format!(
-                    "[{}]",
-                    xs.iter().map(print_expr).collect::<Vec<_>>().join(", ")
-                )
+                format!("[{}]", xs.iter().map(print_expr).collect::<Vec<_>>().join(", "))
             }
             ExprKind::LetGroup { bindings, body } => {
                 let bs = bindings
@@ -252,14 +221,15 @@ pub mod pretty {
             TypeExpr::Char => "Char".into(),
             TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(opt) => {
-                if let Some(a) = opt { format!("?{}", a) } else { "?".into() }
+                if let Some(a) = opt {
+                    format!("?{}", a)
+                } else {
+                    "?".into()
+                }
             }
             TypeExpr::List(x) => format!("[{}]", print_type(x)),
             TypeExpr::Tuple(xs) => {
-                format!(
-                    "({})",
-                    xs.iter().map(print_type).collect::<Vec<_>>().join(", ")
-                )
+                format!("({})", xs.iter().map(print_type).collect::<Vec<_>>().join(", "))
             }
             TypeExpr::Record(fields) => {
                 let inner = fields
@@ -274,11 +244,7 @@ pub mod pretty {
                 if args.is_empty() {
                     tag.clone()
                 } else {
-                    format!(
-                        "{} {}",
-                        tag,
-                        args.iter().map(print_type).collect::<Vec<_>>().join(" ")
-                    )
+                    format!("{} {}", tag, args.iter().map(print_type).collect::<Vec<_>>().join(" "))
                 }
             }
         }

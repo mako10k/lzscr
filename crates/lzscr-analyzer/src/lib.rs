@@ -20,10 +20,7 @@ pub struct AnalyzeOptions {
 
 impl Default for AnalyzeOptions {
     fn default() -> Self {
-        Self {
-            min_size: 3,
-            min_count: 2,
-        }
+        Self { min_size: 3, min_count: 2 }
     }
 }
 
@@ -37,17 +34,65 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             Symbol(_) => h.write_u8(3),
             Int(_) => h.write_u8(4),
             Float(_) => h.write_u8(5),
-            Str(s) => { h.write_u8(6); h.write_usize(s.len()); }
-            Char(c) => { h.write_u8(7); h.write_i32(*c); }
-            Bool(b) => { h.write_u8(8); h.write_u8(*b as u8); }
-            TypeBind { pat, .. } => { h.write_u8(9); hash_pattern_shape(pat, h); }
-            Var(_) => { h.write_u8(10); }
-            Tuple(xs) => { h.write_u8(11); h.write_usize(xs.len()); for x in xs { hash_pattern_shape(x, h); } }
-            List(xs) => { h.write_u8(12); h.write_usize(xs.len()); for x in xs { hash_pattern_shape(x, h); } }
-            Record(fs) => { h.write_u8(13); h.write_usize(fs.len()); for (k, v) in fs { h.write(k.as_bytes()); hash_pattern_shape(v, h); } }
-            Ctor { name, args } => { h.write_u8(14); h.write(name.as_bytes()); h.write_usize(args.len()); for a in args { hash_pattern_shape(a, h); } }
-            Cons(hd, tl) => { h.write_u8(15); hash_pattern_shape(hd, h); hash_pattern_shape(tl, h); }
-            As(a, b) => { h.write_u8(16); hash_pattern_shape(a, h); hash_pattern_shape(b, h); }
+            Str(s) => {
+                h.write_u8(6);
+                h.write_usize(s.len());
+            }
+            Char(c) => {
+                h.write_u8(7);
+                h.write_i32(*c);
+            }
+            Bool(b) => {
+                h.write_u8(8);
+                h.write_u8(*b as u8);
+            }
+            TypeBind { pat, .. } => {
+                h.write_u8(9);
+                hash_pattern_shape(pat, h);
+            }
+            Var(_) => {
+                h.write_u8(10);
+            }
+            Tuple(xs) => {
+                h.write_u8(11);
+                h.write_usize(xs.len());
+                for x in xs {
+                    hash_pattern_shape(x, h);
+                }
+            }
+            List(xs) => {
+                h.write_u8(12);
+                h.write_usize(xs.len());
+                for x in xs {
+                    hash_pattern_shape(x, h);
+                }
+            }
+            Record(fs) => {
+                h.write_u8(13);
+                h.write_usize(fs.len());
+                for (k, v) in fs {
+                    h.write(k.as_bytes());
+                    hash_pattern_shape(v, h);
+                }
+            }
+            Ctor { name, args } => {
+                h.write_u8(14);
+                h.write(name.as_bytes());
+                h.write_usize(args.len());
+                for a in args {
+                    hash_pattern_shape(a, h);
+                }
+            }
+            Cons(hd, tl) => {
+                h.write_u8(15);
+                hash_pattern_shape(hd, h);
+                hash_pattern_shape(tl, h);
+            }
+            As(a, b) => {
+                h.write_u8(16);
+                hash_pattern_shape(a, h);
+                hash_pattern_shape(b, h);
+            }
         }
     }
     fn hash_expr(e: &Expr, size_out: &mut usize) -> u64 {
@@ -56,27 +101,87 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
         fn go(e: &Expr, h: &mut AHasher, sz: &mut usize) {
             *sz += 1;
             match &e.kind {
-                Unit => { h.write_u8(1); }
-                Int(n) => { h.write_u8(2); h.write_i64(*n); }
-                Float(fv) => { h.write_u8(3); h.write_u64(fv.to_bits()); }
-                Str(s) => { h.write_u8(4); h.write_usize(s.len()); }
-                Char(c) => { h.write_u8(5); h.write_i32(*c); }
-                Ref(n) => { h.write_u8(6); h.write(n.as_bytes()); }
-                Symbol(s) => { h.write_u8(7); h.write(s.as_bytes()); }
-                TypeVal(_) => { h.write_u8(8); }
-                Annot { expr, .. } => { h.write_u8(9); go(expr, h, sz); }
-                Raise(inner) => { h.write_u8(10); go(inner, h, sz); }
-                OrElse { left, right } => { h.write_u8(11); go(left, h, sz); go(right, h, sz); }
-                AltLambda { left, right } => { h.write_u8(12); go(left, h, sz); go(right, h, sz); }
-                Catch { left, right } => { h.write_u8(13); go(left, h, sz); go(right, h, sz); }
-                Lambda { param, body } => { h.write_u8(14); hash_pattern_shape(param, h); go(body, h, sz); }
-                Apply { func, arg } => { h.write_u8(15); go(func, h, sz); go(arg, h, sz); }
-                Block(inner) => { h.write_u8(16); go(inner, h, sz); }
-                List(xs) => { h.write_u8(17); h.write_usize(xs.len()); for x in xs { go(x, h, sz); } }
+                Unit => {
+                    h.write_u8(1);
+                }
+                Int(n) => {
+                    h.write_u8(2);
+                    h.write_i64(*n);
+                }
+                Float(fv) => {
+                    h.write_u8(3);
+                    h.write_u64(fv.to_bits());
+                }
+                Str(s) => {
+                    h.write_u8(4);
+                    h.write_usize(s.len());
+                }
+                Char(c) => {
+                    h.write_u8(5);
+                    h.write_i32(*c);
+                }
+                Ref(n) => {
+                    h.write_u8(6);
+                    h.write(n.as_bytes());
+                }
+                Symbol(s) => {
+                    h.write_u8(7);
+                    h.write(s.as_bytes());
+                }
+                TypeVal(_) => {
+                    h.write_u8(8);
+                }
+                Annot { expr, .. } => {
+                    h.write_u8(9);
+                    go(expr, h, sz);
+                }
+                Raise(inner) => {
+                    h.write_u8(10);
+                    go(inner, h, sz);
+                }
+                OrElse { left, right } => {
+                    h.write_u8(11);
+                    go(left, h, sz);
+                    go(right, h, sz);
+                }
+                AltLambda { left, right } => {
+                    h.write_u8(12);
+                    go(left, h, sz);
+                    go(right, h, sz);
+                }
+                Catch { left, right } => {
+                    h.write_u8(13);
+                    go(left, h, sz);
+                    go(right, h, sz);
+                }
+                Lambda { param, body } => {
+                    h.write_u8(14);
+                    hash_pattern_shape(param, h);
+                    go(body, h, sz);
+                }
+                Apply { func, arg } => {
+                    h.write_u8(15);
+                    go(func, h, sz);
+                    go(arg, h, sz);
+                }
+                Block(inner) => {
+                    h.write_u8(16);
+                    go(inner, h, sz);
+                }
+                List(xs) => {
+                    h.write_u8(17);
+                    h.write_usize(xs.len());
+                    for x in xs {
+                        go(x, h, sz);
+                    }
+                }
                 LetGroup { bindings, body } => {
                     h.write_u8(18);
                     h.write_usize(bindings.len());
-                    for (p, ex) in bindings { hash_pattern_shape(p, h); go(ex, h, sz); }
+                    for (p, ex) in bindings {
+                        hash_pattern_shape(p, h);
+                        go(ex, h, sz);
+                    }
                     go(body, h, sz);
                 }
             }
@@ -137,10 +242,15 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             });
             ent.count += 1;
             // keep the largest size/earliest span as a more informative exemplar
-            if size > ent.size { ent.size = size; ent.span = e.span; }
+            if size > ent.size {
+                ent.size = size;
+                ent.span = e.span;
+            }
         }
         // recurse into children to index all sub-expressions
-        if !should_recurse(e) { return; }
+        if !should_recurse(e) {
+            return;
+        }
         match &e.kind {
             ExprKind::Annot { expr, .. } => collect(expr, opt, map),
             ExprKind::Raise(inner) => collect(inner, opt, map),
@@ -159,10 +269,14 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             }
             ExprKind::Block(inner) => collect(inner, opt, map),
             ExprKind::List(xs) => {
-                for x in xs { collect(x, opt, map); }
+                for x in xs {
+                    collect(x, opt, map);
+                }
             }
             ExprKind::LetGroup { bindings, body } => {
-                for (_p, ex) in bindings { collect(ex, opt, map); }
+                for (_p, ex) in bindings {
+                    collect(ex, opt, map);
+                }
                 collect(body, opt, map);
             }
             _ => {}
@@ -182,7 +296,9 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
         })
         .collect();
     // sort by count desc, then size desc, then span start
-    out.sort_by(|a, b| b.count.cmp(&a.count).then(b.size.cmp(&a.size)).then(a.span.offset.cmp(&b.span.offset)));
+    out.sort_by(|a, b| {
+        b.count.cmp(&a.count).then(b.size.cmp(&a.size)).then(a.span.offset.cmp(&b.span.offset))
+    });
     out
 }
 
@@ -208,8 +324,8 @@ pub fn default_allowlist() -> HashSet<String> {
     // Builtins available via ~name (keep in sync with runtime)
     [
         "to_str", "add", "sub", "mul", "div", "fadd", "fsub", "fmul", "fdiv", "lt", "le", "gt",
-        "ge", "eq", "ne", "flt", "fle", "fgt", "fge", "and", "or", "not", "if", "seq", "chain", "bind", "effects",
-        "Tuple", "Record", "KV", "Bool", "cons",
+        "ge", "eq", "ne", "flt", "fle", "fgt", "fge", "and", "or", "not", "if", "seq", "chain",
+        "bind", "effects", "Tuple", "Record", "KV", "Bool", "cons",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -250,22 +366,22 @@ pub fn analyze_ctor_arity(
                 if let Some(exp) = arities.get(name) {
                     let got = args.len();
                     if *exp == 0 && got > 0 {
-            out.push(CtorArityIssue {
+                        out.push(CtorArityIssue {
                             name: name.clone(),
                             expected: 0,
                             got,
                             span: e.span,
                             kind: "zero-arity-applied".into(),
-            });
-            } else if got > *exp {
+                        });
+                    } else if got > *exp {
                         out.push(CtorArityIssue {
                             name: name.clone(),
-                expected: *exp,
+                            expected: *exp,
                             got,
                             span: e.span,
                             kind: "over".into(),
                         });
-            }
+                    }
                 }
             }
         }
@@ -296,7 +412,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
     let mut out = Vec::new();
     fn walk(
         e: &Expr,
-        scopes: &mut Vec<HashSet<String>>, 
+        scopes: &mut Vec<HashSet<String>>,
         allow: &HashSet<String>,
         out: &mut Vec<UnboundRef>,
     ) {
@@ -395,10 +511,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                     }
                 }
                 if !bound {
-                    out.push(UnboundRef {
-                        name: n.clone(),
-                        span: e.span,
-                    });
+                    out.push(UnboundRef { name: n.clone(), span: e.span });
                 }
             }
             ExprKind::Lambda { param, body } => {
@@ -760,14 +873,8 @@ mod tests {
     #[test]
     fn detects_simple_duplicate_apply() {
         // (~add 1 2) (~add 1 2)
-    let e = parse_expr("((~add 1 2) (~add 1 2))").unwrap();
-        let d = analyze_duplicates(
-            &e,
-            AnalyzeOptions {
-                min_size: 3,
-                min_count: 2,
-            },
-        );
+        let e = parse_expr("((~add 1 2) (~add 1 2))").unwrap();
+        let d = analyze_duplicates(&e, AnalyzeOptions { min_size: 3, min_count: 2 });
         assert!(d.iter().any(|f| f.count >= 2 && f.size >= 3));
     }
 

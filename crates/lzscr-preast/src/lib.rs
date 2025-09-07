@@ -33,13 +33,20 @@ pub fn to_preast(src: &str) -> Result<PreAst, PreAstError> {
     for t in toks {
         match t.tok {
             Tok::CommentLine => {
-                items.push(PreToken { kind: PreTokenKind::CommentLine(t.text.to_string()), span: t.span });
+                items.push(PreToken {
+                    kind: PreTokenKind::CommentLine(t.text.to_string()),
+                    span: t.span,
+                });
             }
             Tok::CommentBlock => {
-                items.push(PreToken { kind: PreTokenKind::CommentBlock(t.text.to_string()), span: t.span });
+                items.push(PreToken {
+                    kind: PreTokenKind::CommentBlock(t.text.to_string()),
+                    span: t.span,
+                });
             }
             _ => {
-                items.push(PreToken { kind: PreTokenKind::Token(t.text.to_string()), span: t.span });
+                items
+                    .push(PreToken { kind: PreTokenKind::Token(t.text.to_string()), span: t.span });
             }
         }
     }
@@ -54,13 +61,17 @@ pub fn preast_to_source(pre: &PreAst) -> String {
 }
 
 fn needs_space_before(out: &str) -> bool {
-    if out.is_empty() { return false; }
+    if out.is_empty() {
+        return false;
+    }
     let c = out.chars().last().unwrap();
     matches!(c, ')' | ']' | '}' | '"' | '_' | '.' | '0'..='9' | 'a'..='z' | 'A'..='Z')
 }
 
 fn needs_space_before_token(s: &str) -> bool {
-    if s.is_empty() { return false; }
+    if s.is_empty() {
+        return false;
+    }
     let c = s.chars().next().unwrap();
     matches!(c, '(' | '[' | '{' | '"' | '_' | '.' | '0'..='9' | 'a'..='z' | 'A'..='Z')
 }
@@ -68,10 +79,29 @@ fn needs_space_before_token(s: &str) -> bool {
 fn is_operator_token(s: &str) -> bool {
     matches!(
         s,
-        "+" | "-" | "*" | "/" | ".+" | ".-" | ".*" | "./" |
-        "<" | "<=" | ">" | ">=" | "==" | "!=" |
-        ".<" | ".<=" | ".>" | ".>=" |
-        "||" | "|" | ":" | "->" | "=" | "@"
+        "+" | "-"
+            | "*"
+            | "/"
+            | ".+"
+            | ".-"
+            | ".*"
+            | "./"
+            | "<"
+            | "<="
+            | ">"
+            | ">="
+            | "=="
+            | "!="
+            | ".<"
+            | ".<="
+            | ".>"
+            | ".>="
+            | "||"
+            | "|"
+            | ":"
+            | "->"
+            | "="
+            | "@"
     )
 }
 
@@ -116,22 +146,31 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                     // start of line: print as-is
                     push_str(trimmed, &mut col, &mut out);
                     out.push('\n');
-                    for _ in 0..(indent_level * opts.indent) { out.push(' '); }
+                    for _ in 0..(indent_level * opts.indent) {
+                        out.push(' ');
+                    }
                     col = indent_level * opts.indent;
                 } else {
                     // if fits on current line, attach; else put on its own line
                     let need = 1 + trimmed.chars().count();
                     if col + need <= opts.max_width {
-                        if !out.ends_with(' ') { out.push(' '); col += 1; }
+                        if !out.ends_with(' ') {
+                            out.push(' ');
+                            col += 1;
+                        }
                         push_str(trimmed, &mut col, &mut out);
                         out.push('\n');
-                        for _ in 0..(indent_level * opts.indent) { out.push(' '); }
+                        for _ in 0..(indent_level * opts.indent) {
+                            out.push(' ');
+                        }
                         col = indent_level * opts.indent;
                     } else {
                         newline(indent_level, &mut col, &mut out);
                         push_str(trimmed, &mut col, &mut out);
                         out.push('\n');
-                        for _ in 0..(indent_level * opts.indent) { out.push(' '); }
+                        for _ in 0..(indent_level * opts.indent) {
+                            out.push(' ');
+                        }
                         col = indent_level * opts.indent;
                     }
                 }
@@ -140,7 +179,10 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
             }
             PreTokenKind::CommentBlock(s) => {
                 let trimmed = s;
-                if needs_space_before(&out) { out.push(' '); col += 1; }
+                if needs_space_before(&out) {
+                    out.push(' ');
+                    col += 1;
+                }
                 push_str(trimmed, &mut col, &mut out);
                 prev_is_op = false;
                 at_line_start = false;
@@ -151,23 +193,35 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                 let is_lparen = s == "(";
                 let is_rparen = s == ")";
                 if is_op {
-                    if needs_space_before(&out) { out.push(' '); col += 1; }
+                    if needs_space_before(&out) {
+                        out.push(' ');
+                        col += 1;
+                    }
                     push_str(s, &mut col, &mut out);
-                    out.push(' '); col += 1;
+                    out.push(' ');
+                    col += 1;
                     prev_is_op = true;
                     at_line_start = false;
                 } else {
                     if prev_is_op {
-                        if !out.ends_with(' ') { out.push(' '); col += 1; }
+                        if !out.ends_with(' ') {
+                            out.push(' ');
+                            col += 1;
+                        }
                     } else if needs_space_before(&out) && needs_space_before_token(s) {
-                        out.push(' '); col += 1;
+                        out.push(' ');
+                        col += 1;
                     }
                     push_str(s, &mut col, &mut out);
                     prev_is_op = false;
                     at_line_start = false;
                 }
-                if is_lparen { indent_level += 1; }
-                if is_rparen && indent_level > 0 { indent_level -= 1; }
+                if is_lparen {
+                    indent_level += 1;
+                }
+                if is_rparen && indent_level > 0 {
+                    indent_level -= 1;
+                }
                 if is_semi {
                     // statement boundary: break line and indent next
                     newline(indent_level, &mut col, &mut out);

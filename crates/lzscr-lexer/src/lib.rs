@@ -152,8 +152,10 @@ fn parse_string(lex: &mut Lexer<Tok>) -> Option<String> {
 fn parse_char(lex: &mut Lexer<Tok>) -> Option<i32> {
     let s = lex.slice();
     // s is like '\x' or '\\' or '\u{...}' wrapped in single quotes
-    if s.len() < 2 { return None; }
-    let inner = &s[1..s.len()-1];
+    if s.len() < 2 {
+        return None;
+    }
+    let inner = &s[1..s.len() - 1];
     let mut chars = inner.chars();
     let c = match chars.next()? {
         '\\' => {
@@ -166,10 +168,14 @@ fn parse_char(lex: &mut Lexer<Tok>) -> Option<i32> {
                 '0' => '\0' as u32,
                 'u' => {
                     // expect {HEX+}
-                    if chars.next()? != '{' { return None; }
+                    if chars.next()? != '{' {
+                        return None;
+                    }
                     let mut hex = String::new();
                     for ch in chars {
-                        if ch == '}' { break; }
+                        if ch == '}' {
+                            break;
+                        }
                         hex.push(ch);
                     }
                     let v = u32::from_str_radix(hex.trim(), 16).ok()?;

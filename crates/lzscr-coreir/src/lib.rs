@@ -27,31 +27,13 @@ pub enum Op {
     Str(String),
     Char(i32),
     Unit,
-    Lam {
-        param: String,
-        body: Box<Term>,
-    },
-    App {
-        func: Box<Term>,
-        arg: Box<Term>,
-    },
-    Seq {
-        first: Box<Term>,
-        second: Box<Term>,
-    },
-    Chain {
-        first: Box<Term>,
-        second: Box<Term>,
-    },
-    Bind {
-        value: Box<Term>,
-        cont: Box<Term>,
-    },
+    Lam { param: String, body: Box<Term> },
+    App { func: Box<Term>, arg: Box<Term> },
+    Seq { first: Box<Term>, second: Box<Term> },
+    Chain { first: Box<Term>, second: Box<Term> },
+    Bind { value: Box<Term>, cont: Box<Term> },
     // Recursive let-group to reflect lazy, mutually recursive semantics
-    LetRec {
-        bindings: Vec<(String, Term)>,
-        body: Box<Term>,
-    },
+    LetRec { bindings: Vec<(String, Term)>, body: Box<Term> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -81,15 +63,15 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             TypeExpr::Char => "Char".into(),
             TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(opt) => {
-                if let Some(a) = opt { format!("?{}", a) } else { "?".into() }
+                if let Some(a) = opt {
+                    format!("?{}", a)
+                } else {
+                    "?".into()
+                }
             }
             TypeExpr::List(x) => format!("[{}]", print_type_expr(x)),
             TypeExpr::Tuple(xs) => {
-                let inner = xs
-                    .iter()
-                    .map(print_type_expr)
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let inner = xs.iter().map(print_type_expr).collect::<Vec<_>>().join(", ");
                 format!("({})", inner)
             }
             TypeExpr::Record(fields) => {
@@ -119,14 +101,12 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             PatternKind::Wildcard => "_".into(),
             PatternKind::Var(n) => format!("~{}", n),
             PatternKind::Unit => "()".into(),
-            PatternKind::Tuple(xs) => format!(
-                "({})",
-                xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
-            ),
-            PatternKind::List(xs) => format!(
-                "[{}]",
-                xs.iter().map(print_pattern).collect::<Vec<_>>().join(", ")
-            ),
+            PatternKind::Tuple(xs) => {
+                format!("({})", xs.iter().map(print_pattern).collect::<Vec<_>>().join(", "))
+            }
+            PatternKind::List(xs) => {
+                format!("[{}]", xs.iter().map(print_pattern).collect::<Vec<_>>().join(", "))
+            }
             PatternKind::TypeBind { pat, .. } => print_pattern(pat),
             PatternKind::Ctor { name, args } => {
                 if args.is_empty() {
@@ -163,24 +143,19 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         }
     }
     match &e.kind {
-    ExprKind::Annot { ty: _, expr } => lower_expr_to_core(expr),
-    ExprKind::TypeVal(ty) => Term::new(Op::Str(print_type_expr(ty))),
+        ExprKind::Annot { ty: _, expr } => lower_expr_to_core(expr),
+        ExprKind::TypeVal(ty) => Term::new(Op::Str(print_type_expr(ty))),
         ExprKind::Unit => Term::new(Op::Unit),
         ExprKind::Int(n) => Term::new(Op::Int(*n)),
         ExprKind::Float(f) => Term::new(Op::Float(*f)),
         ExprKind::Str(s) => Term::new(Op::Str(s.clone())),
-    ExprKind::Char(c) => Term::new(Op::Char(*c)),
+        ExprKind::Char(c) => Term::new(Op::Char(*c)),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
         ExprKind::LetGroup { bindings, body } => {
-            let bs: Vec<(String, Term)> = bindings
-                .iter()
-                .map(|(p, ex)| (print_pattern(p), lower_expr_to_core(ex)))
-                .collect();
-            Term::new(Op::LetRec {
-                bindings: bs,
-                body: Box::new(lower_expr_to_core(body)),
-            })
+            let bs: Vec<(String, Term)> =
+                bindings.iter().map(|(p, ex)| (print_pattern(p), lower_expr_to_core(ex))).collect();
+            Term::new(Op::LetRec { bindings: bs, body: Box::new(lower_expr_to_core(body)) })
         }
         ExprKind::List(xs) => {
             // Lower to foldr cons []
@@ -191,10 +166,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                     func: Box::new(cons),
                     arg: Box::new(lower_expr_to_core(x)),
                 });
-                tail = Term::new(Op::App {
-                    func: Box::new(app1),
-                    arg: Box::new(tail),
-                });
+                tail = Term::new(Op::App { func: Box::new(app1), arg: Box::new(tail) });
             }
             tail
         }
@@ -202,19 +174,14 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             // 暫定: 表示用に Symbol("^(") + inner + Symbol(")") にせず、App で (~raise inner) 相当の形にすることも考えたが
             // PoC 段階なので単純に Symbol("RAISE") と引数の App に落とす
             let tag = Term::new(Op::Symbol("RAISE".into()));
-            Term::new(Op::App {
-                func: Box::new(tag),
-                arg: Box::new(lower_expr_to_core(inner)),
-            })
+            Term::new(Op::App { func: Box::new(tag), arg: Box::new(lower_expr_to_core(inner)) })
         }
         ExprKind::AltLambda { left, right } => {
             // Lower to \x -> ((~alt left) right) x
             let x = "x".to_string();
             let alt = Term::new(Op::Ref("alt".into()));
-            let app1 = Term::new(Op::App {
-                func: Box::new(alt),
-                arg: Box::new(lower_expr_to_core(left)),
-            });
+            let app1 =
+                Term::new(Op::App { func: Box::new(alt), arg: Box::new(lower_expr_to_core(left)) });
             let app2 = Term::new(Op::App {
                 func: Box::new(app1),
                 arg: Box::new(lower_expr_to_core(right)),
@@ -223,48 +190,28 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                 func: Box::new(app2),
                 arg: Box::new(Term::new(Op::Ref(x.clone()))),
             });
-            Term::new(Op::Lam {
-                param: format!("~{}", x),
-                body: Box::new(body),
-            })
+            Term::new(Op::Lam { param: format!("~{}", x), body: Box::new(body) })
         }
         ExprKind::OrElse { left, right } => {
             // Symbol("OR") left right を App 連鎖に
             let or = Term::new(Op::Symbol("OR".into()));
-            let app_l = Term::new(Op::App {
-                func: Box::new(or),
-                arg: Box::new(lower_expr_to_core(left)),
-            });
-            Term::new(Op::App {
-                func: Box::new(app_l),
-                arg: Box::new(lower_expr_to_core(right)),
-            })
+            let app_l =
+                Term::new(Op::App { func: Box::new(or), arg: Box::new(lower_expr_to_core(left)) });
+            Term::new(Op::App { func: Box::new(app_l), arg: Box::new(lower_expr_to_core(right)) })
         }
         ExprKind::Catch { left, right } => {
             let cat = Term::new(Op::Symbol("CATCH".into()));
-            let app_l = Term::new(Op::App {
-                func: Box::new(cat),
-                arg: Box::new(lower_expr_to_core(left)),
-            });
-            Term::new(Op::App {
-                func: Box::new(app_l),
-                arg: Box::new(lower_expr_to_core(right)),
-            })
+            let app_l =
+                Term::new(Op::App { func: Box::new(cat), arg: Box::new(lower_expr_to_core(left)) });
+            Term::new(Op::App { func: Box::new(app_l), arg: Box::new(lower_expr_to_core(right)) })
         }
         ExprKind::Lambda { param, body } => {
             let param_str = print_pattern(param);
-            Term::new(Op::Lam {
-                param: param_str,
-                body: Box::new(lower_expr_to_core(body)),
-            })
+            Term::new(Op::Lam { param: param_str, body: Box::new(lower_expr_to_core(body)) })
         }
         ExprKind::Apply { func, arg } => {
             // desugar (~seq a b) into Seq
-            if let ExprKind::Apply {
-                func: seq_ref_expr,
-                arg: a_expr,
-            } = &func.kind
-            {
+            if let ExprKind::Apply { func: seq_ref_expr, arg: a_expr } = &func.kind {
                 if let ExprKind::Ref(seq_name) = &seq_ref_expr.kind {
                     if seq_name == "seq" {
                         return Term::new(Op::Seq {
@@ -323,8 +270,10 @@ pub fn print_term(t: &Term) -> String {
         Op::Lam { param, body } => format!("\\{} -> {}", param, print_term(body)),
         Op::App { func, arg } => format!("({} {})", print_term(func), print_term(arg)),
         Op::Seq { first, second } => format!("(~seq {} {})", print_term(first), print_term(second)),
-    Op::Chain { first, second } => format!("(~chain {} {})", print_term(first), print_term(second)),
-    Op::Bind { value, cont } => format!("(~bind {} {})", print_term(value), print_term(cont)),
+        Op::Chain { first, second } => {
+            format!("(~chain {} {})", print_term(first), print_term(second))
+        }
+        Op::Bind { value, cont } => format!("(~bind {} {})", print_term(value), print_term(cont)),
         Op::LetRec { bindings, body } => {
             let inner = bindings
                 .iter()
@@ -377,7 +326,9 @@ fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
         ("add", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a + b)),
         ("sub", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a - b)),
         ("mul", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a * b)),
-        ("div", [IrValue::Int(_), IrValue::Int(0)]) => Err(IrEvalError::Arity("div by zero".into())),
+        ("div", [IrValue::Int(_), IrValue::Int(0)]) => {
+            Err(IrEvalError::Arity("div by zero".into()))
+        }
         ("div", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a / b)),
         ("to_str", [v]) => Ok(IrValue::Str(match v {
             IrValue::Unit => "()".into(),
@@ -436,16 +387,21 @@ fn eval_app(func: IrValue, arg: IrValue) -> Result<IrValue, IrEvalError> {
     }
 }
 
-fn eval_term_with_env(t: &Term, env: &mut HashMap<String, IrValue>) -> Result<IrValue, IrEvalError> {
+fn eval_term_with_env(
+    t: &Term,
+    env: &mut HashMap<String, IrValue>,
+) -> Result<IrValue, IrEvalError> {
     match &t.op {
         Op::Unit => Ok(IrValue::Unit),
         Op::Int(n) => Ok(IrValue::Int(*n)),
         Op::Float(f) => Ok(IrValue::Float(*f)),
         Op::Bool(b) => Ok(IrValue::Bool(*b)),
         Op::Str(s) => Ok(IrValue::Str(s.clone())),
-    Op::Char(c) => Ok(IrValue::Char(*c)),
+        Op::Char(c) => Ok(IrValue::Char(*c)),
         Op::Ref(n) => {
-            if let Some(v) = env.get(n).cloned() { return Ok(v); }
+            if let Some(v) = env.get(n).cloned() {
+                return Ok(v);
+            }
             // Builtins
             if builtin_arity(n).is_some() {
                 return Ok(IrValue::Builtin { name: n.clone(), args: vec![] });
@@ -514,13 +470,7 @@ mod tests {
         Expr::new(ExprKind::Ref(n.into()), Span::new(0, 0))
     }
     fn apply(f: Expr, a: Expr) -> Expr {
-        Expr::new(
-            ExprKind::Apply {
-                func: Box::new(f),
-                arg: Box::new(a),
-            },
-            Span::new(0, 0),
-        )
+        Expr::new(ExprKind::Apply { func: Box::new(f), arg: Box::new(a) }, Span::new(0, 0))
     }
 
     #[test]
@@ -561,10 +511,7 @@ mod tests {
             Span::new(0, 0),
         );
         let alt = Expr::new(
-            ExprKind::AltLambda {
-                left: Box::new(lam_l),
-                right: Box::new(lam_r),
-            },
+            ExprKind::AltLambda { left: Box::new(lam_l), right: Box::new(lam_r) },
             Span::new(0, 0),
         );
         let t = lower_expr_to_core(&alt);
@@ -655,9 +602,15 @@ mod tests {
         let t = lower_expr_to_core(&chain_expr);
         match &t.op {
             Op::Chain { first, second } => {
-                match &first.op { Op::Int(1) => {}, other => panic!("expected Int(1), got {:?}", other) }
+                match &first.op {
+                    Op::Int(1) => {}
+                    other => panic!("expected Int(1), got {:?}", other),
+                }
                 match &second.op {
-                    Op::Bind { value, cont: _ } => match &value.op { Op::Int(2) => {}, other => panic!("expected Int(2), got {:?}", other) },
+                    Op::Bind { value, cont: _ } => match &value.op {
+                        Op::Int(2) => {}
+                        other => panic!("expected Int(2), got {:?}", other),
+                    },
                     other => panic!("expected Bind, got {:?}", other),
                 }
             }
@@ -675,8 +628,12 @@ mod tests {
         let add = Expr::new(ExprKind::Ref("add".into()), Span::new(0, 0));
         let one = Expr::new(ExprKind::Int(1), Span::new(0, 0));
         let two = Expr::new(ExprKind::Int(2), Span::new(0, 0));
-        let add1 = Expr::new(ExprKind::Apply { func: Box::new(add), arg: Box::new(one) }, Span::new(0, 0));
-        let add12 = Expr::new(ExprKind::Apply { func: Box::new(add1), arg: Box::new(two) }, Span::new(0, 0));
+        let add1 =
+            Expr::new(ExprKind::Apply { func: Box::new(add), arg: Box::new(one) }, Span::new(0, 0));
+        let add12 = Expr::new(
+            ExprKind::Apply { func: Box::new(add1), arg: Box::new(two) },
+            Span::new(0, 0),
+        );
         let t = lower_expr_to_core(&add12);
         let v = eval_term(&t).expect("ir eval add");
         assert_eq!(print_ir_value(&v), "3");
@@ -691,7 +648,16 @@ mod tests {
             },
             Span::new(0, 0),
         );
-        let b2 = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Apply { func: Box::new(bind), arg: Box::new(two) }, Span::new(0, 0))), arg: Box::new(id) }, Span::new(0, 0));
+        let b2 = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(
+                    ExprKind::Apply { func: Box::new(bind), arg: Box::new(two) },
+                    Span::new(0, 0),
+                )),
+                arg: Box::new(id),
+            },
+            Span::new(0, 0),
+        );
         let t2 = lower_expr_to_core(&b2);
         let v2 = eval_term(&t2).expect("ir eval bind");
         assert_eq!(print_ir_value(&v2), "2");

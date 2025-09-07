@@ -31,7 +31,9 @@ pub enum Type {
 }
 
 impl Type {
-    fn fun(a: Type, b: Type) -> Type { Type::Fun(Box::new(a), Box::new(b)) }
+    fn fun(a: Type, b: Type) -> Type {
+        Type::Fun(Box::new(a), Box::new(b))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -44,7 +46,9 @@ pub struct Scheme {
 pub struct Subst(HashMap<TvId, Type>);
 
 impl Subst {
-    fn new() -> Self { Self(HashMap::new()) }
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
     fn singleton(v: TvId, t: Type) -> Self {
         let mut m = HashMap::new();
         m.insert(v, t);
@@ -91,7 +95,9 @@ impl TypesApply for Type {
                     .map(|(n, ps)| (n.clone(), ps.iter().map(|t| t.apply(s)).collect()))
                     .collect(),
             ),
-            t @ (Type::Unit | Type::Int | Type::Float | Type::Bool | Type::Str | Type::Char) => t.clone(),
+            t @ (Type::Unit | Type::Int | Type::Float | Type::Bool | Type::Str | Type::Char) => {
+                t.clone()
+            }
         }
     }
     fn ftv(&self) -> HashSet<TvId> {
@@ -173,16 +179,24 @@ impl TypesApply for Subst {
 }
 
 #[derive(Default)]
-struct TvGen { next: u32 }
+struct TvGen {
+    next: u32,
+}
 impl TvGen {
-    fn fresh(&mut self) -> Type { let id = self.next; self.next += 1; Type::Var(TvId(id)) }
+    fn fresh(&mut self) -> Type {
+        let id = self.next;
+        self.next += 1;
+        Type::Var(TvId(id))
+    }
 }
 
 // ---------- Errors ----------
 
 #[derive(thiserror::Error, Debug)]
 pub enum TypeError {
-    #[error("type mismatch: expected {expected:?} vs actual {actual:?} at ({span_offset},{span_len})")]
+    #[error(
+        "type mismatch: expected {expected:?} vs actual {actual:?} at ({span_offset},{span_len})"
+    )]
     Mismatch { expected: Type, actual: Type, span_offset: usize, span_len: usize },
     #[error("occurs check failed: {var:?} in {ty:?}")]
     Occurs { var: TvId, ty: Type },
@@ -200,7 +214,9 @@ pub enum TypeError {
 
 // ---------- Unification ----------
 
-fn occurs(v: TvId, t: &Type) -> bool { t.ftv().contains(&v) }
+fn occurs(v: TvId, t: &Type) -> bool {
+    t.ftv().contains(&v)
+}
 
 fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
     match (a, b) {
@@ -210,8 +226,8 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
         | (Type::Int, Type::Int)
         | (Type::Float, Type::Float)
         | (Type::Bool, Type::Bool)
-    | (Type::Str, Type::Str)
-    | (Type::Char, Type::Char) => Ok(Subst::new()),
+        | (Type::Str, Type::Str)
+        | (Type::Char, Type::Char) => Ok(Subst::new()),
         (Type::Fun(a1, b1), Type::Fun(a2, b2)) => {
             let s1 = unify(a1, a2)?;
             let s2 = unify(&b1.apply(&s1), &b2.apply(&s1))?;
@@ -253,13 +269,34 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
         }
         (Type::SumCtor(a), Type::SumCtor(b)) => {
             // Require exact same variant set (MVP). Unify payloads by tag.
-            if a.len() != b.len() { return Err(TypeError::Mismatch { expected: Type::SumCtor(a.clone()), actual: Type::SumCtor(b.clone()), span_offset: 0, span_len: 0 }); }
+            if a.len() != b.len() {
+                return Err(TypeError::Mismatch {
+                    expected: Type::SumCtor(a.clone()),
+                    actual: Type::SumCtor(b.clone()),
+                    span_offset: 0,
+                    span_len: 0,
+                });
+            }
             let mut map_a: BTreeMap<&str, &Vec<Type>> = BTreeMap::new();
-            for (t, ps) in a { map_a.insert(t.as_str(), ps); }
+            for (t, ps) in a {
+                map_a.insert(t.as_str(), ps);
+            }
             let mut s = Subst::new();
             for (t, psb) in b {
-                let psa = map_a.get(t.as_str()).ok_or_else(|| TypeError::Mismatch { expected: Type::SumCtor(a.clone()), actual: Type::SumCtor(b.clone()), span_offset: 0, span_len: 0 })?;
-                if psa.len() != psb.len() { return Err(TypeError::Mismatch { expected: Type::SumCtor(a.clone()), actual: Type::SumCtor(b.clone()), span_offset: 0, span_len: 0 }); }
+                let psa = map_a.get(t.as_str()).ok_or_else(|| TypeError::Mismatch {
+                    expected: Type::SumCtor(a.clone()),
+                    actual: Type::SumCtor(b.clone()),
+                    span_offset: 0,
+                    span_len: 0,
+                })?;
+                if psa.len() != psb.len() {
+                    return Err(TypeError::Mismatch {
+                        expected: Type::SumCtor(a.clone()),
+                        actual: Type::SumCtor(b.clone()),
+                        span_offset: 0,
+                        span_len: 0,
+                    });
+                }
                 for (x, y) in psa.iter().zip(psb.iter()) {
                     let s1 = unify(&x.apply(&s), &y.apply(&s))?;
                     s = s1.compose(s);
@@ -267,7 +304,12 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
             }
             Ok(s)
         }
-        _ => Err(TypeError::Mismatch { expected: a.clone(), actual: b.clone(), span_offset: 0, span_len: 0 }),
+        _ => Err(TypeError::Mismatch {
+            expected: a.clone(),
+            actual: b.clone(),
+            span_offset: 0,
+            span_len: 0,
+        }),
     }
 }
 
@@ -285,9 +327,15 @@ fn bind(v: TvId, t: Type) -> Result<Subst, TypeError> {
 pub struct TypeEnv(HashMap<String, Scheme>);
 
 impl TypeEnv {
-    fn new() -> Self { Self(HashMap::new()) }
-    fn insert(&mut self, n: String, s: Scheme) { self.0.insert(n, s); }
-    fn get(&self, n: &str) -> Option<Scheme> { self.0.get(n).cloned() }
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+    fn insert(&mut self, n: String, s: Scheme) {
+        self.0.insert(n, s);
+    }
+    fn get(&self, n: &str) -> Option<Scheme> {
+        self.0.get(n).cloned()
+    }
 }
 
 fn instantiate(tv: &mut TvGen, s: &Scheme) -> Type {
@@ -317,19 +365,36 @@ struct PatInfo {
 fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatInfo, TypeError> {
     match &pat.kind {
         PatternKind::Wildcard => Ok(PatInfo::default()),
-        PatternKind::Var(n) => Ok(PatInfo { bindings: vec![(n.clone(), scrutinee.clone())], subst: Subst::new() }),
-        PatternKind::Unit => unify(scrutinee, &Type::Unit).map(|s| PatInfo { bindings: vec![], subst: s }),
-        PatternKind::Int(_) => unify(scrutinee, &Type::Int).map(|s| PatInfo { bindings: vec![], subst: s }),
-        PatternKind::Float(_) => unify(scrutinee, &Type::Float).map(|s| PatInfo { bindings: vec![], subst: s }),
-        PatternKind::Str(_) => unify(scrutinee, &Type::Str).map(|s| PatInfo { bindings: vec![], subst: s }),
-    PatternKind::Char(_) => unify(scrutinee, &Type::Char).map(|s| PatInfo { bindings: vec![], subst: s }),
-        PatternKind::Bool(_) => unify(scrutinee, &Type::Bool).map(|s| PatInfo { bindings: vec![], subst: s }),
+        PatternKind::Var(n) => {
+            Ok(PatInfo { bindings: vec![(n.clone(), scrutinee.clone())], subst: Subst::new() })
+        }
+        PatternKind::Unit => {
+            unify(scrutinee, &Type::Unit).map(|s| PatInfo { bindings: vec![], subst: s })
+        }
+        PatternKind::Int(_) => {
+            unify(scrutinee, &Type::Int).map(|s| PatInfo { bindings: vec![], subst: s })
+        }
+        PatternKind::Float(_) => {
+            unify(scrutinee, &Type::Float).map(|s| PatInfo { bindings: vec![], subst: s })
+        }
+        PatternKind::Str(_) => {
+            unify(scrutinee, &Type::Str).map(|s| PatInfo { bindings: vec![], subst: s })
+        }
+        PatternKind::Char(_) => {
+            unify(scrutinee, &Type::Char).map(|s| PatInfo { bindings: vec![], subst: s })
+        }
+        PatternKind::Bool(_) => {
+            unify(scrutinee, &Type::Bool).map(|s| PatInfo { bindings: vec![], subst: s })
+        }
         PatternKind::Tuple(xs) => {
             let mut s = Subst::new();
             let mut tys = Vec::with_capacity(xs.len());
-            for _ in xs { tys.push(tv.fresh()); }
+            for _ in xs {
+                tys.push(tv.fresh());
+            }
             let tup = Type::Tuple(tys.clone());
-            let s0 = unify(&scrutinee.apply(&s), &tup)?; s = s0.compose(s);
+            let s0 = unify(&scrutinee.apply(&s), &tup)?;
+            s = s0.compose(s);
             let mut binds = vec![];
             for (p, t_elem) in xs.iter().zip(tys.into_iter()) {
                 let pi = infer_pattern(tv, p, &t_elem.apply(&s))?;
@@ -353,14 +418,19 @@ fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatI
             let a = tv.fresh();
             let s0 = unify(scrutinee, &Type::List(Box::new(a.clone())))?;
             let mut s = s0;
-            let ph = infer_pattern(tv, h, &a.apply(&s))?; s = ph.subst.compose(s);
-            let pt = infer_pattern(tv, t, &Type::List(Box::new(a.apply(&s))))?; s = pt.subst.compose(s);
-            let mut binds = ph.bindings; binds.extend(pt.bindings);
+            let ph = infer_pattern(tv, h, &a.apply(&s))?;
+            s = ph.subst.compose(s);
+            let pt = infer_pattern(tv, t, &Type::List(Box::new(a.apply(&s))))?;
+            s = pt.subst.compose(s);
+            let mut binds = ph.bindings;
+            binds.extend(pt.bindings);
             Ok(PatInfo { bindings: binds, subst: s })
         }
         PatternKind::Record(fields) => {
             let mut want = BTreeMap::new();
-            for (k, _) in fields { want.insert(k.clone(), tv.fresh()); }
+            for (k, _) in fields {
+                want.insert(k.clone(), tv.fresh());
+            }
             let s0 = unify(scrutinee, &Type::Record(want.clone()))?;
             let mut s = s0;
             let mut binds = vec![];
@@ -392,7 +462,8 @@ fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatI
         PatternKind::As(a, b) => {
             let pa = infer_pattern(tv, a, scrutinee)?;
             let pb = infer_pattern(tv, b, &scrutinee.apply(&pa.subst))?;
-            let mut binds = pa.bindings; binds.extend(pb.bindings);
+            let mut binds = pa.bindings;
+            binds.extend(pb.bindings);
             Ok(PatInfo { bindings: binds, subst: pb.subst.compose(pa.subst) })
         }
         PatternKind::TypeBind { pat, .. } => {
@@ -426,7 +497,9 @@ fn push_tyvars_from_pattern<'a>(ctx: &mut InferCtx, p: &'a Pattern) -> (&'a Patt
         let mut frame = HashMap::new();
         for nm in tvars {
             // '' (empty) represents anonymous '?', we still allocate a distinct id but not bound to a name for lookup
-            if nm.is_empty() { continue; }
+            if nm.is_empty() {
+                continue;
+            }
             let Type::Var(id) = ctx.tv.fresh() else { unreachable!() };
             frame.insert(nm.clone(), id);
         }
@@ -438,10 +511,16 @@ fn push_tyvars_from_pattern<'a>(ctx: &mut InferCtx, p: &'a Pattern) -> (&'a Patt
 }
 
 fn pop_tyvars(ctx: &mut InferCtx, n: usize) {
-    for _ in 0..n { let _ = ctx.tyvars.pop(); }
+    for _ in 0..n {
+        let _ = ctx.tyvars.pop();
+    }
 }
 
-fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type, Subst), TypeError> {
+fn infer_expr(
+    ctx: &mut InferCtx,
+    e: &Expr,
+    allow_effects: bool,
+) -> Result<(Type, Subst), TypeError> {
     // Helper: convert TypeExpr to Type using ctx.tyvars and a local holes table for '?'
     fn conv_typeexpr(ctx: &mut InferCtx, te: &TypeExpr, holes: &mut HashMap<String, TvId>) -> Type {
         match te {
@@ -449,32 +528,46 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
             TypeExpr::Int => Type::Int,
             TypeExpr::Float => Type::Float,
             TypeExpr::Bool => Type::Bool,
-                TypeExpr::Str => Type::Str,
-                TypeExpr::Char => Type::Char,
+            TypeExpr::Str => Type::Str,
+            TypeExpr::Char => Type::Char,
             TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr(ctx, t, holes))),
-            TypeExpr::Tuple(xs) => Type::Tuple(xs.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect()),
+            TypeExpr::Tuple(xs) => {
+                Type::Tuple(xs.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect())
+            }
             TypeExpr::Record(fs) => {
                 let mut m = BTreeMap::new();
-                for (k, v) in fs { m.insert(k.clone(), conv_typeexpr(ctx, v, holes)); }
+                for (k, v) in fs {
+                    m.insert(k.clone(), conv_typeexpr(ctx, v, holes));
+                }
                 Type::Record(m)
             }
-            TypeExpr::Fun(a, b) => Type::fun(conv_typeexpr(ctx, a, holes), conv_typeexpr(ctx, b, holes)),
+            TypeExpr::Fun(a, b) => {
+                Type::fun(conv_typeexpr(ctx, a, holes), conv_typeexpr(ctx, b, holes))
+            }
             TypeExpr::Ctor { tag, args } => {
                 let payload = args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect();
                 Type::Ctor { tag: tag.clone(), payload }
             }
             TypeExpr::Var(name) => {
-                if let Some(id) = lookup_tyvar(ctx, name) { Type::Var(id) } else {
+                if let Some(id) = lookup_tyvar(ctx, name) {
+                    Type::Var(id)
+                } else {
                     // Unbound type var in annotation: treat as a shared hole keyed by the name
                     let key = format!("'{}", name);
-                    let id = holes.entry(key).or_insert_with(|| { let Type::Var(v) = ctx.tv.fresh() else { unreachable!() }; v });
+                    let id = holes.entry(key).or_insert_with(|| {
+                        let Type::Var(v) = ctx.tv.fresh() else { unreachable!() };
+                        v
+                    });
                     Type::Var(*id)
                 }
             }
             TypeExpr::Hole(opt) => {
                 if let Some(n) = opt.as_ref() {
                     let key = format!("?{}", n);
-                    let id = holes.entry(key).or_insert_with(|| { let Type::Var(v) = ctx.tv.fresh() else { unreachable!() }; v });
+                    let id = holes.entry(key).or_insert_with(|| {
+                        let Type::Var(v) = ctx.tv.fresh() else { unreachable!() };
+                        v
+                    });
                     Type::Var(*id)
                 } else {
                     let Type::Var(v) = ctx.tv.fresh() else { unreachable!() };
@@ -496,8 +589,8 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
         ExprKind::Unit => Ok((Type::Unit, Subst::new())),
         ExprKind::Int(_) => Ok((Type::Int, Subst::new())),
         ExprKind::Float(_) => Ok((Type::Float, Subst::new())),
-    ExprKind::Str(_) => Ok((Type::Str, Subst::new())),
-    ExprKind::Char(_) => Ok((Type::Char, Subst::new())),
+        ExprKind::Str(_) => Ok((Type::Str, Subst::new())),
+        ExprKind::Char(_) => Ok((Type::Char, Subst::new())),
         ExprKind::Ref(n) => {
             let s = ctx.env.get(n).ok_or_else(|| TypeError::UnboundRef { name: n.clone() })?;
             Ok((instantiate(&mut ctx.tv, &s), Subst::new()))
@@ -512,7 +605,9 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
             let a = ctx.tv.fresh();
             let pi = infer_pattern(&mut ctx.tv, p_core, &a)?;
             let mut env2 = ctx.env.clone();
-            for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
+            for (n, t) in &pi.bindings {
+                env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
+            }
             let prev = std::mem::replace(&mut ctx.env, env2);
             let (bt, s_body) = infer_expr(ctx, body, allow_effects)?;
             ctx.env = prev;
@@ -542,7 +637,10 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
                         let (te, se) = infer_expr(ctx, first, true)?;
                         let (tk, sk) = infer_expr(ctx, arg, true)?;
                         let r = ctx.tv.fresh();
-                        let s1 = unify(&tk.apply(&sk).apply(&se), &Type::fun(te.apply(&sk).apply(&se), r.clone()))?;
+                        let s1 = unify(
+                            &tk.apply(&sk).apply(&se),
+                            &Type::fun(te.apply(&sk).apply(&se), r.clone()),
+                        )?;
                         let s = s1.compose(sk).compose(se);
                         return Ok((r.apply(&s), s));
                     }
@@ -558,7 +656,10 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
                 if let ExprKind::Apply { func: inner_f, arg: _ } = &func.kind {
                     if let ExprKind::Ref(eff_name) = &inner_f.kind {
                         if eff_name == "effects" {
-                            return Err(TypeError::EffectNotAllowed { span_offset: e.span.offset, span_len: e.span.len });
+                            return Err(TypeError::EffectNotAllowed {
+                                span_offset: e.span.offset,
+                                span_len: e.span.len,
+                            });
                         }
                     }
                 }
@@ -625,17 +726,31 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
         }
         ExprKind::AltLambda { left, right } => {
             // Both sides must be Lambda
-            let (pl, bl) = match &left.kind { ExprKind::Lambda { param, body } => (param, body), _ => return Err(TypeError::MixedAltBranches) };
-            let (pr, br) = match &right.kind { ExprKind::Lambda { param, body } => (param, body), _ => return Err(TypeError::MixedAltBranches) };
+            let (pl, bl) = match &left.kind {
+                ExprKind::Lambda { param, body } => (param, body),
+                _ => return Err(TypeError::MixedAltBranches),
+            };
+            let (pr, br) = match &right.kind {
+                ExprKind::Lambda { param, body } => (param, body),
+                _ => return Err(TypeError::MixedAltBranches),
+            };
 
             // Peel typebinders and push frames per branch scope
             let (pl_core, l_pushed) = push_tyvars_from_pattern(ctx, pl);
             let (pr_core, r_pushed) = push_tyvars_from_pattern(ctx, pr);
 
-            fn is_ctor_like(p: &PatternKind) -> bool { matches!(p, PatternKind::Ctor { .. } | PatternKind::Symbol(_)) }
-            let left_ctor = is_ctor_like(&pl_core.kind) || matches!(pl_core.kind, PatternKind::Wildcard);
-            let right_ctor = is_ctor_like(&pr_core.kind) || matches!(pr_core.kind, PatternKind::Wildcard);
-            if !(left_ctor && right_ctor) { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::MixedAltBranches); }
+            fn is_ctor_like(p: &PatternKind) -> bool {
+                matches!(p, PatternKind::Ctor { .. } | PatternKind::Symbol(_))
+            }
+            let left_ctor =
+                is_ctor_like(&pl_core.kind) || matches!(pl_core.kind, PatternKind::Wildcard);
+            let right_ctor =
+                is_ctor_like(&pr_core.kind) || matches!(pr_core.kind, PatternKind::Wildcard);
+            if !(left_ctor && right_ctor) {
+                pop_tyvars(ctx, l_pushed);
+                pop_tyvars(ctx, r_pushed);
+                return Err(TypeError::MixedAltBranches);
+            }
 
             let mut variants: Vec<(String, Vec<Type>)> = vec![];
             let mut seen = HashSet::<String>::new();
@@ -648,35 +763,56 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
                 PatternKind::Wildcard => {
                     let pi = infer_pattern(&mut ctx.tv, pl_core, &param_ty.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
-                    let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
+                    let s1 = unify(
+                        &tb.apply(&sb).apply(&pi.subst),
+                        &branch_ret.apply(&sb).apply(&pi.subst),
+                    )?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                     branch_ret = branch_ret.apply(&s_all);
                 }
                 PatternKind::Ctor { name, args } => {
                     let payload: Vec<Type> = (0..args.len()).map(|_| ctx.tv.fresh()).collect();
-                    if !seen.insert(name.clone()) { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::DuplicateCtorTag { tag: name.clone() }); }
+                    if !seen.insert(name.clone()) {
+                        pop_tyvars(ctx, l_pushed);
+                        pop_tyvars(ctx, r_pushed);
+                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
+                    }
                     variants.push((name.clone(), payload.clone()));
                     let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
                     let pi = infer_pattern(&mut ctx.tv, pl_core, &scr.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
-                    let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
+                    let s1 = unify(
+                        &tb.apply(&sb).apply(&pi.subst),
+                        &branch_ret.apply(&sb).apply(&pi.subst),
+                    )?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                     branch_ret = branch_ret.apply(&s_all);
                 }
                 PatternKind::Symbol(name) => {
-                    if !seen.insert(name.clone()) { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::DuplicateCtorTag { tag: name.clone() }); }
+                    if !seen.insert(name.clone()) {
+                        pop_tyvars(ctx, l_pushed);
+                        pop_tyvars(ctx, r_pushed);
+                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
+                    }
                     variants.push((name.clone(), vec![]));
                     let scr = Type::Ctor { tag: name.clone(), payload: vec![] };
                     let pi = infer_pattern(&mut ctx.tv, pl_core, &scr.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
-                    let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
+                    let s1 = unify(
+                        &tb.apply(&sb).apply(&pi.subst),
+                        &branch_ret.apply(&sb).apply(&pi.subst),
+                    )?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                     branch_ret = branch_ret.apply(&s_all);
                 }
-                _ => { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::MixedAltBranches); }
+                _ => {
+                    pop_tyvars(ctx, l_pushed);
+                    pop_tyvars(ctx, r_pushed);
+                    return Err(TypeError::MixedAltBranches);
+                }
             }
 
             // Right branch
@@ -684,41 +820,64 @@ fn infer_expr(ctx: &mut InferCtx, e: &Expr, allow_effects: bool) -> Result<(Type
                 PatternKind::Wildcard => {
                     let pi = infer_pattern(&mut ctx.tv, pr_core, &param_ty.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
-                    let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
+                    let s1 = unify(
+                        &tb.apply(&sb).apply(&pi.subst),
+                        &branch_ret.apply(&sb).apply(&pi.subst),
+                    )?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                     branch_ret = branch_ret.apply(&s_all);
                 }
                 PatternKind::Ctor { name, args } => {
                     let payload: Vec<Type> = (0..args.len()).map(|_| ctx.tv.fresh()).collect();
-                    if !seen.insert(name.clone()) { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::DuplicateCtorTag { tag: name.clone() }); }
+                    if !seen.insert(name.clone()) {
+                        pop_tyvars(ctx, l_pushed);
+                        pop_tyvars(ctx, r_pushed);
+                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
+                    }
                     variants.push((name.clone(), payload.clone()));
                     let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
                     let pi = infer_pattern(&mut ctx.tv, pr_core, &scr.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
-                    let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
+                    let s1 = unify(
+                        &tb.apply(&sb).apply(&pi.subst),
+                        &branch_ret.apply(&sb).apply(&pi.subst),
+                    )?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                     branch_ret = branch_ret.apply(&s_all);
                 }
                 PatternKind::Symbol(name) => {
-                    if !seen.insert(name.clone()) { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::DuplicateCtorTag { tag: name.clone() }); }
+                    if !seen.insert(name.clone()) {
+                        pop_tyvars(ctx, l_pushed);
+                        pop_tyvars(ctx, r_pushed);
+                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
+                    }
                     variants.push((name.clone(), vec![]));
                     let scr = Type::Ctor { tag: name.clone(), payload: vec![] };
                     let pi = infer_pattern(&mut ctx.tv, pr_core, &scr.apply(&s_all))?;
                     let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
-                    let s1 = unify(&tb.apply(&sb).apply(&pi.subst), &branch_ret.apply(&sb).apply(&pi.subst))?;
+                    let s1 = unify(
+                        &tb.apply(&sb).apply(&pi.subst),
+                        &branch_ret.apply(&sb).apply(&pi.subst),
+                    )?;
                     s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                     branch_ret = branch_ret.apply(&s_all);
                 }
-                _ => { pop_tyvars(ctx, l_pushed); pop_tyvars(ctx, r_pushed); return Err(TypeError::MixedAltBranches); }
+                _ => {
+                    pop_tyvars(ctx, l_pushed);
+                    pop_tyvars(ctx, r_pushed);
+                    return Err(TypeError::MixedAltBranches);
+                }
             }
 
             pop_tyvars(ctx, r_pushed);
             pop_tyvars(ctx, l_pushed);
 
-            if !variants.is_empty() { param_ty = Type::SumCtor(variants); }
+            if !variants.is_empty() {
+                param_ty = Type::SumCtor(variants);
+            }
             Ok((Type::fun(param_ty.apply(&s_all), branch_ret.apply(&s_all)), s_all))
         }
     }
@@ -733,23 +892,34 @@ fn pp_type(t: &Type) -> String {
         Type::Float => "Float".into(),
         Type::Bool => "Bool".into(),
         Type::Str => "Str".into(),
-    Type::Char => "Char".into(),
+        Type::Char => "Char".into(),
         Type::Var(TvId(i)) => format!("t{i}"),
         Type::List(a) => format!("List {}", pp_atom(a)),
         Type::Tuple(xs) => format!("({})", xs.iter().map(pp_type).collect::<Vec<_>>().join(", ")),
         Type::Record(fs) => {
-            let mut items: Vec<_> = fs.iter().map(|(k, v)| format!("{}: {}", k, pp_type(v))).collect();
+            let mut items: Vec<_> =
+                fs.iter().map(|(k, v)| format!("{}: {}", k, pp_type(v))).collect();
             items.sort();
             format!("{{{}}}", items.join(", "))
         }
         Type::Fun(a, b) => format!("{} -> {}", pp_atom(a), pp_type(b)),
         Type::Ctor { tag, payload } => {
-            if payload.is_empty() { tag.clone() } else { format!("{}({})", tag, payload.iter().map(pp_type).collect::<Vec<_>>().join(", ")) }
+            if payload.is_empty() {
+                tag.clone()
+            } else {
+                format!("{}({})", tag, payload.iter().map(pp_type).collect::<Vec<_>>().join(", "))
+            }
         }
         Type::SumCtor(vs) => {
             let inner = vs
                 .iter()
-                .map(|(t, ps)| if ps.is_empty() { t.clone() } else { format!("{}({})", t, ps.iter().map(pp_type).collect::<Vec<_>>().join(", ")) })
+                .map(|(t, ps)| {
+                    if ps.is_empty() {
+                        t.clone()
+                    } else {
+                        format!("{}({})", t, ps.iter().map(pp_type).collect::<Vec<_>>().join(", "))
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(" | ");
             format!("({})", inner)
@@ -772,7 +942,7 @@ pub mod api {
 
     pub fn infer_program(src: &str) -> Result<String, String> {
         let ast = parse_expr(src).map_err(|e| format!("parse error: {e}"))?;
-    let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![] };
+        let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![] };
         match infer_expr(&mut ctx, &ast, false) {
             Ok((t, _s)) => Ok(pp_type(&t)),
             Err(e) => Err(format!("{e}")),
@@ -798,10 +968,7 @@ pub mod api {
             Type::fun(Type::Var(a), Type::Var(r)),
             Type::fun(Type::fun(Type::Var(a), Type::Var(r)), Type::fun(Type::Var(a), Type::Var(r))),
         );
-        env.insert(
-            "alt".into(),
-            Scheme { vars: vec![a, r], ty: alt_ty },
-        );
+        env.insert("alt".into(), Scheme { vars: vec![a, r], ty: alt_ty });
         // add : Int -> Int -> Int
         let add_ty = Type::fun(Type::Int, Type::fun(Type::Int, Type::Int));
         env.insert("add".into(), Scheme { vars: vec![], ty: add_ty });
@@ -815,34 +982,28 @@ pub mod api {
             "or".into(),
             Scheme { vars: vec![], ty: Type::fun(Type::Bool, Type::fun(Type::Bool, Type::Bool)) },
         );
-        env.insert(
-            "not".into(),
-            Scheme { vars: vec![], ty: Type::fun(Type::Bool, Type::Bool) },
-        );
+        env.insert("not".into(), Scheme { vars: vec![], ty: Type::fun(Type::Bool, Type::Bool) });
         // boolean values
-        env.insert(
-            "true".into(),
-            Scheme { vars: vec![], ty: Type::Bool },
-        );
-        env.insert(
-            "false".into(),
-            Scheme { vars: vec![], ty: Type::Bool },
-        );
+        env.insert("true".into(), Scheme { vars: vec![], ty: Type::Bool });
+        env.insert("false".into(), Scheme { vars: vec![], ty: Type::Bool });
         // seq : forall a b. a -> b -> b
         let a2 = TvId(1002);
         let b2 = TvId(1003);
         let seq_ty = Type::fun(Type::Var(a2), Type::fun(Type::Var(b2), Type::Var(b2)));
         env.insert("seq".into(), Scheme { vars: vec![a2, b2], ty: seq_ty });
-    // chain : forall a b. a -> b -> b
-    let a4 = TvId(1006);
-    let b4 = TvId(1007);
-    let chain_ty = Type::fun(Type::Var(a4), Type::fun(Type::Var(b4), Type::Var(b4)));
-    env.insert("chain".into(), Scheme { vars: vec![a4, b4], ty: chain_ty });
-    // bind : forall x r. x -> (x -> r) -> r
-    let x5 = TvId(1008);
-    let r5 = TvId(1009);
-    let bind_ty = Type::fun(Type::Var(x5), Type::fun(Type::fun(Type::Var(x5), Type::Var(r5)), Type::Var(r5)));
-    env.insert("bind".into(), Scheme { vars: vec![x5, r5], ty: bind_ty });
+        // chain : forall a b. a -> b -> b
+        let a4 = TvId(1006);
+        let b4 = TvId(1007);
+        let chain_ty = Type::fun(Type::Var(a4), Type::fun(Type::Var(b4), Type::Var(b4)));
+        env.insert("chain".into(), Scheme { vars: vec![a4, b4], ty: chain_ty });
+        // bind : forall x r. x -> (x -> r) -> r
+        let x5 = TvId(1008);
+        let r5 = TvId(1009);
+        let bind_ty = Type::fun(
+            Type::Var(x5),
+            Type::fun(Type::fun(Type::Var(x5), Type::Var(r5)), Type::Var(r5)),
+        );
+        env.insert("bind".into(), Scheme { vars: vec![x5, r5], ty: bind_ty });
         // effects : forall s a. s -> a -> Unit  (approximate; first arg is an effect symbol)
         let s3 = TvId(1004);
         let a3 = TvId(1005);
@@ -862,4 +1023,3 @@ mod tests {
         assert_eq!(t, "Char");
     }
 }
-

@@ -5,8 +5,8 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct RtStr {
     pub data: Arc<Vec<u8>>, // whole buffer
-    pub start: usize,        // byte offset
-    pub len: usize,          // byte length
+    pub start: usize,       // byte offset
+    pub len: usize,         // byte length
 }
 
 impl RtStr {
@@ -32,8 +32,12 @@ impl RtStr {
         let s = std::str::from_utf8(self.as_bytes()).ok()?;
         let boundaries = RtStr::char_boundaries(s);
         let total_chars = boundaries.len() - 1;
-        if start_chars > total_chars { return None; }
-        if start_chars + len_chars > total_chars { return None; }
+        if start_chars > total_chars {
+            return None;
+        }
+        if start_chars + len_chars > total_chars {
+            return None;
+        }
         let begin_b = boundaries[start_chars];
         let end_b = boundaries[start_chars + len_chars];
         Some(RtStr {
@@ -104,41 +108,20 @@ pub enum Value {
     Tuple(Vec<Value>),
     Record(std::collections::BTreeMap<String, Value>),
     // Constructor value: tag name with payload args (order-significant)
-    Ctor {
-        name: String,
-        args: Vec<Value>,
-    },
-    Native {
-        arity: usize,
-            f: fn(&Env, &[Value]) -> Result<Value, EvalError>,
-        args: Vec<Value>,
-    },
-    Closure {
-        param: Pattern,
-        body: Expr,
-        env: Env,
-    },
+    Ctor { name: String, args: Vec<Value> },
+    Native { arity: usize, f: fn(&Env, &[Value]) -> Result<Value, EvalError>, args: Vec<Value> },
+    Closure { param: Pattern, body: Expr, env: Env },
     Symbol(u32),
     // Exception payload (internal). Represent ^(Expr) after evaluation as a value that propagates.
     Raised(Box<Value>),
     // Lazy thunk for recursive/non-function let bindings
-    Thunk {
-        state: std::rc::Rc<std::cell::RefCell<ThunkState>>,
-        kind: ThunkKind,
-    },
+    Thunk { state: std::rc::Rc<std::cell::RefCell<ThunkState>>, kind: ThunkKind },
 }
 
 #[derive(Debug, Clone)]
 pub enum ThunkKind {
-    Expr {
-        expr: Expr,
-        env: Env,
-    },
-    Project {
-        src: Box<Value>,
-        pattern: Pattern,
-        var: String,
-    },
+    Expr { expr: Expr, env: Env },
+    Project { src: Box<Value>, pattern: Pattern, var: String },
 }
 
 #[derive(Debug, Clone)]
@@ -158,7 +141,8 @@ pub struct Env {
     pub sym_intern: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, u32>>>,
     pub sym_rev: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
     // string interning: map full string to shared byte buffer
-    pub str_intern: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, Arc<Vec<u8>>>>>,
+    pub str_intern:
+        std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, Arc<Vec<u8>>>>>,
 }
 
 // Default is derived
@@ -189,11 +173,7 @@ impl Env {
     }
 
     pub fn symbol_name(&self, id: u32) -> String {
-        self.sym_rev
-            .borrow()
-            .get(id as usize)
-            .cloned()
-            .unwrap_or("<sym?>".to_string())
+        self.sym_rev.borrow().get(id as usize).cloned().unwrap_or("<sym?>".to_string())
     }
 
     pub fn intern_string<S: AsRef<str>>(&self, s: S) -> RtStr {
@@ -203,10 +183,8 @@ impl Env {
         }
         let bytes = key.as_bytes().to_vec();
         let arc = Arc::new(bytes);
-        self.str_intern
-            .borrow_mut()
-            .insert(key.to_string(), arc.clone());
-    RtStr { data: arc, start: 0, len: key.len() }
+        self.str_intern.borrow_mut().insert(key.to_string(), arc.clone());
+        RtStr { data: arc, start: 0, len: key.len() }
     }
 
     pub fn declare_ctor_arity(&mut self, name: &str, arity: usize) {
@@ -214,8 +192,7 @@ impl Env {
         let n = name.to_string();
         self.ctor_arity.insert(n.clone(), arity);
         if n.starts_with('.') {
-            self.ctor_arity
-                .insert(n.trim_start_matches('.').to_string(), arity);
+            self.ctor_arity.insert(n.trim_start_matches('.').to_string(), arity);
         } else {
             self.ctor_arity.insert(format!(".{n}"), arity);
         }
@@ -450,16 +427,12 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => Ok(if a <= b {
-                        sym_true(env)
-                    } else {
-                        sym_false(env)
-                    }),
-                    (Value::Float(a), Value::Float(b)) => Ok(if a <= b {
-                        sym_true(env)
-                    } else {
-                        sym_false(env)
-                    }),
+                    (Value::Int(a), Value::Int(b)) => {
+                        Ok(if a <= b { sym_true(env) } else { sym_false(env) })
+                    }
+                    (Value::Float(a), Value::Float(b)) => {
+                        Ok(if a <= b { sym_true(env) } else { sym_false(env) })
+                    }
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -490,16 +463,12 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => Ok(if a >= b {
-                        sym_true(env)
-                    } else {
-                        sym_false(env)
-                    }),
-                    (Value::Float(a), Value::Float(b)) => Ok(if a >= b {
-                        sym_true(env)
-                    } else {
-                        sym_false(env)
-                    }),
+                    (Value::Int(a), Value::Int(b)) => {
+                        Ok(if a >= b { sym_true(env) } else { sym_false(env) })
+                    }
+                    (Value::Float(a), Value::Float(b)) => {
+                        Ok(if a >= b { sym_true(env) } else { sym_false(env) })
+                    }
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -538,11 +507,9 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => Ok(if a <= b {
-                        sym_true(env)
-                    } else {
-                        sym_false(env)
-                    }),
+                    (Value::Float(a), Value::Float(b)) => {
+                        Ok(if a <= b { sym_true(env) } else { sym_false(env) })
+                    }
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -566,11 +533,9 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => Ok(if a >= b {
-                        sym_true(env)
-                    } else {
-                        sym_false(env)
-                    }),
+                    (Value::Float(a), Value::Float(b)) => {
+                        Ok(if a >= b { sym_true(env) } else { sym_false(env) })
+                    }
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -579,11 +544,7 @@ impl Env {
         // seq/chain/bind は特別扱いで評価順を制御するため、Native としては不要だが参照解決のために登録はしておく
         e.vars.insert(
             "seq".into(),
-            Value::Native {
-                arity: 2,
-                args: vec![],
-                f: |_env, args| Ok(args[1].clone()),
-            },
+            Value::Native { arity: 2, args: vec![], f: |_env, args| Ok(args[1].clone()) },
         );
         e.vars.insert(
             "chain".into(),
@@ -610,11 +571,7 @@ impl Env {
                         ".println" => eff_println,
                         _ => return Err(EvalError::UnknownEffect(sym)),
                     };
-                    Ok(Value::Native {
-                        arity: 1,
-                        args: vec![],
-                        f,
-                    })
+                    Ok(Value::Native { arity: 1, args: vec![], f })
                 },
             },
         );
@@ -677,13 +634,17 @@ impl Env {
                     (Value::Str(s), Value::Int(idx)) => {
                         let s_utf = match std::str::from_utf8(s.as_bytes()) {
                             Ok(v) => v,
-                            Err(_) => return Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
+                            Err(_) => {
+                                return Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                            }
                         };
-                        let mut it = s_utf.chars();
                         let mut i = 0i64;
-                        while let Some(ch) = it.next() {
+                        for ch in s_utf.chars() {
                             if i == *idx {
-                                return Ok(Value::Ctor { name: ".Some".into(), args: vec![Value::Char(ch as i32)] });
+                                return Ok(Value::Ctor {
+                                    name: ".Some".into(),
+                                    args: vec![Value::Char(ch as i32)],
+                                });
                             }
                             i += 1;
                         }
@@ -693,7 +654,7 @@ impl Env {
                 },
             },
         );
-    // keep builtins minimal: only len/concat for strings for now
+        // keep builtins minimal: only len/concat for strings for now
 
         // math namespace (reuse existing natives where possible)
         let mut math_ns: BTreeMap<String, Value> = BTreeMap::new();
@@ -710,56 +671,82 @@ impl Env {
         // char classification namespace
         let mut char_ns: BTreeMap<String, Value> = BTreeMap::new();
         // helpers to convert bool -> Symbol("True"|"False")
-        fn to_sym_bool(env: &Env, b: bool) -> Value { if b { sym_true(env) } else { sym_false(env) } }
+        fn to_sym_bool(env: &Env, b: bool) -> Value {
+            if b {
+                sym_true(env)
+            } else {
+                sym_false(env)
+            }
+        }
         char_ns.insert(
             "is_alpha".into(),
-            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
-                Value::Char(c) => {
-                    let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
-                    Ok(to_sym_bool(env, ch.is_alphabetic()))
-                }
-                _ => Err(EvalError::TypeError),
-            }},
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |env, args| match &args[0] {
+                    Value::Char(c) => {
+                        let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
+                        Ok(to_sym_bool(env, ch.is_alphabetic()))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         char_ns.insert(
             "is_digit".into(),
-            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
-                Value::Char(c) => {
-                    let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
-                    Ok(to_sym_bool(env, ch.is_ascii_digit()))
-                }
-                _ => Err(EvalError::TypeError),
-            }},
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |env, args| match &args[0] {
+                    Value::Char(c) => {
+                        let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
+                        Ok(to_sym_bool(env, ch.is_ascii_digit()))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         char_ns.insert(
             "is_alnum".into(),
-            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
-                Value::Char(c) => {
-                    let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
-                    Ok(to_sym_bool(env, ch.is_ascii_alphanumeric()))
-                }
-                _ => Err(EvalError::TypeError),
-            }},
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |env, args| match &args[0] {
+                    Value::Char(c) => {
+                        let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
+                        Ok(to_sym_bool(env, ch.is_ascii_alphanumeric()))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         char_ns.insert(
             "is_space".into(),
-            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
-                Value::Char(c) => {
-                    let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
-                    Ok(to_sym_bool(env, ch.is_whitespace()))
-                }
-                _ => Err(EvalError::TypeError),
-            }},
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |env, args| match &args[0] {
+                    Value::Char(c) => {
+                        let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
+                        Ok(to_sym_bool(env, ch.is_whitespace()))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         char_ns.insert(
             "between".into(),
-            Value::Native { arity: 3, args: vec![], f: |env, args| match (&args[0], &args[1], &args[2]) {
-                (Value::Char(c), Value::Int(lo), Value::Int(hi)) => {
-                    let code = *c as i64;
-                    Ok(to_sym_bool(env, code >= *lo && code <= *hi))
-                }
-                _ => Err(EvalError::TypeError),
-            }},
+            Value::Native {
+                arity: 3,
+                args: vec![],
+                f: |env, args| match (&args[0], &args[1], &args[2]) {
+                    (Value::Char(c), Value::Int(lo), Value::Int(hi)) => {
+                        let code = *c as i64;
+                        Ok(to_sym_bool(env, code >= *lo && code <= *hi))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
 
         let mut builtins: BTreeMap<String, Value> = BTreeMap::new();
@@ -770,7 +757,7 @@ impl Env {
         // scan namespace: functional scanner over UTF-8 string (char-index based)
         let mut scan_ns: BTreeMap<String, Value> = BTreeMap::new();
         // Helpers to extract scan record fields
-        fn get_scan<'a>(v: &'a Value) -> Option<(&'a RtStr, usize)> {
+    fn get_scan(v: &Value) -> Option<(&RtStr, usize)> {
             if let Value::Record(m) = v {
                 let s = m.get("s");
                 let i = m.get("i");
@@ -780,7 +767,7 @@ impl Env {
             }
             None
         }
-    fn make_scan(s: RtStr, i: usize) -> Value {
+        fn make_scan(s: RtStr, i: usize) -> Value {
             let mut m = BTreeMap::new();
             m.insert("s".into(), Value::Str(s));
             m.insert("i".into(), Value::Int(i as i64));
@@ -789,173 +776,249 @@ impl Env {
         // new : Str -> Scan
         scan_ns.insert(
             "new".into(),
-            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
-                Value::Str(s) => {
-                    let mut m = BTreeMap::new();
-                    m.insert("s".into(), Value::Str(s.clone()));
-                    m.insert("i".into(), Value::Int(0));
-                    Ok(Value::Record(m))
-                }
-                _ => Err(EvalError::TypeError),
-            } },
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |_env, args| match &args[0] {
+                    Value::Str(s) => {
+                        let mut m = BTreeMap::new();
+                        m.insert("s".into(), Value::Str(s.clone()));
+                        m.insert("i".into(), Value::Int(0));
+                        Ok(Value::Record(m))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         // eof : Scan -> Symbol("True"|"False")
         scan_ns.insert(
             "eof".into(),
-            Value::Native { arity: 1, args: vec![], f: |env, args| match &args[0] {
-                v if get_scan(v).is_some() => {
-                    let (s, i) = get_scan(v).unwrap();
-                    let at_end = i >= s.char_count();
-                    Ok(if at_end { sym_true(env) } else { sym_false(env) })
-                }
-                _ => Err(EvalError::TypeError),
-            } },
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |env, args| match &args[0] {
+                    v if get_scan(v).is_some() => {
+                        let (s, i) = get_scan(v).unwrap();
+                        let at_end = i >= s.char_count();
+                        Ok(if at_end { sym_true(env) } else { sym_false(env) })
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         // pos : Scan -> Int
         scan_ns.insert(
             "pos".into(),
-            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
-                v if get_scan(v).is_some() => Ok(Value::Int(get_scan(v).unwrap().1 as i64)),
-                _ => Err(EvalError::TypeError),
-            } },
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |_env, args| match &args[0] {
+                    v if get_scan(v).is_some() => Ok(Value::Int(get_scan(v).unwrap().1 as i64)),
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         // set_pos : Scan -> Int -> Scan
         scan_ns.insert(
             "set_pos".into(),
-            Value::Native { arity: 2, args: vec![], f: |_env, args| match (&args[0], &args[1]) {
-                (v, Value::Int(p)) if get_scan(v).is_some() => {
-                    let (s, _i) = get_scan(v).unwrap();
-                    let total = s.char_count();
-                    let np = (*p).clamp(0, total as i64) as usize;
-                    Ok(make_scan(s.clone(), np))
-                }
-                _ => Err(EvalError::TypeError),
-            } },
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (v, Value::Int(p)) if get_scan(v).is_some() => {
+                        let (s, _i) = get_scan(v).unwrap();
+                        let total = s.char_count();
+                        let np = (*p).clamp(0, total as i64) as usize;
+                        Ok(make_scan(s.clone(), np))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         // peek : Scan -> .Some(Char) | .None
         scan_ns.insert(
             "peek".into(),
-            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
-                v if get_scan(v).is_some() => {
-                    let (s, i) = get_scan(v).unwrap();
-                    let utf = match std::str::from_utf8(s.as_bytes()) { Ok(u) => u, Err(_) => "" };
-                    let ch = utf.chars().nth(i);
-                    match ch {
-                        Some(c) => Ok(Value::Ctor { name: ".Some".into(), args: vec![Value::Char(c as i32)] }),
-                        None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |_env, args| match &args[0] {
+                    v if get_scan(v).is_some() => {
+                        let (s, i) = get_scan(v).unwrap();
+                        let utf = match std::str::from_utf8(s.as_bytes()) {
+                            Ok(u) => u,
+                            Err(_) => "",
+                        };
+                        let ch = utf.chars().nth(i);
+                        match ch {
+                            Some(c) => Ok(Value::Ctor {
+                                name: ".Some".into(),
+                                args: vec![Value::Char(c as i32)],
+                            }),
+                            None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
+                        }
                     }
-                }
-                _ => Err(EvalError::TypeError),
-            } },
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         // next : Scan -> .Some((Char, Scan)) | .None
         scan_ns.insert(
             "next".into(),
-            Value::Native { arity: 1, args: vec![], f: |_env, args| match &args[0] {
-                v if get_scan(v).is_some() => {
-                    let (s, i) = get_scan(v).unwrap();
-                    let utf = match std::str::from_utf8(s.as_bytes()) { Ok(u) => u, Err(_) => "" };
-                    let mut it = utf.chars();
-                    let c = it.nth(i);
-                    match c {
-                        Some(ch) => {
-                            let ns = make_scan(s.clone(), i + 1);
-                            let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Char(ch as i32), ns] };
-                            Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |_env, args| match &args[0] {
+                    v if get_scan(v).is_some() => {
+                        let (s, i) = get_scan(v).unwrap();
+                        let utf = match std::str::from_utf8(s.as_bytes()) {
+                            Ok(u) => u,
+                            Err(_) => "",
+                        };
+                        let mut it = utf.chars();
+                        let c = it.nth(i);
+                        match c {
+                            Some(ch) => {
+                                let ns = make_scan(s.clone(), i + 1);
+                                let pair = Value::Ctor {
+                                    name: ".,".into(),
+                                    args: vec![Value::Char(ch as i32), ns],
+                                };
+                                Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
+                            }
+                            None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
                         }
-                        None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
                     }
-                }
-                _ => Err(EvalError::TypeError),
-            } },
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         // take_if : (Char -> Bool) -> Scan -> .Some((Char, Scan)) | .None
         scan_ns.insert(
             "take_if".into(),
-            Value::Native { arity: 2, args: vec![], f: |env, args| match (&args[0], &args[1]) {
-                (pred, v) if get_scan(v).is_some() => {
-                    let (s, i) = get_scan(v).unwrap();
-                    let utf = match std::str::from_utf8(s.as_bytes()) { Ok(u) => u, Err(_) => "" };
-                    if let Some(ch) = utf.chars().nth(i) {
-                        let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
-                        if as_bool(env, &res)? {
-                            let ns = make_scan(s.clone(), i + 1);
-                            let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Char(ch as i32), ns] };
-                            return Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] });
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |env, args| match (&args[0], &args[1]) {
+                    (pred, v) if get_scan(v).is_some() => {
+                        let (s, i) = get_scan(v).unwrap();
+                        let utf = match std::str::from_utf8(s.as_bytes()) {
+                            Ok(u) => u,
+                            Err(_) => "",
+                        };
+                        if let Some(ch) = utf.chars().nth(i) {
+                            let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
+                            if as_bool(env, &res)? {
+                                let ns = make_scan(s.clone(), i + 1);
+                                let pair = Value::Ctor {
+                                    name: ".,".into(),
+                                    args: vec![Value::Char(ch as i32), ns],
+                                };
+                                return Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] });
+                            }
                         }
+                        Ok(Value::Ctor { name: ".None".into(), args: vec![] })
                     }
-                    Ok(Value::Ctor { name: ".None".into(), args: vec![] })
-                }
-                _ => Err(EvalError::TypeError),
-            } },
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         // take_while : (Char -> Bool) -> Scan -> (Str, Scan)
         scan_ns.insert(
             "take_while".into(),
-            Value::Native { arity: 2, args: vec![], f: |env, args| match (&args[0], &args[1]) {
-                (pred, v) if get_scan(v).is_some() => {
-                    let (s, mut i) = get_scan(v).unwrap();
-                    let utf = match std::str::from_utf8(s.as_bytes()) { Ok(u) => u.to_string(), Err(_) => String::new() };
-                    let mut out = String::new();
-                    for (ci, ch) in utf.chars().enumerate().skip(i) {
-                        let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
-                        if as_bool(env, &res)? {
-                            out.push(ch);
-                            i = ci + 1;
-                        } else {
-                            break;
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |env, args| match (&args[0], &args[1]) {
+                    (pred, v) if get_scan(v).is_some() => {
+                        let (s, mut i) = get_scan(v).unwrap();
+                        let utf = match std::str::from_utf8(s.as_bytes()) {
+                            Ok(u) => u.to_string(),
+                            Err(_) => String::new(),
+                        };
+                        let mut out = String::new();
+                        for (ci, ch) in utf.chars().enumerate().skip(i) {
+                            let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
+                            if as_bool(env, &res)? {
+                                out.push(ch);
+                                i = ci + 1;
+                            } else {
+                                break;
+                            }
                         }
+                        let ns = make_scan(s.clone(), i);
+                        let pair = Value::Ctor {
+                            name: ".,".into(),
+                            args: vec![Value::Str(env.intern_string(out)), ns],
+                        };
+                        Ok(pair)
                     }
-                    let ns = make_scan(s.clone(), i);
-                    let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Str(env.intern_string(out)), ns] };
-                    Ok(pair)
-                }
-                _ => Err(EvalError::TypeError),
-            } },
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         // take_while1 : (Char -> Bool) -> Scan -> .Some((Str, Scan)) | .None
         scan_ns.insert(
             "take_while1".into(),
-            Value::Native { arity: 2, args: vec![], f: |env, args| match (&args[0], &args[1]) {
-                (pred, v) if get_scan(v).is_some() => {
-                    let (s, i0) = get_scan(v).unwrap();
-                    let utf = match std::str::from_utf8(s.as_bytes()) { Ok(u) => u.to_string(), Err(_) => String::new() };
-                    let mut out = String::new();
-                    let mut i = i0;
-                    for (ci, ch) in utf.chars().enumerate().skip(i0) {
-                        let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
-                        if as_bool(env, &res)? {
-                            out.push(ch);
-                            i = ci + 1;
-                        } else { break; }
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |env, args| match (&args[0], &args[1]) {
+                    (pred, v) if get_scan(v).is_some() => {
+                        let (s, i0) = get_scan(v).unwrap();
+                        let utf = match std::str::from_utf8(s.as_bytes()) {
+                            Ok(u) => u.to_string(),
+                            Err(_) => String::new(),
+                        };
+                        let mut out = String::new();
+                        let mut i = i0;
+                        for (ci, ch) in utf.chars().enumerate().skip(i0) {
+                            let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
+                            if as_bool(env, &res)? {
+                                out.push(ch);
+                                i = ci + 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if out.is_empty() {
+                            Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                        } else {
+                            let ns = make_scan(s.clone(), i);
+                            let pair = Value::Ctor {
+                                name: ".,".into(),
+                                args: vec![Value::Str(env.intern_string(out)), ns],
+                            };
+                            Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
+                        }
                     }
-                    if out.is_empty() {
-                        Ok(Value::Ctor { name: ".None".into(), args: vec![] })
-                    } else {
-                        let ns = make_scan(s.clone(), i);
-                        let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Str(env.intern_string(out)), ns] };
-                        Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
-                    }
-                }
-                _ => Err(EvalError::TypeError),
-            } },
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         // slice_span : Scan -> Int -> Int -> Str
         scan_ns.insert(
             "slice_span".into(),
-            Value::Native { arity: 3, args: vec![], f: |_env, args| match (&args[0], &args[1], &args[2]) {
-                (v, Value::Int(a), Value::Int(b)) if get_scan(v).is_some() => {
-                    let (s, _i) = get_scan(v).unwrap();
-                    let a = *a as usize;
-                    let b = *b as usize;
-                    if b >= a {
-                        if let Some(part) = s.slice_chars(a, b - a) { Ok(Value::Str(part)) } else { Err(EvalError::TypeError) }
-                    } else {
-                        Err(EvalError::TypeError)
+            Value::Native {
+                arity: 3,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1], &args[2]) {
+                    (v, Value::Int(a), Value::Int(b)) if get_scan(v).is_some() => {
+                        let (s, _i) = get_scan(v).unwrap();
+                        let a = *a as usize;
+                        let b = *b as usize;
+                        if b >= a {
+                            if let Some(part) = s.slice_chars(a, b - a) {
+                                Ok(Value::Str(part))
+                            } else {
+                                Err(EvalError::TypeError)
+                            }
+                        } else {
+                            Err(EvalError::TypeError)
+                        }
                     }
-                }
-                _ => Err(EvalError::TypeError),
-            } },
+                    _ => Err(EvalError::TypeError),
+                },
+            },
         );
         builtins.insert("scan".into(), Value::Record(scan_ns));
         // unicode/codepoint namespace (Char conversions)
@@ -983,7 +1046,7 @@ impl Env {
             },
         );
         builtins.insert("unicode".into(), Value::Record(uni_ns));
-    e.vars.insert("Builtins".into(), Value::Record(builtins));
+        e.vars.insert("Builtins".into(), Value::Record(builtins));
 
         // Tuple/Record constructors used by parser sugar
         // Tuple sugar is now handled via special symbol '.,' directly; keep 'Tuple' for compatibility if needed.
@@ -1087,11 +1150,7 @@ impl Env {
                 arity: 1,
                 args: vec![],
                 f: |env, args| {
-                    Ok(if as_bool(env, &args[0])? {
-                        sym_false(env)
-                    } else {
-                        sym_true(env)
-                    })
+                    Ok(if as_bool(env, &args[0])? { sym_false(env) } else { sym_true(env) })
                 },
             },
         );
@@ -1109,11 +1168,7 @@ impl Env {
                     let branch = if cond { &args[1] } else { &args[2] };
                     match branch.clone() {
                         Value::Native { arity: 0, f, args } if args.is_empty() => f(env, &[]),
-                        Value::Closure {
-                            param,
-                            body,
-                            mut env,
-                        } => {
+                        Value::Closure { param, body, mut env } => {
                             // Pass Unit to closure via pattern binding
                             if let Some(bind) = match_pattern(&env, &param, &Value::Unit) {
                                 for (k, v) in bind {
@@ -1147,9 +1202,9 @@ fn to_str_like(env: &Env, v: &Value) -> String {
         Value::Unit => "()".into(),
         Value::Int(n) => n.to_string(),
         Value::Float(f) => f.to_string(),
-    Value::Bool(b) => b.to_string(),
-    Value::Str(s) => s.to_string(),
-    Value::Char(c) => char_literal_string(*c),
+        Value::Bool(b) => b.to_string(),
+        Value::Str(s) => s.to_string(),
+        Value::Char(c) => char_literal_string(*c),
         Value::Symbol(id) => env.symbol_name(*id),
         Value::Raised(b) => format!("^({})", to_str_like(env, b)),
         Value::Ctor { name, args } => {
@@ -1157,10 +1212,7 @@ fn to_str_like(env: &Env, v: &Value) -> String {
                 // print as tuple literal
                 format!(
                     "({})",
-                    args.iter()
-                        .map(|x| to_str_like(env, x))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    args.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
                 )
             } else if args.is_empty() {
                 name.clone()
@@ -1168,27 +1220,16 @@ fn to_str_like(env: &Env, v: &Value) -> String {
                 format!(
                     "{}({})",
                     name,
-                    args.iter()
-                        .map(|x| to_str_like(env, x))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    args.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
                 )
             }
         }
-        Value::List(xs) => format!(
-            "[{}]",
-            xs.iter()
-                .map(|x| to_str_like(env, x))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Value::Tuple(xs) => format!(
-            "({})",
-            xs.iter()
-                .map(|x| to_str_like(env, x))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
+        Value::List(xs) => {
+            format!("[{}]", xs.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", "))
+        }
+        Value::Tuple(xs) => {
+            format!("({})", xs.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", "))
+        }
         Value::Record(map) => {
             let inner = map
                 .iter()
@@ -1284,10 +1325,7 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 if name == ".," {
                     print!(
                         "({})",
-                        args.iter()
-                            .map(|x| to_str_like(env, x))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        args.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
                     );
                 } else if args.is_empty() {
                     print!("{}", name);
@@ -1295,10 +1333,7 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                     print!(
                         "{}({})",
                         name,
-                        args.iter()
-                            .map(|x| to_str_like(env, x))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        args.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
                     );
                 }
                 Ok(Value::Unit)
@@ -1306,20 +1341,14 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
             Value::List(xs) => {
                 print!(
                     "[{}]",
-                    xs.iter()
-                        .map(|x| to_str_like(env, x))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    xs.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
                 );
                 Ok(Value::Unit)
             }
             Value::Tuple(xs) => {
                 print!(
                     "({})",
-                    xs.iter()
-                        .map(|x| to_str_like(env, x))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    xs.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
                 );
                 Ok(Value::Unit)
             }
@@ -1383,10 +1412,7 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 if name == ".," {
                     println!(
                         "({})",
-                        args.iter()
-                            .map(|x| to_str_like(env, x))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        args.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
                     );
                 } else if args.is_empty() {
                     println!("{}", name);
@@ -1394,10 +1420,7 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                     println!(
                         "{}({})",
                         name,
-                        args.iter()
-                            .map(|x| to_str_like(env, x))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        args.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
                     );
                 }
                 Ok(Value::Unit)
@@ -1405,20 +1428,14 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
             Value::List(xs) => {
                 println!(
                     "[{}]",
-                    xs.iter()
-                        .map(|x| to_str_like(env, x))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    xs.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
                 );
                 Ok(Value::Unit)
             }
             Value::Tuple(xs) => {
                 println!(
                     "({})",
-                    xs.iter()
-                        .map(|x| to_str_like(env, x))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    xs.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
                 );
                 Ok(Value::Unit)
             }
@@ -1447,9 +1464,9 @@ fn v_equal(_env: &Env, a: &Value, b: &Value) -> bool {
         (Value::Unit, Value::Unit) => true,
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Float(x), Value::Float(y)) => x == y,
-    (Value::Bool(x), Value::Bool(y)) => x == y,
-    (Value::Str(x), Value::Str(y)) => x == y,
-    (Value::Char(x), Value::Char(y)) => x == y,
+        (Value::Bool(x), Value::Bool(y)) => x == y,
+        (Value::Str(x), Value::Str(y)) => x == y,
+        (Value::Char(x), Value::Char(y)) => x == y,
         (Value::Symbol(x), Value::Symbol(y)) => x == y,
         (Value::Ctor { name: na, args: aa }, Value::Ctor { name: nb, args: ab }) => {
             na == nb
@@ -1466,9 +1483,7 @@ fn v_equal(_env: &Env, a: &Value, b: &Value) -> bool {
             if xm.len() != ym.len() {
                 return false;
             }
-            xm.iter()
-                .zip(ym.iter())
-                .all(|((kx, vx), (ky, vy))| kx == ky && v_equal(_env, vx, vy))
+            xm.iter().zip(ym.iter()).all(|((kx, vx), (ky, vy))| kx == ky && v_equal(_env, vx, vy))
         }
         // Functions are not comparable structurally in this simple eq
         (Value::Native { .. }, Value::Native { .. }) => false,
@@ -1498,7 +1513,7 @@ fn match_pattern(
     }
     match &p.kind {
         PatternKind::Wildcard => Some(std::collections::HashMap::new()),
-    PatternKind::TypeBind { pat, .. } => match_pattern(env, pat, &v),
+        PatternKind::TypeBind { pat, .. } => match_pattern(env, pat, &v),
         PatternKind::Var(n) => {
             let mut m = std::collections::HashMap::new();
             m.insert(n.clone(), v.clone());
@@ -1677,24 +1692,16 @@ fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalError> 
             if name == ".," {
                 // First application: (., a) => Ctor { name='.,', args=[a] }
                 // Subsequent applications collect and eventually will be printed as Tuple-like.
-                Ok(Value::Ctor {
-                    name,
-                    args: vec![aval],
-                })
+                Ok(Value::Ctor { name, args: vec![aval] })
             } else {
-                if let Some(&k) = env
-                    .ctor_arity
-                    .get(&name)
-                    .or_else(|| env.ctor_arity.get(&format!(".{name}")))
+                if let Some(&k) =
+                    env.ctor_arity.get(&name).or_else(|| env.ctor_arity.get(&format!(".{name}")))
                 {
                     if k == 0 {
                         return Err(EvalError::TypeError);
                     }
                 }
-                Ok(Value::Ctor {
-                    name,
-                    args: vec![aval],
-                })
+                Ok(Value::Ctor { name, args: vec![aval] })
             }
         }
         Value::Ctor { name, mut args } => {
@@ -1703,10 +1710,8 @@ fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalError> 
                 // Never enforce arity for '.,'
                 Ok(Value::Ctor { name, args })
             } else {
-                if let Some(&k) = env
-                    .ctor_arity
-                    .get(&name)
-                    .or_else(|| env.ctor_arity.get(&format!(".{name}")))
+                if let Some(&k) =
+                    env.ctor_arity.get(&name).or_else(|| env.ctor_arity.get(&format!(".{name}")))
                 {
                     if args.len() > k {
                         return Err(EvalError::TypeError);
@@ -1730,11 +1735,7 @@ fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalError> 
                 Ok(res)
             }
         }
-        Value::Closure {
-            param,
-            body,
-            mut env,
-        } => {
+        Value::Closure { param, body, mut env } => {
             if let Some(bind) = match_pattern(&env, &param, &aval) {
                 for (k, v) in bind {
                     env.vars.insert(k, v);
@@ -1760,7 +1761,11 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(Some(a)) => format!("?{}", a),
             TypeExpr::Hole(opt) => {
-                if let Some(a) = opt { format!("?{}", a) } else { "?".into() }
+                if let Some(a) = opt {
+                    format!("?{}", a)
+                } else {
+                    "?".into()
+                }
             }
             TypeExpr::List(x) => format!("[{}]", print_type_expr(x)),
             TypeExpr::Tuple(xs) => {
@@ -1791,12 +1796,12 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
     }
     match &e.kind {
         ExprKind::Annot { ty: _, expr } => eval(env, expr),
-    ExprKind::TypeVal(ty) => Ok(Value::Str(env.intern_string(print_type_expr(ty)))),
+        ExprKind::TypeVal(ty) => Ok(Value::Str(env.intern_string(print_type_expr(ty)))),
         ExprKind::Unit => Ok(Value::Unit),
         ExprKind::Int(n) => Ok(Value::Int(*n)),
-    ExprKind::Str(s) => Ok(Value::Str(env.intern_string(s))),
+        ExprKind::Str(s) => Ok(Value::Str(env.intern_string(s))),
         ExprKind::Float(f) => Ok(Value::Float(*f)),
-    ExprKind::Char(c) => Ok(Value::Char(*c)),
+        ExprKind::Char(c) => Ok(Value::Char(*c)),
         ExprKind::LetGroup { bindings, body } => {
             // 遅延束縛により非関数の再帰もサポート
             let mut env2 = env.clone();
@@ -1806,10 +1811,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                 let state = std::rc::Rc::new(std::cell::RefCell::new(ThunkState::Unevaluated));
                 let whole = Value::Thunk {
                     state: state.clone(),
-                    kind: ThunkKind::Expr {
-                        expr: ex.clone(),
-                        env: env2.clone(),
-                    },
+                    kind: ThunkKind::Expr { expr: ex.clone(), env: env2.clone() },
                 };
                 whole_thunks.push((p.clone(), whole));
             }
@@ -1889,26 +1891,16 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             Ok(Value::Raised(Box::new(v)))
         }
         ExprKind::Ref(n) => {
-            let val = env
-                .vars
-                .get(n)
-                .cloned()
-                .ok_or_else(|| EvalError::Unbound(n.clone()))?;
+            let val = env.vars.get(n).cloned().ok_or_else(|| EvalError::Unbound(n.clone()))?;
             force_value(env, &val)
         }
         ExprKind::Symbol(s) => Ok(Value::Symbol(env.intern_symbol(s))),
-        ExprKind::Lambda { param, body } => Ok(Value::Closure {
-            param: param.clone(),
-            body: *body.clone(),
-            env: env.clone(),
-        }),
+        ExprKind::Lambda { param, body } => {
+            Ok(Value::Closure { param: param.clone(), body: *body.clone(), env: env.clone() })
+        }
         ExprKind::Apply { func, arg } => {
             // Special forms controlling effect-context
-            if let ExprKind::Apply {
-                func: seq_ref_expr,
-                arg: a_expr,
-            } = &func.kind
-            {
+            if let ExprKind::Apply { func: seq_ref_expr, arg: a_expr } = &func.kind {
                 if let ExprKind::Ref(seq_name) = &seq_ref_expr.kind {
                     if seq_name == "seq" {
                         let _ = eval(env, a_expr)?; // evaluate first argument
@@ -1926,11 +1918,15 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     if seq_name == "bind" {
                         // (~bind e k): run e, then apply k to its value under effect-context
                         let v = eval(env, a_expr)?;
-                        if let Value::Raised(_) = v { return Ok(v); }
+                        if let Value::Raised(_) = v {
+                            return Ok(v);
+                        }
                         let mut env2 = env.clone();
                         env2.in_effect_context = true;
                         let k = eval(&env2, arg)?;
-                        if let Value::Raised(_) = k { return Ok(k); }
+                        if let Value::Raised(_) = k {
+                            return Ok(k);
+                        }
                         return apply_value(&env2, k, v);
                     }
                 }
@@ -1940,8 +1936,13 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                 Ok(v) => v,
                 Err(err) => {
                     return Err(match err {
-                        EvalError::Traced { kind, mut spans } => { spans.push(func.span); EvalError::Traced { kind, spans } }
-                        other => EvalError::Traced { kind: Box::new(other), spans: vec![func.span] },
+                        EvalError::Traced { kind, mut spans } => {
+                            spans.push(func.span);
+                            EvalError::Traced { kind, spans }
+                        }
+                        other => {
+                            EvalError::Traced { kind: Box::new(other), spans: vec![func.span] }
+                        }
                     })
                 }
             };
@@ -1953,7 +1954,10 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                 Ok(v) => v,
                 Err(err) => {
                     return Err(match err {
-                        EvalError::Traced { kind, mut spans } => { spans.push(arg.span); EvalError::Traced { kind, spans } }
+                        EvalError::Traced { kind, mut spans } => {
+                            spans.push(arg.span);
+                            EvalError::Traced { kind, spans }
+                        }
                         other => EvalError::Traced { kind: Box::new(other), spans: vec![arg.span] },
                     })
                 }
@@ -1977,7 +1981,10 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         if let Some(v) = map.remove(&k) {
                             Ok(v)
                         } else {
-                            Err(EvalError::Traced { kind: Box::new(EvalError::TypeError), spans: vec![e.span] })
+                            Err(EvalError::Traced {
+                                kind: Box::new(EvalError::TypeError),
+                                spans: vec![e.span],
+                            })
                         }
                     } else {
                         Err(EvalError::TypeError)
@@ -1993,13 +2000,13 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         .or_else(|| env.ctor_arity.get(&format!(".{name}")))
                     {
                         if k == 0 {
-                            return Err(EvalError::Traced { kind: Box::new(EvalError::TypeError), spans: vec![e.span] });
+                            return Err(EvalError::Traced {
+                                kind: Box::new(EvalError::TypeError),
+                                spans: vec![e.span],
+                            });
                         }
                     }
-                    Ok(Value::Ctor {
-                        name,
-                        args: vec![a],
-                    })
+                    Ok(Value::Ctor { name, args: vec![a] })
                 }
                 Value::Ctor { name, mut args } => {
                     args.push(a);
@@ -2022,32 +2029,69 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     } else if args.len() == arity {
                         match f(env, &args) {
                             Ok(v) => Ok(v),
-                            Err(err) => Err(match err { EvalError::Traced { .. } => err, other => EvalError::Traced { kind: Box::new(other), spans: vec![e.span] } })
+                            Err(err) => Err(match err {
+                                EvalError::Traced { .. } => err,
+                                other => {
+                                    EvalError::Traced { kind: Box::new(other), spans: vec![e.span] }
+                                }
+                            }),
                         }
                     } else {
                         // over-application: apply result to remaining args
                         let (first_args, rest) = args.split_at(arity);
-                        let mut res = match f(env, first_args) { Ok(v) => v, Err(err) => return Err(match err { EvalError::Traced { .. } => err, other => EvalError::Traced { kind: Box::new(other), spans: vec![e.span] } }) };
+                        let mut res = match f(env, first_args) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                return Err(match err {
+                                    EvalError::Traced { .. } => err,
+                                    other => EvalError::Traced {
+                                        kind: Box::new(other),
+                                        spans: vec![e.span],
+                                    },
+                                })
+                            }
+                        };
                         for v in rest.iter().cloned() {
                             res = match res {
                                 Value::Native { arity, f, mut args } => {
                                     args.push(v);
                                     if args.len() == arity {
-                                        match f(env, &args) { Ok(x) => x, Err(err) => return Err(match err { EvalError::Traced { .. } => err, other => EvalError::Traced { kind: Box::new(other), spans: vec![e.span] } }) }
+                                        match f(env, &args) {
+                                            Ok(x) => x,
+                                            Err(err) => {
+                                                return Err(match err {
+                                                    EvalError::Traced { .. } => err,
+                                                    other => EvalError::Traced {
+                                                        kind: Box::new(other),
+                                                        spans: vec![e.span],
+                                                    },
+                                                })
+                                            }
+                                        }
                                     } else {
                                         Value::Native { arity, f, args }
                                     }
                                 }
-                                Value::Closure {
-                                    param,
-                                    body,
-                                    mut env,
-                                } => {
+                                Value::Closure { param, body, mut env } => {
                                     if let Some(bind) = match_pattern(&env, &param, &v) {
                                         for (k, vv) in bind {
                                             env.vars.insert(k, vv);
                                         }
-                                        match eval(&env, &body) { Ok(x) => x, Err(err) => return Err(match err { EvalError::Traced { kind, mut spans } => { spans.push(body.span); EvalError::Traced { kind, spans } }, other => EvalError::Traced { kind: Box::new(other), spans: vec![body.span] } }) }
+                                        match eval(&env, &body) {
+                                            Ok(x) => x,
+                                            Err(err) => {
+                                                return Err(match err {
+                                                    EvalError::Traced { kind, mut spans } => {
+                                                        spans.push(body.span);
+                                                        EvalError::Traced { kind, spans }
+                                                    }
+                                                    other => EvalError::Traced {
+                                                        kind: Box::new(other),
+                                                        spans: vec![body.span],
+                                                    },
+                                                })
+                                            }
+                                        }
                                     } else {
                                         Value::Raised(Box::new(v))
                                     }
@@ -2058,16 +2102,24 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         Ok(res)
                     }
                 }
-                Value::Closure {
-                    param,
-                    body,
-                    mut env,
-                } => {
+                Value::Closure { param, body, mut env } => {
                     if let Some(bind) = match_pattern(&env, &param, &a) {
                         for (k, v) in bind {
                             env.vars.insert(k, v);
                         }
-                        match eval(&env, &body) { Ok(v) => Ok(v), Err(err) => Err(match err { EvalError::Traced { kind, mut spans } => { spans.push(body.span); EvalError::Traced { kind, spans } }, other => EvalError::Traced { kind: Box::new(other), spans: vec![body.span] } }) }
+                        match eval(&env, &body) {
+                            Ok(v) => Ok(v),
+                            Err(err) => Err(match err {
+                                EvalError::Traced { kind, mut spans } => {
+                                    spans.push(body.span);
+                                    EvalError::Traced { kind, spans }
+                                }
+                                other => EvalError::Traced {
+                                    kind: Box::new(other),
+                                    spans: vec![body.span],
+                                },
+                            }),
+                        }
                     } else {
                         Ok(Value::Raised(Box::new(a)))
                     }
@@ -2078,41 +2130,23 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Block(inner) => eval(env, inner),
         ExprKind::AltLambda { left, right } => {
             // Desugar to closure: \x -> (~alt left right x)
-            let param = Pattern::new(
-                PatternKind::Var("x".into()),
-                lzscr_ast::span::Span::new(0, 0),
-            );
-            let alt_ref = Expr::new(
-                ExprKind::Ref("alt".into()),
-                lzscr_ast::span::Span::new(0, 0),
-            );
+            let param =
+                Pattern::new(PatternKind::Var("x".into()), lzscr_ast::span::Span::new(0, 0));
+            let alt_ref = Expr::new(ExprKind::Ref("alt".into()), lzscr_ast::span::Span::new(0, 0));
             let app1 = Expr::new(
-                ExprKind::Apply {
-                    func: Box::new(alt_ref),
-                    arg: left.clone(),
-                },
+                ExprKind::Apply { func: Box::new(alt_ref), arg: left.clone() },
                 lzscr_ast::span::Span::new(0, 0),
             );
             let app2 = Expr::new(
-                ExprKind::Apply {
-                    func: Box::new(app1),
-                    arg: right.clone(),
-                },
+                ExprKind::Apply { func: Box::new(app1), arg: right.clone() },
                 lzscr_ast::span::Span::new(0, 0),
             );
             let x_ref = Expr::new(ExprKind::Ref("x".into()), lzscr_ast::span::Span::new(0, 0));
             let body = Expr::new(
-                ExprKind::Apply {
-                    func: Box::new(app2),
-                    arg: Box::new(x_ref),
-                },
+                ExprKind::Apply { func: Box::new(app2), arg: Box::new(x_ref) },
                 lzscr_ast::span::Span::new(0, 0),
             );
-            Ok(Value::Closure {
-                param,
-                body,
-                env: env.clone(),
-            })
+            Ok(Value::Closure { param, body, env: env.clone() })
         }
         ExprKind::OrElse { left, right } => {
             // 指定仕様: LHS の評価結果は捨て、RHS の評価結果を返す。
@@ -2151,23 +2185,26 @@ mod tests {
             _ => panic!("Builtins missing"),
         };
         let (len_f, concat_f) = match string_ns.clone() {
-            Value::Record(m) => (
-                m.get("len").cloned().unwrap(),
-                m.get("concat").cloned().unwrap(),
-            ),
+            Value::Record(m) => (m.get("len").cloned().unwrap(), m.get("concat").cloned().unwrap()),
             _ => panic!("string ns not a record"),
         };
 
         let s = Value::Str(env.intern_string("hé😺llo"));
         // len = 6 (h é 😺 l l o)
         let v = apply_value(&env, len_f.clone(), s.clone()).unwrap();
-        match v { Value::Int(n) => assert_eq!(n, 6), _ => panic!() }
+        match v {
+            Value::Int(n) => assert_eq!(n, 6),
+            _ => panic!(),
+        }
 
         // concat("ab","c") = "abc"
         let v = apply_value(&env, concat_f.clone(), Value::Str(env.intern_string("ab")))
             .and_then(|f| apply_value(&env, f, Value::Str(env.intern_string("c"))))
             .unwrap();
-        match v { Value::Str(rs) => assert_eq!(rs.to_string(), "abc"), _ => panic!() }
+        match v {
+            Value::Str(rs) => assert_eq!(rs.to_string(), "abc"),
+            _ => panic!(),
+        }
     }
     fn int_expr(n: i64) -> Expr {
         Expr::new(ExprKind::Int(n), Span::new(0, 0))
@@ -2187,32 +2224,20 @@ mod tests {
         // Foo 1 2
         let foo_sym = sym_expr("Foo");
         let foo1 = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(foo_sym.clone()),
-                arg: Box::new(int_expr(1)),
-            },
+            ExprKind::Apply { func: Box::new(foo_sym.clone()), arg: Box::new(int_expr(1)) },
             Span::new(0, 0),
         );
         let foo12 = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(foo1),
-                arg: Box::new(int_expr(2)),
-            },
+            ExprKind::Apply { func: Box::new(foo1), arg: Box::new(int_expr(2)) },
             Span::new(0, 0),
         );
 
         let left_app = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(eq_ref),
-                arg: Box::new(foo12.clone()),
-            },
+            ExprKind::Apply { func: Box::new(eq_ref), arg: Box::new(foo12.clone()) },
             Span::new(0, 0),
         );
         let whole = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(left_app),
-                arg: Box::new(foo12),
-            },
+            ExprKind::Apply { func: Box::new(left_app), arg: Box::new(foo12) },
             Span::new(0, 0),
         );
 
@@ -2226,24 +2251,15 @@ mod tests {
         // Different tag
         let bar_sym = sym_expr("Bar");
         let bar1 = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(bar_sym),
-                arg: Box::new(int_expr(1)),
-            },
+            ExprKind::Apply { func: Box::new(bar_sym), arg: Box::new(int_expr(1)) },
             Span::new(0, 0),
         );
         let left_app = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(ref_expr("eq")),
-                arg: Box::new(bar1),
-            },
+            ExprKind::Apply { func: Box::new(ref_expr("eq")), arg: Box::new(bar1) },
             Span::new(0, 0),
         );
         let whole = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(left_app),
-                arg: Box::new(sym_expr("Foo")),
-            },
+            ExprKind::Apply { func: Box::new(left_app), arg: Box::new(sym_expr("Foo")) },
             Span::new(0, 0),
         );
         let env2 = Env::with_builtins();
@@ -2257,14 +2273,8 @@ mod tests {
     #[test]
     fn eval_let_group_basic() {
         // ( ~x = 1; ~x; ~y = 2; ) => 1
-        let x_pat = Pattern {
-            kind: PatternKind::Var("x".into()),
-            span: Span::new(0, 0),
-        };
-        let y_pat = Pattern {
-            kind: PatternKind::Var("y".into()),
-            span: Span::new(0, 0),
-        };
+        let x_pat = Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) };
+        let y_pat = Pattern { kind: PatternKind::Var("y".into()), span: Span::new(0, 0) };
         let e = Expr::new(
             ExprKind::LetGroup {
                 bindings: vec![
@@ -2290,17 +2300,11 @@ mod tests {
         let one = int_expr(1);
         let two = int_expr(2);
         let appl1 = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(add_ref),
-                arg: Box::new(one),
-            },
+            ExprKind::Apply { func: Box::new(add_ref), arg: Box::new(one) },
             Span::new(0, 0),
         );
         let appl2 = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(appl1),
-                arg: Box::new(two),
-            },
+            ExprKind::Apply { func: Box::new(appl1), arg: Box::new(two) },
             Span::new(0, 0),
         );
         let env = Env::with_builtins();
@@ -2317,20 +2321,14 @@ mod tests {
         let body = Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0));
         let lam = Expr::new(
             ExprKind::Lambda {
-                param: Pattern {
-                    kind: PatternKind::Var("x".into()),
-                    span: Span::new(0, 0),
-                },
+                param: Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
                 body: Box::new(body),
             },
             Span::new(0, 0),
         );
         let forty_two = int_expr(42);
         let appl = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(lam),
-                arg: Box::new(forty_two),
-            },
+            ExprKind::Apply { func: Box::new(lam), arg: Box::new(forty_two) },
             Span::new(0, 0),
         );
         let env = Env::with_builtins();
@@ -2347,10 +2345,7 @@ mod tests {
         let to_str = ref_expr("to_str");
         let five = int_expr(5);
         let appl = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(to_str),
-                arg: Box::new(five),
-            },
+            ExprKind::Apply { func: Box::new(to_str), arg: Box::new(five) },
             Span::new(0, 0),
         );
         let env = Env::with_builtins();
@@ -2368,47 +2363,26 @@ mod tests {
             kind: PatternKind::Ctor {
                 name: "Foo".into(),
                 args: vec![
-                    Pattern {
-                        kind: PatternKind::Var("x".into()),
-                        span: Span::new(0, 0),
-                    },
-                    Pattern {
-                        kind: PatternKind::Var("y".into()),
-                        span: Span::new(0, 0),
-                    },
+                    Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
+                    Pattern { kind: PatternKind::Var("y".into()), span: Span::new(0, 0) },
                 ],
             },
             span: Span::new(0, 0),
         };
         let body = Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0));
-        let lam = Expr::new(
-            ExprKind::Lambda {
-                param: pat,
-                body: Box::new(body),
-            },
-            Span::new(0, 0),
-        );
+        let lam = Expr::new(ExprKind::Lambda { param: pat, body: Box::new(body) }, Span::new(0, 0));
         // Foo 1 2
         let foo = Expr::new(ExprKind::Symbol("Foo".into()), Span::new(0, 0));
         let a1 = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(foo),
-                arg: Box::new(int_expr(1)),
-            },
+            ExprKind::Apply { func: Box::new(foo), arg: Box::new(int_expr(1)) },
             Span::new(0, 0),
         );
         let foo12 = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(a1),
-                arg: Box::new(int_expr(2)),
-            },
+            ExprKind::Apply { func: Box::new(a1), arg: Box::new(int_expr(2)) },
             Span::new(0, 0),
         );
         let appl = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(lam),
-                arg: Box::new(foo12),
-            },
+            ExprKind::Apply { func: Box::new(lam), arg: Box::new(foo12) },
             Span::new(0, 0),
         );
         let v = eval(&Env::with_builtins(), &appl).unwrap();
@@ -2424,34 +2398,19 @@ mod tests {
         let pat = Pattern {
             kind: PatternKind::Ctor {
                 name: "Foo".into(),
-                args: vec![Pattern {
-                    kind: PatternKind::Var("x".into()),
-                    span: Span::new(0, 0),
-                }],
+                args: vec![Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) }],
             },
             span: Span::new(0, 0),
         };
         let body = Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0));
-        let lam = Expr::new(
-            ExprKind::Lambda {
-                param: pat,
-                body: Box::new(body),
-            },
-            Span::new(0, 0),
-        );
+        let lam = Expr::new(ExprKind::Lambda { param: pat, body: Box::new(body) }, Span::new(0, 0));
         let bar = Expr::new(ExprKind::Symbol("Bar".into()), Span::new(0, 0));
         let bar1 = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(bar),
-                arg: Box::new(int_expr(1)),
-            },
+            ExprKind::Apply { func: Box::new(bar), arg: Box::new(int_expr(1)) },
             Span::new(0, 0),
         );
         let appl = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(lam),
-                arg: Box::new(bar1),
-            },
+            ExprKind::Apply { func: Box::new(lam), arg: Box::new(bar1) },
             Span::new(0, 0),
         );
         let v = eval(&Env::with_builtins(), &appl).unwrap();
@@ -2478,10 +2437,7 @@ mod tests {
             Span::new(0, 0),
         );
         let call = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(eff),
-                arg: Box::new(str_expr("x")),
-            },
+            ExprKind::Apply { func: Box::new(eff), arg: Box::new(str_expr("x")) },
             Span::new(0, 0),
         );
         let env = Env::with_builtins();
@@ -2496,14 +2452,8 @@ mod tests {
             ExprKind::Lambda {
                 param: Pattern {
                     kind: PatternKind::List(vec![
-                        Pattern {
-                            kind: PatternKind::Var("x".into()),
-                            span: Span::new(0, 0),
-                        },
-                        Pattern {
-                            kind: PatternKind::Var("y".into()),
-                            span: Span::new(0, 0),
-                        },
+                        Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
+                        Pattern { kind: PatternKind::Var("y".into()), span: Span::new(0, 0) },
                     ]),
                     span: Span::new(0, 0),
                 },
@@ -2511,17 +2461,9 @@ mod tests {
             },
             Span::new(0, 0),
         );
-        let arg = Expr::new(
-            ExprKind::List(vec![int_expr(10), int_expr(20)]),
-            Span::new(0, 0),
-        );
-        let appl = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(lam),
-                arg: Box::new(arg),
-            },
-            Span::new(0, 0),
-        );
+        let arg = Expr::new(ExprKind::List(vec![int_expr(10), int_expr(20)]), Span::new(0, 0));
+        let appl =
+            Expr::new(ExprKind::Apply { func: Box::new(lam), arg: Box::new(arg) }, Span::new(0, 0));
         let v = eval(&Env::with_builtins(), &appl).unwrap();
         match v {
             Value::Int(n) => assert_eq!(n, 10),
@@ -2551,17 +2493,10 @@ mod tests {
             },
             Span::new(0, 0),
         );
-        let arg = Expr::new(
-            ExprKind::List(vec![int_expr(7), int_expr(8), int_expr(9)]),
-            Span::new(0, 0),
-        );
-        let appl = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(lam),
-                arg: Box::new(arg),
-            },
-            Span::new(0, 0),
-        );
+        let arg =
+            Expr::new(ExprKind::List(vec![int_expr(7), int_expr(8), int_expr(9)]), Span::new(0, 0));
+        let appl =
+            Expr::new(ExprKind::Apply { func: Box::new(lam), arg: Box::new(arg) }, Span::new(0, 0));
         let v = eval(&Env::with_builtins(), &appl).unwrap();
         match v {
             Value::Int(n) => assert_eq!(n, 7),
@@ -2579,10 +2514,7 @@ mod tests {
             Span::new(0, 0),
         );
         let call = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(eff),
-                arg: Box::new(str_expr("x")),
-            },
+            ExprKind::Apply { func: Box::new(eff), arg: Box::new(str_expr("x")) },
             Span::new(0, 0),
         );
         let env = Env::with_builtins();
@@ -2608,24 +2540,15 @@ mod tests {
             Span::new(0, 0),
         );
         let call = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(eff),
-                arg: Box::new(str_expr("x")),
-            },
+            ExprKind::Apply { func: Box::new(eff), arg: Box::new(str_expr("x")) },
             Span::new(0, 0),
         );
         let first = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(seq_ref),
-                arg: Box::new(unit),
-            },
+            ExprKind::Apply { func: Box::new(seq_ref), arg: Box::new(unit) },
             Span::new(0, 0),
         );
         let expr = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(first),
-                arg: Box::new(call),
-            },
+            ExprKind::Apply { func: Box::new(first), arg: Box::new(call) },
             Span::new(0, 0),
         );
         let mut env = Env::with_builtins();
@@ -2637,10 +2560,8 @@ mod tests {
     #[test]
     fn eval_list_literal() {
         let env = Env::with_builtins();
-        let e = Expr::new(
-            ExprKind::List(vec![int_expr(1), int_expr(2), int_expr(3)]),
-            Span::new(0, 0),
-        );
+        let e =
+            Expr::new(ExprKind::List(vec![int_expr(1), int_expr(2), int_expr(3)]), Span::new(0, 0));
         let v = eval(&env, &e).unwrap();
         match v {
             Value::List(xs) => assert_eq!(xs.len(), 3),
@@ -2654,21 +2575,12 @@ mod tests {
         let env = Env::with_builtins();
         let cons_ref = ref_expr("cons");
         let app1 = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(cons_ref),
-                arg: Box::new(int_expr(1)),
-            },
+            ExprKind::Apply { func: Box::new(cons_ref), arg: Box::new(int_expr(1)) },
             Span::new(0, 0),
         );
-        let list = Expr::new(
-            ExprKind::List(vec![int_expr(2), int_expr(3)]),
-            Span::new(0, 0),
-        );
+        let list = Expr::new(ExprKind::List(vec![int_expr(2), int_expr(3)]), Span::new(0, 0));
         let whole = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(app1),
-                arg: Box::new(list),
-            },
+            ExprKind::Apply { func: Box::new(app1), arg: Box::new(list) },
             Span::new(0, 0),
         );
         let v = eval(&env, &whole).unwrap();

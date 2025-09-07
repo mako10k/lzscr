@@ -1,4 +1,6 @@
-use lzscr_preast::{preast_to_source, preast_to_source_with_opts, to_preast, FormatOpts as PreFormatOpts};
+use lzscr_preast::{
+    preast_to_source, preast_to_source_with_opts, to_preast, FormatOpts as PreFormatOpts,
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -43,19 +45,22 @@ pub fn format_file_source(src: &str) -> Result<String, FormatError> {
     // naive: just drop leading '(' and trailing ')' if present in tokenization
     let mut out = preast_to_source(&pre);
     if out.starts_with('(') && out.ends_with(')') {
-        out = out[1..out.len()-1].to_string();
+        out = out[1..out.len() - 1].to_string();
     }
     Ok(out)
 }
 
 /// File-like formatting with options.
-pub fn format_file_source_with_options(src: &str, opts: FormatOptions) -> Result<String, FormatError> {
+pub fn format_file_source_with_options(
+    src: &str,
+    opts: FormatOptions,
+) -> Result<String, FormatError> {
     let wrapped = format!("({})", src);
     let pre = to_preast(&wrapped).map_err(|e| FormatError::Parse(e.to_string()))?;
     let p = PreFormatOpts { indent: opts.indent, max_width: opts.max_width };
     let mut out = preast_to_source_with_opts(&pre, &p);
     if out.starts_with('(') && out.ends_with(')') {
-        out = out[1..out.len()-1].to_string();
+        out = out[1..out.len() - 1].to_string();
     }
     Ok(out)
 }
@@ -68,7 +73,7 @@ mod tests {
     fn formats_add() {
         let src = "1 + 2 * 3";
         let out = format_source(src).unwrap();
-    // expect normalized spacing and original infix preserved
-    assert_eq!(out, "1 + 2 * 3");
+        // expect normalized spacing and original infix preserved
+        assert_eq!(out, "1 + 2 * 3");
     }
 }
