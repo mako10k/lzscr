@@ -884,7 +884,9 @@ pub fn analyze_unused_let_bindings(expr: &Expr) -> Vec<UnusedLet> {
         match &p.kind {
             PatternKind::Var(n) => n == name,
             PatternKind::TypeBind { pat, .. } => binds_name(pat, name),
-            PatternKind::Tuple(xs) | PatternKind::List(xs) => xs.iter().any(|x| binds_name(x, name)),
+            PatternKind::Tuple(xs) | PatternKind::List(xs) => {
+                xs.iter().any(|x| binds_name(x, name))
+            }
             PatternKind::Record(fs) => fs.iter().any(|(_, v)| binds_name(v, name)),
             PatternKind::Ctor { args, .. } => args.iter().any(|a| binds_name(a, name)),
             PatternKind::Cons(h, t) => binds_name(h, name) || binds_name(t, name),

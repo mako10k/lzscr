@@ -757,7 +757,7 @@ impl Env {
         // scan namespace: functional scanner over UTF-8 string (char-index based)
         let mut scan_ns: BTreeMap<String, Value> = BTreeMap::new();
         // Helpers to extract scan record fields
-    fn get_scan(v: &Value) -> Option<(&RtStr, usize)> {
+        fn get_scan(v: &Value) -> Option<(&RtStr, usize)> {
             if let Value::Record(m) = v {
                 let s = m.get("s");
                 let i = m.get("i");

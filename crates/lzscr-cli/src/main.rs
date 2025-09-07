@@ -515,7 +515,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "unused-let: name={} binding_span=({},{})",
                         u.name, u.binding_span.offset, u.binding_span.len
                     );
-                    let block = src_reg.format_span_block(u.binding_span.offset, u.binding_span.len);
+                    let block =
+                        src_reg.format_span_block(u.binding_span.offset, u.binding_span.len);
                     eprintln!("{}", block);
                 }
                 for c in &lc {
