@@ -190,6 +190,31 @@ impl TvGen {
     }
 }
 
+// ---------- TypeDef frames (ctor templates from % declarations) ----------
+
+type TypeDefsFrame = HashMap<String, Vec<TypeExpr>>; // tag -> payload type templates (AST TypeExpr)
+
+fn build_typedefs_frame(decls: &[TypeDecl]) -> TypeDefsFrame {
+    let mut m: TypeDefsFrame = HashMap::new();
+    for d in decls {
+        match &d.body {
+            TypeDefBody::Sum(alts) => {
+                for (tag, args) in alts {
+                    m.insert(tag.clone(), args.clone());
+                }
+            }
+        }
+    }
+    m
+}
+
+fn typedefs_lookup_ctor<'a>(ctx: &'a InferCtx, tag: &str) -> Option<&'a Vec<TypeExpr>> {
+    for fr in ctx.typedefs.iter().rev() {
+        if let Some(v) = fr.get(tag) { return Some(v); }
+    }
+    None
+}
+
 // ---------- Errors ----------
 
 #[derive(thiserror::Error, Debug)]
@@ -390,7 +415,7 @@ struct PatInfo {
     subst: Subst,
 }
 
-fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatInfo, TypeError> {
+fn infer_pattern(ctx: &mut InferCtx, pat: &Pattern, scrutinee: &Type) -> Result<PatInfo, TypeError> {
     match &pat.kind {
         PatternKind::Wildcard => Ok(PatInfo::default()),
         PatternKind::Var(n) => {
@@ -418,37 +443,37 @@ fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatI
             let mut s = Subst::new();
             let mut tys = Vec::with_capacity(xs.len());
             for _ in xs {
-                tys.push(tv.fresh());
+                tys.push(ctx.tv.fresh());
             }
             let tup = Type::Tuple(tys.clone());
             let s0 = unify(&scrutinee.apply(&s), &tup)?;
             s = s0.compose(s);
             let mut binds = vec![];
             for (p, t_elem) in xs.iter().zip(tys.into_iter()) {
-                let pi = infer_pattern(tv, p, &t_elem.apply(&s))?;
+                let pi = infer_pattern(ctx, p, &t_elem.apply(&s))?;
                 s = pi.subst.compose(s);
                 binds.extend(pi.bindings);
             }
             Ok(PatInfo { bindings: binds, subst: s })
         }
         PatternKind::List(items) => {
-            let a = tv.fresh();
+            let a = ctx.tv.fresh();
             let mut s = unify(scrutinee, &Type::List(Box::new(a.clone())))?;
             let mut binds = vec![];
             for p in items {
-                let pi = infer_pattern(tv, p, &a.apply(&s))?;
+                let pi = infer_pattern(ctx, p, &a.apply(&s))?;
                 s = pi.subst.compose(s);
                 binds.extend(pi.bindings);
             }
             Ok(PatInfo { bindings: binds, subst: s })
         }
         PatternKind::Cons(h, t) => {
-            let a = tv.fresh();
+            let a = ctx.tv.fresh();
             let s0 = unify(scrutinee, &Type::List(Box::new(a.clone())))?;
             let mut s = s0;
-            let ph = infer_pattern(tv, h, &a.apply(&s))?;
+            let ph = infer_pattern(ctx, h, &a.apply(&s))?;
             s = ph.subst.compose(s);
-            let pt = infer_pattern(tv, t, &Type::List(Box::new(a.apply(&s))))?;
+            let pt = infer_pattern(ctx, t, &Type::List(Box::new(a.apply(&s))))?;
             s = pt.subst.compose(s);
             let mut binds = ph.bindings;
             binds.extend(pt.bindings);
@@ -457,26 +482,38 @@ fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatI
         PatternKind::Record(fields) => {
             let mut want = BTreeMap::new();
             for (k, _) in fields {
-                want.insert(k.clone(), tv.fresh());
+                want.insert(k.clone(), ctx.tv.fresh());
             }
             let s0 = unify(scrutinee, &Type::Record(want.clone()))?;
             let mut s = s0;
             let mut binds = vec![];
             for (k, p) in fields {
                 let tfield = want.get(k).unwrap().apply(&s);
-                let pi = infer_pattern(tv, p, &tfield)?;
+                let pi = infer_pattern(ctx, p, &tfield)?;
                 s = pi.subst.compose(s);
                 binds.extend(pi.bindings);
             }
             Ok(PatInfo { bindings: binds, subst: s })
         }
         PatternKind::Ctor { name, args } => {
-            let payload: Vec<Type> = (0..args.len()).map(|_| tv.fresh()).collect();
+            let payload: Vec<Type> = if let Some(tmpls) = typedefs_lookup_ctor(ctx, name) {
+                if tmpls.len() == args.len() {
+                    // Clone templates to drop immutable borrow of ctx before mutably borrowing ctx.tv
+                    let tmpls_vec = tmpls.clone();
+                    let mut out = Vec::with_capacity(tmpls_vec.len());
+                    for te in tmpls_vec.iter() {
+                        out.push(conv_typeexpr_fresh(&mut ctx.tv, te));
+                    }
+                    out
+                } else {
+                    (0..args.len()).map(|_| ctx.tv.fresh()).collect()
+                }
+            } else { (0..args.len()).map(|_| ctx.tv.fresh()).collect() };
             let want = Type::Ctor { tag: name.clone(), payload: payload.clone() };
             let mut s = unify(scrutinee, &want)?;
             let mut binds = vec![];
             for (p, ta) in args.iter().zip(payload.into_iter()) {
-                let pi = infer_pattern(tv, p, &ta.apply(&s))?;
+                let pi = infer_pattern(ctx, p, &ta.apply(&s))?;
                 s = pi.subst.compose(s);
                 binds.extend(pi.bindings);
             }
@@ -488,15 +525,15 @@ fn infer_pattern(tv: &mut TvGen, pat: &Pattern, scrutinee: &Type) -> Result<PatI
             Ok(PatInfo { bindings: vec![], subst: s })
         }
         PatternKind::As(a, b) => {
-            let pa = infer_pattern(tv, a, scrutinee)?;
-            let pb = infer_pattern(tv, b, &scrutinee.apply(&pa.subst))?;
+            let pa = infer_pattern(ctx, a, scrutinee)?;
+            let pb = infer_pattern(ctx, b, &scrutinee.apply(&pa.subst))?;
             let mut binds = pa.bindings;
             binds.extend(pb.bindings);
             Ok(PatInfo { bindings: binds, subst: pb.subst.compose(pa.subst) })
         }
         PatternKind::TypeBind { pat, .. } => {
             // Transparent for pattern typing; scoping handled by callers (lambda/let/alt-lambda)
-            infer_pattern(tv, pat, scrutinee)
+            infer_pattern(ctx, pat, scrutinee)
         }
     }
 }
@@ -507,6 +544,7 @@ struct InferCtx {
     tv: TvGen,
     env: TypeEnv,
     tyvars: Vec<HashMap<String, TvId>>, // stack of frames; lookup is from last to first
+    typedefs: Vec<TypeDefsFrame>,       // stack of ctor templates from % declarations
 }
 
 fn lookup_tyvar(ctx: &InferCtx, name: &str) -> Option<TvId> {
@@ -541,6 +579,33 @@ fn push_tyvars_from_pattern<'a>(ctx: &mut InferCtx, p: &'a Pattern) -> (&'a Patt
 fn pop_tyvars(ctx: &mut InferCtx, n: usize) {
     for _ in 0..n {
         let _ = ctx.tyvars.pop();
+    }
+}
+
+// Convert an AST TypeExpr coming from a %type declaration payload into a fresh Type.
+// All type variables are instantiated to fresh Type::Var; holes are treated as fresh as well.
+fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
+    match te {
+        TypeExpr::Unit => Type::Unit,
+        TypeExpr::Int => Type::Int,
+        TypeExpr::Float => Type::Float,
+        TypeExpr::Bool => Type::Bool,
+        TypeExpr::Str => Type::Str,
+        TypeExpr::Char => Type::Char,
+        TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr_fresh(tv, t))),
+        TypeExpr::Tuple(xs) => Type::Tuple(xs.iter().map(|t| conv_typeexpr_fresh(tv, t)).collect()),
+        TypeExpr::Record(fs) => {
+            let mut m = BTreeMap::new();
+            for (k, v) in fs { m.insert(k.clone(), conv_typeexpr_fresh(tv, v)); }
+            Type::Record(m)
+        }
+        TypeExpr::Fun(a, b) => Type::fun(conv_typeexpr_fresh(tv, a), conv_typeexpr_fresh(tv, b)),
+        TypeExpr::Ctor { tag, args } => {
+            let payload = args.iter().map(|t| conv_typeexpr_fresh(tv, t)).collect();
+            Type::Ctor { tag: tag.clone(), payload }
+        }
+        TypeExpr::Var(_) => tv.fresh(),
+        TypeExpr::Hole(_) => tv.fresh(),
     }
 }
 
@@ -635,7 +700,7 @@ fn infer_expr(
             // Handle pattern-level type binders: push frames while inferring param and body
             let (p_core, pushed) = push_tyvars_from_pattern(ctx, param);
             let a = ctx.tv.fresh();
-            let pi = infer_pattern(&mut ctx.tv, p_core, &a)?;
+            let pi = infer_pattern(ctx, p_core, &a)?;
             let mut env2 = ctx.env.clone();
             for (n, t) in &pi.bindings {
                 env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
@@ -740,12 +805,17 @@ fn infer_expr(
             }
             Ok((Type::List(Box::new(a.apply(&s))), s))
         }
-    ExprKind::LetGroup { bindings, body, .. } => {
+    ExprKind::LetGroup { type_decls, bindings, body, .. } => {
             // Recursive let-group inference (Algorithm W style for letrec):
             // 1) Create monomorphic assumptions for each binder in all patterns using fresh type vars.
             // 2) Infer each RHS under env' = env0 + assumptions.
             // 3) Unify RHS type with pattern-scrutinee and update env' entries with generalized types.
             let env0 = ctx.env.clone();
+            // Push typedefs frame for ctor templates declared in this group
+            let pushed_typedefs = if !type_decls.is_empty() {
+                let fr = build_typedefs_frame(type_decls);
+                if !fr.is_empty() { ctx.typedefs.push(fr); true } else { false }
+            } else { false };
             // Precompute pattern cores, pushed frames, scrutinee vars, and pattern infos
             struct PreBind {
                 _p_core: Pattern,
@@ -759,7 +829,7 @@ fn infer_expr(
             for (p, _ex) in bindings.iter() {
                 let (p_core, pushed) = push_tyvars_from_pattern(ctx, p);
                 let a = ctx.tv.fresh();
-                let pi = infer_pattern(&mut ctx.tv, p_core, &a)?;
+                let pi = infer_pattern(ctx, p_core, &a)?;
                 // Insert monomorphic placeholders for each bound name
                 for (n, t) in &pi.bindings {
                     env_assume.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
@@ -788,6 +858,7 @@ fn infer_expr(
             // Infer body under finalized environment
             let saved = std::mem::replace(&mut ctx.env, env_final);
             let res = infer_expr(ctx, body, allow_effects);
+            if pushed_typedefs { let _ = ctx.typedefs.pop(); }
             ctx.env = saved;
             res
         }
@@ -848,7 +919,7 @@ fn infer_expr(
             // Left branch
             match &pl_core.kind {
                 PatternKind::Wildcard => {
-                    let pi = infer_pattern(&mut ctx.tv, pl_core, &param_ty.apply(&s_all))?;
+                    let pi = infer_pattern(ctx, pl_core, &param_ty.apply(&s_all))?;
                     // Extend env with pattern bindings for the body
                     let mut env2 = ctx.env.clone();
                     for (n, t) in &pi.bindings {
@@ -871,7 +942,7 @@ fn infer_expr(
                     }
                     variants.push((name.clone(), payload.clone()));
                     let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
-                    let pi = infer_pattern(&mut ctx.tv, pl_core, &scr.apply(&s_all))?;
+                    let pi = infer_pattern(ctx, pl_core, &scr.apply(&s_all))?;
                     let mut env2 = ctx.env.clone();
                     for (n, t) in &pi.bindings {
                         env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
@@ -892,7 +963,7 @@ fn infer_expr(
                     }
                     variants.push((name.clone(), vec![]));
                     let scr = Type::Ctor { tag: name.clone(), payload: vec![] };
-                    let pi = infer_pattern(&mut ctx.tv, pl_core, &scr.apply(&s_all))?;
+                    let pi = infer_pattern(ctx, pl_core, &scr.apply(&s_all))?;
                     let mut env2 = ctx.env.clone();
                     for (n, t) in &pi.bindings {
                         env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
@@ -907,7 +978,7 @@ fn infer_expr(
                 }
                 // Other structural patterns (list/tuple/record/cons/etc.)
                 _ => {
-                    let pi = infer_pattern(&mut ctx.tv, pl_core, &param_ty.apply(&s_all))?;
+                    let pi = infer_pattern(ctx, pl_core, &param_ty.apply(&s_all))?;
                     let mut env2 = ctx.env.clone();
                     for (n, t) in &pi.bindings {
                         env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
@@ -925,7 +996,7 @@ fn infer_expr(
             // Right branch
             match &pr_core.kind {
                 PatternKind::Wildcard => {
-                    let pi = infer_pattern(&mut ctx.tv, pr_core, &param_ty.apply(&s_all))?;
+                    let pi = infer_pattern(ctx, pr_core, &param_ty.apply(&s_all))?;
                     let mut env2 = ctx.env.clone();
                     for (n, t) in &pi.bindings {
                         env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
@@ -947,7 +1018,7 @@ fn infer_expr(
                     }
                     variants.push((name.clone(), payload.clone()));
                     let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
-                    let pi = infer_pattern(&mut ctx.tv, pr_core, &scr.apply(&s_all))?;
+                    let pi = infer_pattern(ctx, pr_core, &scr.apply(&s_all))?;
                     let mut env2 = ctx.env.clone();
                     for (n, t) in &pi.bindings {
                         env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
@@ -968,7 +1039,7 @@ fn infer_expr(
                     }
                     variants.push((name.clone(), vec![]));
                     let scr = Type::Ctor { tag: name.clone(), payload: vec![] };
-                    let pi = infer_pattern(&mut ctx.tv, pr_core, &scr.apply(&s_all))?;
+                    let pi = infer_pattern(ctx, pr_core, &scr.apply(&s_all))?;
                     let mut env2 = ctx.env.clone();
                     for (n, t) in &pi.bindings {
                         env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
@@ -982,7 +1053,7 @@ fn infer_expr(
                     param_ty = param_ty.apply(&s_all);
                 }
                 _ => {
-                    let pi = infer_pattern(&mut ctx.tv, pr_core, &param_ty.apply(&s_all))?;
+                    let pi = infer_pattern(ctx, pr_core, &param_ty.apply(&s_all))?;
                     let mut env2 = ctx.env.clone();
                     for (n, t) in &pi.bindings {
                         env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
@@ -1067,7 +1138,7 @@ pub mod api {
 
     pub fn infer_program(src: &str) -> Result<String, String> {
         let ast = parse_expr(src).map_err(|e| format!("parse error: {e}"))?;
-        let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![] };
+    let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![], typedefs: vec![] };
         match infer_expr(&mut ctx, &ast, false) {
             Ok((t, _s)) => Ok(pp_type(&t)),
             Err(e) => Err(format!("{e}")),
@@ -1076,7 +1147,7 @@ pub mod api {
 
     // Prefer this from tools that already have an AST with precise spans (e.g., CLI after ~require expansion).
     pub fn infer_ast(ast: &Expr) -> Result<String, super::TypeError> {
-        let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![] };
+    let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![], typedefs: vec![] };
         match infer_expr(&mut ctx, ast, false) {
             Ok((t, _s)) => Ok(pp_type(&t)),
             Err(e) => Err(e),
