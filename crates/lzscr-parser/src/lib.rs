@@ -691,7 +691,11 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     }
                 }
 
-                // Try let-group first, with backtracking fallback to original tuple/group
+                // Try let-group first, with backtracking fallback to original tuple/group.
+                // Definition: Inside parentheses, parse zero-or-more leading bindings, then a body,
+                // optionally a semicolon and zero-or-more trailing bindings. If the total number of
+                // bindings (leading + trailing) is at least 1 and a closing ')' follows, commit as
+                // a LetGroup; otherwise, treat the whole as a grouped expression or tuple.
                 let save_i = *i;
                 // Parse zero-or-more leading bindings: (Pat = Expr;)* using a lookahead index
                 let mut it = *i;
@@ -1285,6 +1289,34 @@ mod tests {
                 }
             }
             other => panic!("expected LetGroup, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn group_without_bindings_is_plain_group_or_unit() {
+        // Simple grouped body without bindings should not be a LetGroup
+        let r = parse_expr("(1)").unwrap();
+        match r.kind {
+            ExprKind::Int(1) => {}
+            _ => panic!("expected grouped Int to parse as Int (not LetGroup)"),
+        }
+    }
+
+    #[test]
+    fn letgroup_with_leading_bindings() {
+        let r = parse_expr("(~x = 1; ~add ~x 2)").unwrap();
+        match r.kind {
+            ExprKind::LetGroup { .. } => {}
+            _ => panic!("expected LetGroup with leading bindings"),
+        }
+    }
+
+    #[test]
+    fn letgroup_with_trailing_bindings() {
+        let r = parse_expr("(42; ~x = 1;)").unwrap();
+        match r.kind {
+            ExprKind::LetGroup { .. } => {}
+            _ => panic!("expected LetGroup with trailing bindings"),
         }
     }
 }

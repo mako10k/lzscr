@@ -53,7 +53,10 @@ The implementation uses a procedural parser with a PRE-AST front (chumsky as a h
   - Application: `(f x)` (left-associative; usually prefix-application style without parens)
   - Block: `{ expr }`
   - List/tuple/record (syntactic sugar): implemented (see syntax.md)
-  - Let group: `let { pat = expr; ... } in body` (internal form; in source, a sequence of top-level `~x = e;` plus a final expression)
+  - Let group: a parenthesized group with one or more bindings around a body
+    - Concrete source form: `( [Pat = Expr;]* Body [; [Pat = Expr;]*] )`
+    - Parse rule: if there is at least one binding in total (leading + trailing ≥ 1), the whole becomes a LetGroup; otherwise it is parsed as a plain grouped expression `(Body)`.
+    - Top-level convenience: the CLI wraps file input with parentheses. Therefore, “a sequence of top-level `~x = e;` followed by a final expression” becomes a LetGroup automatically.
   - Effect sugar: `!name` → `(~effects .name)`, `!{ ... }` → `chain/bind` chaining (do-notation)
   - Exceptions: `^(expr)` (raise) and caret handler `expr ^| handler`
   - Alternative lambda composition: `lam1 | lam2` (try right when the left does not match)
@@ -66,7 +69,7 @@ The implementation uses a procedural parser with a PRE-AST front (chumsky as a h
   - Tuples/lists: `(p1, p2, ...)`, `[p1, p2, ...]`, cons `p : ps` (right-associative)
   - Records: `{ k: p, ... }` (keys are identifiers)
   - As-pattern: `p1 @ p2`
-  - Type bind: `%{ 'a, ?x } p` (accepted by the parser; used by typechecker/validator)
+  - Type bind: `%{ %a, ?x } p` (also accepts `'a` form; used by typechecker/validator)
 
 - Infix operators and precedence (excerpt): `* /` > `+ -` > comparisons `< <= > >=` > equality `== !=` (see syntax.md for details).
 
@@ -130,11 +133,13 @@ Note: Always use `~` on pattern variables (write `~x`, not `x`).
 - Pattern binding:
   - On success, binds into pre-allocated slots; on failure, produces a caret-style error that propagates.
 
-- Representative builtins (Bool is temporarily represented as `Symbol("True"|"False")` in some places):
+- Representative builtins (Bool-like results are represented as `Symbol("True"|"False")`):
   - `to_str : a -> Str` (rendering)
   - `add/sub/mul/div : Int -> Int -> Int` (divide by zero is an error)
   - `fadd/fsub/fmul/fdiv : Float -> Float -> Float`
-  - `eq/ne/lt/le/gt/ge : same -> same -> Bool` (supported for a subset of types)
+  - `eq/ne/lt/le/gt/ge : same -> same -> Bool-like`
+  - logical ops: `and/or : Bool-like -> Bool-like -> Bool-like`, `not : Bool-like -> Bool-like`
+  - conditional: `if : Bool-like -> a -> a -> a`
   - `seq : a -> b -> b`, `chain : m -> (Unit->k) -> k`, `bind : m -> (x->k) -> k`
   - `effects .print/.println : Str|basic -> Unit`
   - Namespaces `Builtins.string/char/math/scan/unicode` (see API below)
@@ -163,7 +168,9 @@ Type hints below are informal (to be aligned with the HM type inference). Bool n
   - `to_str : a -> Str`
   - `add, sub, mul, div : Int -> Int -> Int`
   - `fadd, fsub, fmul, fdiv : Float -> Float -> Float`
-  - `eq, ne, lt, le, gt, ge : t -> t -> Bool` (for supported `t`)
+  - `eq, ne, lt, le, gt, ge : t -> t -> Bool-like` (returns `Symbol("True"|"False")`)
+  - `and, or : Bool-like -> Bool-like -> Bool-like`, `not : Bool-like -> Bool-like`
+  - `if : Bool-like -> a -> a -> a`
   - `seq : a -> b -> b`, `chain : m -> (Unit -> k) -> k`, `bind : m -> (x -> k) -> k`
   - `effects .print : Str|basic -> Unit`, `effects .println : Str|basic -> Unit`
 
@@ -174,20 +181,21 @@ Type hints below are informal (to be aligned with the HM type inference). Bool n
   - `char_at : Str -> Int -> .Some(Char) | .None`
 
 - Builtins.char (`~Builtins .char`)
-  - `is_alpha : Char -> Bool`, `is_digit : Char -> Bool`, `is_alnum : Char -> Bool`, `is_space : Char -> Bool`
-  - `between : Char -> Int -> Int -> Bool` (code point range)
+  - `is_alpha : Char -> Bool-like`, `is_digit : Char -> Bool-like`, `is_alnum : Char -> Bool-like`, `is_space : Char -> Bool-like`
+  - `between : Char -> Int -> Int -> Bool-like` (code point range)
 
 - Builtins.math (`~Builtins .math`)
   - Re-exports arithmetic/comparison in a namespace
 
 - Builtins.scan (`~Builtins .scan`)
   - `new : Str -> Scan` (`Scan = { s: Str, i: Int }`)
-  - `eof : Scan -> Bool`, `pos : Scan -> Int`, `set_pos : Scan -> Int -> Scan`
+  - `eof : Scan -> Bool-like`, `pos : Scan -> Int`, `set_pos : Scan -> Int -> Scan`
   - `peek : Scan -> .Some(Char) | .None`
   - `next : Scan -> .Some((Char, Scan)) | .None`
-  - `take_if : (Char -> Bool) -> Scan -> .Some((Char, Scan)) | .None`
-  - `take_while : (Char -> Bool) -> Scan -> (Str, Scan)`
-  - `take_while1 : (Char -> Bool) -> Scan -> .Some((Str, Scan)) | .None`
+  - `take_if : (Char -> Bool-like) -> Scan -> .Some((Char, Scan)) | .None`
+  - `take_while : (Char -> Bool-like) -> Scan -> (Str, Scan)`
+  - `take_while1 : (Char -> Bool-like) -> Scan -> .Some((Str, Scan)) | .None`
+  - `slice_span : Scan -> Int -> Int -> Str`
 
 - Builtins.unicode (`~Builtins .unicode`)
   - `of_int : Int -> Char`, `to_int : Char -> Int`
@@ -301,10 +309,9 @@ Example:
 6.9 Main builtin types
 
 - `add/sub/mul/div : Int -> Int -> Int`
-- `fadd/fsub/fmul/fdiv : Float -> Float -> Float`
-- `eq/ne : ∀a. a -> a -> Bool`
-- `lt/le/gt/ge : Int -> Int -> Bool`
-- `flt/fle/fgt/fge : Float -> Float -> Bool`
+- `eq/ne : ∀a. a -> a -> Bool-like` (Symbol("True"|"False"))
+- `lt/le/gt/ge : Int|Float -> Int|Float -> Bool-like` (Symbol("True"|"False"))
+- `flt/fle/fgt/fge : Float -> Float -> Bool-like`
 - `cons : ∀a. a -> List a -> List a`
 - `to_str : ∀a. a -> Str`
 - `alt : ∀a r. (a->r) -> (a->r) -> a -> r`
