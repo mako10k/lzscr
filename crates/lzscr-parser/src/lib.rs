@@ -275,44 +275,6 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     Pattern::new(PatternKind::Bool(t.text == "true"), t.span)
                 } else if t.text == "_" {
                     Pattern::new(PatternKind::Wildcard, t.span)
-                } else if t.text.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
-                    // UpperCamelCase ident in pattern position denotes a constructor (e.g., Foo ~x)
-                    // Normalize to member-like tag name (with leading '.') to match typedef frames
-                    let name = format!(".{}", t.text);
-                    let h = t;
-                    let mut args = Vec::new();
-                    loop {
-                        let Some(nxt) = toks.get(*i) else { break };
-                        match nxt.tok {
-                            Tok::Arrow | Tok::RParen | Tok::Comma | Tok::Eq | Tok::Semicolon => {
-                                break
-                            }
-                            Tok::Tilde
-                            | Tok::Ident
-                            | Tok::Member(_)
-                            | Tok::LBracket
-                            | Tok::LBrace
-                            | Tok::LParen
-                            | Tok::Int(_)
-                            | Tok::Float(_)
-                            | Tok::Str(_)
-                            | Tok::Char(_) => {
-                                let a = parse_pat_atom(i, toks)?;
-                                args.push(a);
-                            }
-                            _ => break,
-                        }
-                    }
-                    let end = if args.is_empty() {
-                        h.span.offset + h.span.len
-                    } else {
-                        let last = args.last().unwrap();
-                        last.span.offset + last.span.len
-                    };
-                    Pattern::new(
-                        PatternKind::Ctor { name, args },
-                        Span::new(h.span.offset, end - h.span.offset),
-                    )
                 } else {
                     return Err(ParseError::Generic("invalid bare identifier in pattern".into()));
                 }
@@ -1204,13 +1166,13 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 }
             },
             Tok::LBrace => {
-                // record literal: { k: v, ... } → (.Record (., (.KV "k" v) ...)) の糖衣（キーは ident のみ）
-                // 空 {} はブロックの空ではないため特別扱い：Record 空にする
+                // record literal: { k: v, ... } is sugar for (.Record (., (.KV "k" v) ...)); keys are idents only
+                // Empty {} is not an empty block; special-case to an empty Record
                 if let Some(nxt) = peek(*i, toks) {
                     if matches!(nxt.tok, Tok::RBrace) {
                         let r = bump(i, toks).unwrap();
                         let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset);
-                        // (.Record) 空適用
+                        // empty application of (.Record)
                         return Ok(Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Ref("Record".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Unit, r.span)) }, span_all));
                     }
                 }
@@ -1382,7 +1344,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     continue;
                 }
                 let rhs = parse_expr_bp(i, toks, op_bp + 1)?;
-                // desugar: (a + b) → ((~add a) b) など
+                // desugar: (a + b) -> ((~add a) b), etc.
                 let callee = match op {
                     "+" => Expr::new(ExprKind::Ref("add".into()), nxt.span),
                     "-" => Expr::new(ExprKind::Ref("sub".into()), nxt.span),

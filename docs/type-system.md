@@ -1,38 +1,38 @@
-## lzscr 型システム（現行仕様: HM ランク1 + 注釈/型値/パターン型変数）
+## lzscr type system (current: HM rank-1 + annotations/type values/pattern type vars)
 
-本ドキュメントは 2025-09-06 時点の実装済み仕様を記述する。Hindley–Milner 風（ランク1）推論を中核に、型注釈（%{...}）、型値、パターンレベルの型変数束縛を備える。
+This document describes the implemented design as of 2025-09-06. It centers on Hindley–Milner (rank-1) inference, with type annotations (`%{...}`), first-class type values, and pattern-level type variable binders.
 
-### 1) 概要と範囲
+### 1) Overview and scope
 
-- 推論: ランク1 HM（多相 let を含む）。LetGroup は多相一般化を行う。LetRec は現状の制約により一部ケースで注釈が必要。
-- 追加構文: 型注釈 `%{Type} expr`、型値 `%{Type}`、型変数 `%a`（先頭が `%`）、ホール `?name`/`?`、パターン型変数束縛 `%{ %a, ?x } pat`。
-- 効果/Kind は未統合（将来）。
+- Inference: rank-1 HM (with polymorphic let). LetGroup generalizes; LetRec may require annotations in some cases due to current limits.
+- Additional syntax: type annotation `%{Type} expr`, type value `%{Type}`, type variables `%a` (leading `%`), holes `?name`/`?`, and pattern type binders `%{ %a, ?x } pat`.
+- Effects/Kinds are not integrated yet (future work).
 
-### 2) 型の種類（Type）
+### 2) Kinds of types (Type)
 
-- 基本: `Unit | Int | Float | Bool | Str`
-- 変数: `Var(α)`（推論用の型変数）
-- 関数: `Fun(T1, T2)`（記法: `T1 -> T2`）
-- 構造: `List(T) | Tuple(T1,..,Tn) | Record({k1:T1,..})`（Record は閉じたレコード）
-- コンストラクタ: `Ctor<'Tag, Payload>`（`'Tag` は裸シンボル名、`Payload` はタプル型など）
--（内部）Union: AltLambda の Ctor 連鎖から導かれる有限和 `SumCtor([('Tag, [T...]), ...])` を引数型として扱う（外部表記はなし）。
+- Primitives: `Unit | Int | Float | Bool | Str`
+- Variables: `Var(α)` (unification variables)
+- Function: `Fun(T1, T2)` (notation `T1 -> T2`)
+- Structures: `List(T) | Tuple(T1,..,Tn) | Record({k1:T1,..})` (Records are closed)
+- Constructors: `Ctor<'Tag, Payload>` (`'Tag` is a bare symbol name; `Payload` is a tuple type, etc.)
+- (Internal) Union: argument type of AltLambda branches is collected into a finite sum `SumCtor([('Tag, [T...]), ...])` (no external syntax).
 
-注: 現行の型表示は実装の短縮表記に依存する。Record はキー集合一致が必要。
+Note: The current type pretty-print depends on implementation shortcuts. Records require an exact key-set match.
 
-### 3) 型式（TypeExpr）と構文
+### 3) Type expressions (TypeExpr) and syntax
 
-型注釈や型値で使う型式 `TypeExpr` は次を含む。
+Type expressions used in annotations and type values include:
 
-- リテラル: `Unit, Int, Float, Bool, Str`
-- 構造: `List T`, `Tuple(T1, ..., Tn)`, `Record{ a: T, b: U }`, `T1 -> T2`
-- コンストラクタ: `Foo T1 ... Tn`（`Foo` は裸シンボル名）
-- 型変数: `%a`（接頭辞 `%`。後方互換として `'a` も受理するが、記法は `%a` を推奨）
-- ホール: `?x`（同名間で共有）/ `?`（新鮮変数）
+- Literals: `Unit, Int, Float, Bool, Str`
+- Structures: `List T`, `Tuple(T1, ..., Tn)`, `Record{ a: T, b: U }`, `T1 -> T2`
+- Constructors: `.Foo T1 ... Tn` (constructor tags are value-level symbols prefixed with a dot)
+- Type variables: `%a` (leading `%`. For backward compat we also accept `'a`, but `%a` is recommended)
+- Holes: `?x` (shared by name within one annotation) / `?` (fresh each occurrence)
 
-解釈規則（conv_typeexpr）:
-- `%a` はスコープ内で解決される（下記「パターン型変数束縛」を参照）。未解決はエラー。
-- `?x` は同一注釈内で共有の型変数、`?` は都度新鮮変数。
-- `Foo ...` は `Ctor<'Foo, Payload>` に変換。引数が 0 の場合は `Payload=Unit`。
+Interpretation rules (conv_typeexpr):
+- `%a` resolves within the current scope (see "pattern type variable binder" below). Unresolved is an error.
+- `?x` is a shared unification var within the same annotation, `?` is fresh each time.
+- `.Foo ...` converts to `Ctor<'Foo, Payload>`. When given 0 args, `Payload=Unit`.
 
 ### 4) 型注釈と型値
 
@@ -49,45 +49,45 @@
 %{ %a -> %a } (\~x -> ~x)      # id の注釈
 ```
 
-### 5) パターン型変数束縛（TypeBind）
+### 5) Pattern-level type variable binder (TypeBind)
 
-- 構文: `%{ %a, %b, ?x, ... } pat`
-  - パターン直前で、注釈内や同パターン配下の型式が参照できる型変数/ホール名のスコープを拡張する。
-  - ラムダ引数パターン、LetGroup の LHS パターンで有効。右辺の推論・注釈解釈の間、スコープに積まれる。
-- 型システム上の効果のみ。実行時/IR/プリンタでは透過で、`pat` と等価に扱われる。
+- Syntax: `%{ %a, %b, ?x, ... } pat`
+  - Immediately before the pattern, extends the scope with type variable/hole names that annotations and nested type expressions can reference.
+  - Applies to lambda parameters and LetGroup LHS patterns. These names are pushed during RHS inference and annotation interpretation.
+- This affects types only. Runtime/IR/printers treat it transparently, equivalent to `pat`.
 
-例:
+Examples:
 ```
 (\%{ %a } ~x -> %{ %a } ~x)        # 同じ %a を共有（id）
 let %{ %a, ?k } (~f, ~v) = (~id, 1) in ...
 ```
 
-### 6) AltLambda（パターン分岐ラムダ）
+### 6) AltLambda (pattern-branching lambda)
 
 - 構文: `(\pat1 -> e1) | (\pat2 -> e2) | ...`
-- 規則:
-  - 基本: 各分岐は `a -> r` で同一 `a` と `r` に単一化。
-  - いずれかが Ctor パターンの場合、全分岐は Ctor パターン（または最終の `_`/変数のみ）に制限。
-  - 引数型は `SumCtor`（有限和）として集約。タグ重複/形不一致はエラー。
-  - 既定分岐（`_` 等）は型を増やさない（既存の和を受け取る）。
+- Rules:
+  - Base: each branch has type `a -> r` and they unify to the same `a` and `r`.
+  - If any branch uses constructor patterns, all branches must be constructor patterns (or a final wildcard/variable only).
+  - The argument type is aggregated as `SumCtor` (finite sum). Duplicate tags or shape mismatches are errors.
+  - The default branch (`_` etc.) does not add new cases (it accepts the existing sum).
 
 例:
 ```
-(\(Foo ~x) -> ~x) | (\(Bar ~y ~z) -> ~z)   # a は SumCtor([Foo(α), Bar(β,γ)])
+(\(.Foo ~x) -> ~x) | (\(.Bar ~y ~z) -> ~z)   # a は SumCtor([.Foo(α), .Bar(β,γ)])
 ```
 
-### 7) 例外/OrElse の型付け（抜粋）
+### 7) Exceptions/OrElse typing (excerpt)
 
 - `^(e)`: ペイロード `e: γ`。式の型は任意 `ρ` として扱う（ボトム到達）。
 - `x ^| h`: `x: ρ` と `h: γ -> ρ` を要求。
 - `e1 || e2`: 同型 `ρ` に単一化。
 
-### 8) コンストラクタと arity
+### 8) Constructors and arity
 
-- 裸シンボル `Foo` は「コンストラクタ関数」。主型は `∀a1..an. a1 -> .. -> an -> Ctor<'Foo,(a1,..,an)>`。
-- arity は解析器/CLI 指定（`--ctor-arity`）と整合を検査。0 引数は `Foo()` を要求（式/パターン）。
+- A bare member symbol `.Foo` acts as a "constructor function". Its principal type is `∀a1..an. a1 -> .. -> an -> Ctor<'Foo,(a1,..,an)>`.
+- Arity is enforced against the parser/CLI-provided map (`--ctor-arity`). The surface notation follows the .Member style.
 
-### 9) ビルトインの主な型
+### 9) Major builtin types
 
 - `add/sub/mul/div : Int -> Int -> Int`
 - `fadd/fsub/fmul/fdiv : Float -> Float -> Float`
@@ -98,20 +98,20 @@ let %{ %a, ?k } (~f, ~v) = (~id, 1) in ...
 - `to_str : ∀a. a -> Str`
 - `alt : ∀a r. (a->r) -> (a->r) -> a -> r`
 
-### 10) CLI と統合
+### 10) CLI integration
 
 - パイプライン: `parse → analyzer → typecheck → eval`
 - `--no-typecheck` で推論を無効化可能（現状の制約回避用）。
 - 将来の出力オプション（型の表示/JSON）は別途追加予定。
 
-### 11) 制限事項と既知の注意
+### 11) Limitations and notes
 
 - LetRec の完全対応は未了。自己再帰や相互再帰で注釈が必要な場合がある。
 - List と AltLambda の複雑な合成で注釈が有用なケースがある。
 - 型値 `%{Type}` は現在 `Str` として扱う暫定仕様。
 - パターン型変数束縛は型スコープのみを拡張し、実行時意味は変化しない。
 
-### 12) サンプル
+### 12) Examples
 
 ```
 # 注釈とホール（共有/新鮮）
@@ -125,5 +125,5 @@ let %{ %a, ?k } (~f, ~v) = (~id, 1) in ...
 let f = (\(A ~x) -> ~x) | (\(B ~y ~z) -> ~z) in ~f
 ```
 
-付記: Analyzer/Runtime/CoreIR は `PatternKind::TypeBind` を透過的に扱う（印字・実行の挙動は従来通り）。
+Note: Analyzer/Runtime/CoreIR treat `PatternKind::TypeBind` transparently (printing/execution behave the same as without it).
 

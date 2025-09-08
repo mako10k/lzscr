@@ -1,13 +1,13 @@
-# 言語概要（現状）
+# Language overview (current)
 
-- 目的: 遅延評価ベースの式言語のPoC実装。
-- 実行経路: いまはAST直実行（評価器）に加え、Core IRを導入（AST→IRロワリング、テキスト化）。
-- 実装済みサブセット:
-  - 値: Unit, Int, Float, Bool, Str, Symbol（裸/コンストラクタ変数候補）, List, Tuple, Record, Lambda, Native（ビルトイン）, Closure
-  - 式: Unit, Int, Str, Ref(~name), Symbol, Lambda(\x -> e), Apply(e1 e2), Block({ e })
-  - ビルトイン: to_str, add, sub, eq, lt, seq, effects(.print/.println)
-  - strict-effects: 有効時、効果は(~seq a b)の第2引数文脈でのみ許可。
-  - 糖衣: !sym → (~effects .sym), .name はシンボル（Symbol）として扱う。
-  - 逐次の糖衣: !{ … } → chain/bind 連鎖。
-- 解析: 重複検出/未束縛参照/シャドウ/未使用引数（CLI --analyze）
-- ツール: CLI（-e評価、--strict-effects、--analyze、--format json、--dump-coreir、--dump-coreir-json）。CIでfmt/clippy/test/audit/deny/coverage。
+- Goal: proof-of-concept of a lazy-evaluated, expression-based language.
+- Execution paths: direct AST eval (interpreter) plus a Core IR pipeline (AST→IR lowering, textual dump).
+- Implemented subset:
+  - Values: Unit, Int, Float, Bool, Str, Symbol (bare/member for constructors), List, Tuple, Record, Lambda, Native (builtins), Closure
+  - Expressions: Unit, Int, Str, Ref(~name), Symbol, Lambda(\x -> e), Apply(e1 e2), Block({ e })
+  - Builtins: to_str, add, sub, eq, lt, seq, effects(.print/.println)
+  - strict-effects: when enabled, effects are allowed only in the second argument of (~seq a b)
+  - Sugar: !sym → (~effects .sym), .name is treated as a Symbol value
+  - Sequential sugar: !{ … } → chain/bind chaining
+- Analysis: duplicate detection/unbound/shadowing/unused params (CLI --analyze)
+- Tools: CLI (-e eval, --strict-effects, --analyze, --format json, --dump-coreir, --dump-coreir-json). CI runs fmt/clippy/test/audit/deny/coverage.

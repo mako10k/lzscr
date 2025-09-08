@@ -30,21 +30,21 @@ pub mod ast {
         Record(Vec<(String, TypeExpr)>),
         Fun(Box<TypeExpr>, Box<TypeExpr>),
         Ctor { tag: String, args: Vec<TypeExpr> },
-        Var(String),          // %a 等（構文は %{...} 内でのみ）
-        Hole(Option<String>), // ? または ?a
+        Var(String),          // %a etc. (only within %{...} syntax)
+        Hole(Option<String>), // ? or ?a
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum TypeDefBody {
-        // 和型: .Tag T1 T2 | .Tag2 ...
+        // Sum type: .Tag T1 T2 | .Tag2 ...
         Sum(Vec<(String, Vec<TypeExpr>)>),
-        // 将来的に alias/record 等を拡張予定
+        // Future: alias/record etc. can be added
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub struct TypeDecl {
-        pub name: String,        // 型名（%を除いた識別子）
-        pub params: Vec<String>, // 形式型変数（%を除いた識別子）
+        pub name: String,        // type name (identifier without leading %)
+        pub params: Vec<String>, // formal type variables (identifiers without %)
         pub body: TypeDefBody,
         pub span: Span,
     }
@@ -52,11 +52,11 @@ pub mod ast {
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum PatternKind {
         Wildcard,                                  // _
-        Var(String),                               // ~x（パース時は ~ident で生成）
+        Var(String),                               // ~x (produced as ~ident at parse time)
         Unit,                                      // ()
         Tuple(Vec<Pattern>),                       // (p1, p2, ...)
         Ctor { name: String, args: Vec<Pattern> }, // Foo p1 p2 / .Foo p1 p2
-        Symbol(String),                            // シンボル値に一致（foo, .bar など）
+        Symbol(String),                            // match a symbol value (foo, .bar, ...)
         Int(i64),
         Float(f64),
         Str(String),
@@ -91,9 +91,9 @@ pub mod ast {
         Char(i32),
         Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
-        // 型注釈: %{T} e （恒等）
+        // Type annotation: %{T} e (identity)
         Annot { ty: TypeExpr, expr: Box<Expr> },
-        // 型値の第一級表現: %{T}
+        // First-class type value: %{T}
         TypeVal(TypeExpr),
         Lambda { param: Pattern, body: Box<Expr> },
         Apply { func: Box<Expr>, arg: Box<Expr> },
@@ -102,7 +102,7 @@ pub mod ast {
         List(Vec<Expr>),
         // Let-group: (p1 = e1; ...; body; pN = eN; ...)
         // Bindings can mutually/recursively reference each other within the group scope.
-        // type_decls は Let グループ内の % 型宣言列（先行/後行の両方をマージ）
+        // type_decls is the list of % type declarations within a Let group (merging both pre and post forms)
         LetGroup { type_decls: Vec<TypeDecl>, bindings: Vec<(Pattern, Expr)>, body: Box<Expr> },
         // Exceptions / control
         Raise(Box<Expr>), // ^(Expr)
@@ -207,7 +207,7 @@ pub mod pretty {
                 format!("[{}]", xs.iter().map(print_expr).collect::<Vec<_>>().join(", "))
             }
             ExprKind::LetGroup { bindings, body, .. } => {
-                // 型宣言は簡易表示（件数のみ）
+                // Show type declarations briefly (only the count)
                 let bs = bindings
                     .iter()
                     .map(|(p, ex)| format!("{} = {};", print_pattern(p), print_expr(ex)))

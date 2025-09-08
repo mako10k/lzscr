@@ -252,7 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let prelude_path = resolved_stdlib_dir.join("prelude.lzscr");
         if let Ok(prelude_src) = fs::read_to_string(&prelude_path) {
             // Combine as a let-group: ( prelude ; user )
-            // ユーザコードが既に括弧で包まれている場合でも安全側でネスト
+            // Nest defensively even if user code is already parenthesized
             code = format!("({}\n{} )", prelude_src, code);
             prelude_for_diag = Some((prelude_src, prelude_path.display().to_string()));
         } else {
@@ -811,7 +811,7 @@ fn expand_requires_in_expr(
                 new_bs
                     .push((p.clone(), expand_requires_in_expr(ex, search_paths, stack, src_reg)?));
             }
-            // type_decls は require 展開の対象外なので、そのまま温存
+            // type_decls are excluded from require-expansion; keep them as-is
             if let LetGroup { type_decls, .. } = &e.kind {
                 LetGroup {
                     type_decls: type_decls.clone(),

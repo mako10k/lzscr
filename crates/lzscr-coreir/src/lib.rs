@@ -171,8 +171,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             tail
         }
         ExprKind::Raise(inner) => {
-            // 暫定: 表示用に Symbol("^(") + inner + Symbol(")") にせず、App で (~raise inner) 相当の形にすることも考えたが
-            // PoC 段階なので単純に Symbol("RAISE") と引数の App に落とす
+            // PoC: lower raise to an application of the symbol "RAISE" to its payload
             let tag = Term::new(Op::Symbol("RAISE".into()));
             Term::new(Op::App { func: Box::new(tag), arg: Box::new(lower_expr_to_core(inner)) })
         }
@@ -193,7 +192,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             Term::new(Op::Lam { param: format!("~{}", x), body: Box::new(body) })
         }
         ExprKind::OrElse { left, right } => {
-            // Symbol("OR") left right を App 連鎖に
+            // Lower to app chain: Symbol("OR") left right
             let or = Term::new(Op::Symbol("OR".into()));
             let app_l =
                 Term::new(Op::App { func: Box::new(or), arg: Box::new(lower_expr_to_core(left)) });

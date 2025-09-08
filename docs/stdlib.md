@@ -122,7 +122,7 @@ cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
 ```
 
 ## 命名規約とスタイル
-- snake_case（関数/変数）、UpperCamelCase（Ctor）
+- snake_case（関数/変数）、コンストラクタは .Member 形式（例: `.Some`, `.None`）
 - `prelude` に入れるのは曖昧さが少なく、使用頻度が高いものに限定
 - フォーマッタで lzscr ソースを整形（CLI `--format-code`、VS Code 連携）
 

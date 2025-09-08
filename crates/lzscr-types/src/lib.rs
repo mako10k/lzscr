@@ -448,7 +448,7 @@ fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> boo
 #[allow(clippy::result_large_err)]
 fn validate_typedecls_positive(decls: &[TypeDecl]) -> Result<(), TypeError> {
     for d in decls {
-    let TypeDefBody::Sum(alts) = &d.body;
+        let TypeDefBody::Sum(alts) = &d.body;
         for (_tag, payloads) in alts {
             for t in payloads {
                 if !check_positive_occurrence(t, &d.name, true) {
@@ -952,9 +952,9 @@ fn infer_expr(
                     return Ok((ty, sa));
                 }
             }
-            // Special-case: record field access via symbol application
-            // ({a: f, ...} .a) という形を (~apply record (Symbol "a")) として表現しているため、
-            // ここでは arg が Symbol(name) の場合にレコードのフィールド型を取り出す。
+            // Special-case: record field access via symbol application.
+            // We represent ({a: f, ...} .a) as (~apply record (Symbol "a")),
+            // so when arg is Symbol(name) we try to fetch that field's type.
             if let ExprKind::Symbol(field_name_raw) = &arg.kind {
                 // Symbols used for record access are dot-prefixed (e.g., ".len"); strip leading dot.
                 let field_name = if let Some(stripped) = field_name_raw.strip_prefix('.') {
@@ -968,10 +968,11 @@ fn infer_expr(
                         if let Some(fty) = fs.remove(field_name) {
                             return Ok((fty, sr));
                         }
-                        // フィールドが存在しない場合は通常の関数適用にフォールバックし、後段で不一致として報告される
+                        // If the field doesn't exist, fall back to normal application
+                        // and let the later unification report a mismatch
                     }
                     _ => {
-                        // 通常の関数適用へフォールバック
+                        // Fall back to normal function application
                     }
                 }
             }

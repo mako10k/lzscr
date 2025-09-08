@@ -294,13 +294,13 @@ let %{ %a, ?k } (~f, ~v) = (~id, 1) in ...
 - Rules:
   - Basic: each branch types as `a -> r` and must unify to the same `a` and `r`.
   - If any branch uses a constructor pattern, all branches must be constructor patterns (or a final `_`/variable-only catch-all).
-  - The argument type is aggregated as a finite sum `SumCtor([Foo(α), Bar(β,γ), ...])`. Duplicate tags or mismatched arities/types are errors.
+  - The argument type is aggregated as a finite sum `SumCtor([.Foo(α), .Bar(β,γ), ...])`. Duplicate tags or mismatched arities/types are errors.
   - A default branch (`_`, etc.) does not extend the sum; it accepts the existing sum.
 
 Example:
 
 ```
-(\(Foo ~x) -> ~x) | (\(Bar ~y ~z) -> ~z)   # argument is SumCtor([Foo(α), Bar(β,γ)])
+(\(.Foo ~x) -> ~x) | (\(.Bar ~y ~z) -> ~z)   # argument is SumCtor([.Foo(α), .Bar(β,γ)])
 ```
 
 6.7 Typing for caret/OrElse (excerpt)
@@ -312,7 +312,7 @@ Example:
 6.8 Constructors and arity
 
 - A bare symbol `Foo` denotes a constructor function with principal type `∀a1..an. a1 -> .. -> an -> Ctor<'Foo,(a1,..,an)>`.
-- Arity is checked against the parser/CLI setting (`--ctor-arity`). Zero-arity constructors must be written as `Foo()` in expressions/patterns.
+- Arity is checked against the parser/CLI setting (`--ctor-arity`). Zero-arity constructors should be written explicitly when required by the chosen surface syntax.
 
 6.9 Main builtin types
 

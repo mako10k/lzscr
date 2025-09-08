@@ -341,6 +341,7 @@ pub fn default_allowlist() -> HashSet<String> {
     .iter()
     .map(|s| s.to_string())
     .collect()
+    // \%{ %a } ~x -> 1  => x is unused
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -349,6 +350,7 @@ pub struct CtorArityIssue {
     pub expected: usize,
     pub got: usize,
     pub span: Span,
+    // \\~x -> (\\%{ %a } ~x -> ~x) ~x  => inner lambda's x shadows the outer one
     pub kind: String, // kinds: over | zero-arity-applied
 }
 
@@ -444,7 +446,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                 }
             }
             ExprKind::LetGroup { bindings, body, .. } => {
-                // let-group 全体のスコープを 1 つ作成（全束縛名を可視化）
+                // Create one scope for the whole let-group (all binding names visible)
                 fn binds(p: &Pattern, acc: &mut HashSet<String>) {
                     match &p.kind {
                         PatternKind::Wildcard
@@ -491,7 +493,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                     binds(p, &mut set);
                 }
                 scopes.push(set);
-                // 式と各束縛式を解析
+                // Analyze body and each bound expression
                 walk(body, scopes, allow, out);
                 for (_p, ex) in bindings.iter() {
                     walk(ex, scopes, allow, out);

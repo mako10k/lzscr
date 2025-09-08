@@ -1,17 +1,17 @@
-# lzscr ドキュメント体系（2025-09-05）
+# lzscr documentation index (2025-09-05)
 
-このフォルダは lzscr のPoC段階での仕様とツールのドキュメントをまとめます。対象は言語ユーザーと実装開発者です。
+This folder contains documentation for the lzscr PoC: language specs and tools, for both users and contributors.
 
-- 仕様（/spec）
-  - language.md: 統合仕様（字句/構文/意味論/ファイル形式/主要APIの要点）
-  - overview.md: 言語の概要と現状の到達点
-  - syntax.md: 字句/構文、糖衣構文、例（現在実装済みの最小サブセット）
-  - semantics.md: 評価規則、値、ビルトイン、strict-effects の挙動
-  - ast.md: AST 構造（型・フィールドと例）
-  - ir.md: Core IR（型/項/モジュール、AST→IR ロワリング、テキスト/バイナリ化方針）
-- ツール（/tools）
-  - cli.md: CLI の使い方と主要オプション
-  - analyzer.md: 静的解析（重複/未束縛/シャドウ/未使用）と JSON 出力
+- Specs (/spec)
+  - language.md: integrated spec (lexing/parsing/semantics/file format/key APIs)
+  - overview.md: language overview and current state
+  - syntax.md: tokens/grammar, sugar, and examples (current minimal subset)
+  - semantics.md: evaluation rules, values, built-ins, strict-effects behavior
+  - ast.md: AST structures (types/fields and examples)
+  - ir.md: Core IR (types/terms/modules, AST→IR lowering, text/binary plans)
+- Tools (/tools)
+  - cli.md: CLI usage and key options
+  - analyzer.md: static analysis (duplicates/unbound/shadowed/unused) and JSON output
 
-補足:
-- docs/lzscr.md は初期設計ノート（将来像を含む）。実装準拠の最新仕様は本体系を参照してください。
+Notes:
+- docs/lzscr.md is an early design note (includes future ideas). For the up-to-date, implementation-conformant spec, see this /spec set instead.

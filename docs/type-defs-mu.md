@@ -1,63 +1,63 @@
-# lzscr 型定義（μ型／isorecursive）設計メモ
+# lzscr type definitions (mu-types / isorecursive) design notes
 
-この文書は、型定義の新設（%宣言）と内部表現としての μ 型（isorecursive）の導入方針をまとめた設計メモです。まずは仕様の合意を取り、その後段階的に実装します。
+This document records the plan to add user type definitions (% declarations) and introduce mu-types (isorecursive) in the internal representation. We first agree on the spec and then implement in stages.
 
-## 目的
-- List 専用の当て推量を撤廃し、一般の再帰的 ADT を健全に扱う。
-- 多相関数の型注釈で名前付き型（List/Option など）を使えるようにする。
-- 既存の型推論（HM）と両立させる（停止性・エラーメッセージの改善）。
+## Goals
+- Remove list-specific guessing and support general recursive ADTs soundly.
+- Allow named types (List/Option, etc.) to be used in polymorphic annotations.
+- Stay compatible with the existing HM inference (termination and error messages should improve).
 
-## 方針（案C）
-- ユーザの型定義は `%` 宣言で記述。
-- 自己参照は “同形自己参照” を検出して内部的に μ 型へ変換（isorecursive）。
-- ユニフィケーションは「必要時に μ を1段だけ展開」する戦略で運用。
-- 既知ファミリ（List/Option/Bool 等）は型名で表示・注釈可能にしつつ、内部構造と相互変換可能にする。
+## Approach (Plan C)
+- Users declare types with `%`.
+- Detect “shape-identical self references” in RHS and convert them to mu-types internally (isorecursive).
+- Unification unfolds μ one step only when needed.
+- Known families (List/Option/Bool, etc.) remain printable and annotatable by name while being convertible to/from their internal structure.
 
-## 構文（ドラフト）
-- トップレベル型宣言
-  - `%TypeName %a %b = %{ .Tag 型式 | .Tag 型式 | ... }`  // 和（sum）
-  - 将来: `%TypeName %a ... = %record{ field: 型式, ... }`  // レコード
-- 例
+## Syntax (draft)
+- Top-level type declarations
+  - `%TypeName %a %b = %{ .Tag TYPE | .Tag TYPE | ... }`  // sum
+  - Future: `%TypeName %a ... = %record{ field: TYPE, ... }`  // record
+- Examples
   - `%Option %a = %{ .Some %a | .None }`
   - `%List %a = %{ .Nil | .Cons %a (%List %a) }`
 
-型式内の記号:
-- `%a` 等は型変数。
-- `.Tag` はコンストラクタラベル（値レベルと同ラベル空間でも可）。
-- `%Name %args...` は型名の適用。
+Inside type expressions:
+- `%a` are type variables.
+- `.Tag` are constructor labels (may share the label space with value-level).
+- `%Name %args...` applies a named type.
 
-## 自己参照→μ 変換（“同形”規則）
-- 対象: 宣言 RHS 内の、LHS ヘッド名の再出現のうち “同形” なもの。
-- “同形”の定義:
-  - LHS の型変数列と同一順・同一変数集合の適用（α変換のみ許容）。
-  - 例: `%List %a` の RHS 中の `%List %a` は同形。`%List (%Foo %a)` や部分適用は同形でない。
-- 変換手順:
-  1) 新鮮な束縛型変数 `%T` を導入。
-  2) RHS 中の同形な自己参照 `%Head %params` を `%T` に一括置換。
-  3) 内部表現を `μ %T . Body` とする（Body は sum/record/tuple 等）。
-- 例（List）:
-  - 入力: `%List %a = %{ .Nil | .Cons %a (%List %a) }`
-  - 内部: `μ %T . sum { .Nil | .Cons %a %T }`
+## Self-reference -> μ conversion (shape rule)
+- Target: occurrences of the LHS head name in the RHS that are shape-identical to the LHS head application.
+- “Shape-identical” means:
+  - Exactly the same list of type variables in the same order (only alpha-renaming allowed).
+  - Example: in `%List %a` the RHS `%List %a` is shape-identical; `%List (%Foo %a)` or partial applications are not.
+- Steps:
+  1) Introduce a fresh bound type variable `%T`.
+  2) Replace all shape-identical self references `%Head %params` in RHS with `%T`.
+  3) Represent as `μ %T . Body` (Body may be sum/record/tuple etc.).
+- Example (List):
+  - Input: `%List %a = %{ .Nil | .Cons %a (%List %a) }`
+  - Internal: `μ %T . sum { .Nil | .Cons %a %T }`
 
-Option は μ 不要:
-- 入力: `%Option %a = %{ .Some %a | .None }`
-- 内部: `sum { .Some %a | .None }`
+Option doesn’t need μ:
+- Input: `%Option %a = %{ .Some %a | .None }`
+- Internal: `sum { .Some %a | .None }`
 
-## スコープ
-- LHS 引数（%a 等）: その宣言の RHS 内のみ有効。
-- 自己束縛 `%T`: 内部変換で導入されるローカル束縛（外部から参照不可）。
-- LHS ヘッド名（%List 等）: 型名前空間に束縛。相互再帰グループ内で相互可視、グループ外にもエクスポート。
+## Scope
+- LHS args (`%a`, etc.): only valid within that declaration’s RHS.
+- Self binder `%T`: introduced by the internal conversion (not referenceable externally).
+- LHS head name (`%List`, etc.): bound in the type namespace, mutually visible within the group, exported outside.
 
-## 相互再帰グループ
-- 連続した `%` 宣言列を 1 グループとみなし、2 パス処理。
-  - パス1: 各宣言のヘッド名とアリティを登録。
-  - パス2: 各 RHS で“同形自己参照→%T→μ”変換を実施。他型名参照は Named のまま。
-- 相互再帰は許可（A から B、B から A を参照可）。自己参照のみ `%T` に置換。
+## Mutually recursive groups
+- Treat a consecutive `%`-declaration sequence as one group and process in two passes.
+  - Pass 1: register head names and arities.
+  - Pass 2: perform the “shape self-ref -> %T -> μ” transform in each RHS. References to other types remain Named.
+- Mutual recursion is allowed (A can reference B and vice versa). Only self references are replaced by `%T`.
 
-## 健全性チェック
-- 正位置（positivity）: `μ %T . Body` において `%T` は正位置のみ。
-  - 許可: sum/record/list/tuple の要素位置（共変）。
-  - 禁止: 関数の引数位置など負位置。
+## Soundness checks
+- Positivity: in `μ %T . Body`, `%T` must appear only in positive positions.
+  - Allowed: element positions of sum/record/list/tuple (covariant).
+  - Disallowed: negative positions such as function argument types.
 - 同形制約: 自己参照は“同形”でなければならない。
 - 展開停止性: μ 展開は on-demand で 1 段。Visited セット/燃料で発散防止。
 

@@ -188,7 +188,7 @@ impl Env {
     }
 
     pub fn declare_ctor_arity(&mut self, name: &str, arity: usize) {
-        // 登録名はドット有無の両方を受け付ける（検索時も両方試す）
+        // Accept registration names with or without the leading dot (and try both when looking up)
         let n = name.to_string();
         self.ctor_arity.insert(n.clone(), arity);
         if n.starts_with('.') {
@@ -325,7 +325,7 @@ impl Env {
             },
         );
 
-        // div : Int -> Int -> Int (0 除算はエラー)
+        // div : Int -> Int -> Int (division by 0 is an error)
         e.vars.insert(
             "div".into(),
             Value::Native {
@@ -375,7 +375,7 @@ impl Env {
                 },
             },
         );
-        // fdiv : Float -> Float -> Float (0.0 除算はエラー)
+        // fdiv : Float -> Float -> Float (division by 0.0 is an error)
         e.vars.insert(
             "fdiv".into(),
             Value::Native {
@@ -474,7 +474,7 @@ impl Env {
             },
         );
 
-        // ne : a -> a -> Bool (構造的不等価)
+        // ne : a -> a -> Bool (structural inequality)
         e.vars.insert(
             "ne".into(),
             Value::Native {
@@ -541,7 +541,7 @@ impl Env {
             },
         );
 
-        // seq/chain/bind は特別扱いで評価順を制御するため、Native としては不要だが参照解決のために登録はしておく
+        // seq/chain/bind are special forms to control evaluation order; not needed as Natives but registered for name resolution
         e.vars.insert(
             "seq".into(),
             Value::Native { arity: 2, args: vec![], f: |_env, args| Ok(args[1].clone()) },
@@ -1146,7 +1146,7 @@ impl Env {
 
         // if : cond then else
         // cond: Bool or Symbol("True"|"False")
-        // then/else: 値そのもの、Closure、または arity=0 の Native。Closure は Unit を渡して呼び出し、その他はそのまま返す。
+        // then/else: either a raw value, a Closure, or a Native with arity=0. Call closures with Unit; return others as-is.
         e.vars.insert(
             "if".into(),
             Value::Native {
@@ -1179,7 +1179,7 @@ impl Env {
 }
 
 fn to_str_like(env: &Env, v: &Value) -> String {
-    // サンクはここで可能なら強制してから表示する
+    // Force a thunk here if possible before printing
     let vv: Value = match v {
         Value::Thunk { .. } => match force_value(env, v) {
             Ok(val) => val,
@@ -1228,7 +1228,7 @@ fn to_str_like(env: &Env, v: &Value) -> String {
             format!("{{{}}}", inner)
         }
         Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
-        // Thunk は上で force 済みのはずだが、安全のため
+        // Thunk should have been forced above, but double-check for safety
         _ => "<thunk>".into(),
     }
 }
@@ -1448,7 +1448,7 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
 }
 
 fn v_equal(_env: &Env, a: &Value, b: &Value) -> bool {
-    // 注意: ここではサンクを強制しない（等価性は実質的に評価後に比較されるパスで使われる想定）
+    // Note: do not force thunks here (equality is assumed to be used after evaluation on typical paths)
     match (a, b) {
         (Value::Unit, Value::Unit) => true,
         (Value::Int(x), Value::Int(y)) => x == y,
@@ -1645,7 +1645,7 @@ fn force_value(env: &Env, v: &Value) -> Result<Value, EvalError> {
 }
 
 fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalError> {
-    // 例外伝播（どちらかが Raised ならそのまま）
+    // Propagate exceptions (if either side is Raised, return it)
     if let Value::Raised(_) = fval {
         return Ok(fval);
     }
@@ -1792,9 +1792,9 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Float(f) => Ok(Value::Float(*f)),
         ExprKind::Char(c) => Ok(Value::Char(*c)),
         ExprKind::LetGroup { bindings, body, .. } => {
-            // 遅延束縛により非関数の再帰もサポート
+            // Support recursion for non-functions via lazy bindings
             let mut env2 = env.clone();
-            // 準備: 各バインディングごとに「全体値のサンク」を作る
+            // Prepare: create a "whole-value thunk" per binding
             let mut whole_thunks: Vec<(Pattern, Value)> = Vec::new();
             for (p, ex) in bindings.iter() {
                 let state = std::rc::Rc::new(std::cell::RefCell::new(ThunkState::Unevaluated));
@@ -1804,7 +1804,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                 };
                 whole_thunks.push((p.clone(), whole));
             }
-            // 変数名→派生サンクを環境に登録
+            // Register variable name -> derived thunk into the environment
             fn collect_vars(p: &Pattern, out: &mut Vec<String>) {
                 match &p.kind {
                     PatternKind::Wildcard
@@ -1860,7 +1860,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     env2.vars.insert(n, derived);
                 }
             }
-            // 本体を評価（必要に応じてサンクが強制される）
+            // Evaluate the body (forcing thunks as needed)
             eval(&env2, body)
         }
         ExprKind::List(xs) => {
@@ -1982,7 +1982,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                 // Constructor variable: build constructor value accumulating payload args
                 Value::Symbol(id) => {
                     let name = env.symbol_name(id);
-                    // 1 引数目適用時点では最大 arity チェックはできないが、0 アリティならエラー
+                    // At the first application we cannot check max arity yet; if declared arity is 0, error
                     if let Some(&k) = env
                         .ctor_arity
                         .get(&name)
@@ -2007,7 +2007,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         if args.len() > k {
                             return Err(EvalError::TypeError);
                         }
-                        // ちょうど満たした場合はそのまま返す（値）。不足時は未完成値。
+                        // If just satisfied, return as value; if insufficient, keep a partial value
                     }
                     Ok(Value::Ctor { name, args })
                 }
@@ -2138,8 +2138,8 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             Ok(Value::Closure { param, body, env: env.clone() })
         }
         ExprKind::OrElse { left, right } => {
-            // 指定仕様: LHS の評価結果は捨て、RHS の評価結果を返す。
-            // LHS が Raised でも捨てる。RHS が Raised なら全体が Raised。
+            // Spec: discard the result of LHS and return the result of RHS
+            // Discard LHS even if it is Raised; if RHS is Raised, the whole is Raised
             let _ = eval(env, left)?;
             eval(env, right)
         }
@@ -2348,10 +2348,10 @@ mod tests {
 
     #[test]
     fn eval_lambda_pattern_ctor_match() {
-        // ((\(Foo x y) -> ~x) (Foo 1 2)) == 1
+        // ((\(.Foo x y) -> ~x) (.Foo 1 2)) == 1
         let pat = Pattern {
             kind: PatternKind::Ctor {
-                name: "Foo".into(),
+                name: ".Foo".into(),
                 args: vec![
                     Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
                     Pattern { kind: PatternKind::Var("y".into()), span: Span::new(0, 0) },
@@ -2361,8 +2361,8 @@ mod tests {
         };
         let body = Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0));
         let lam = Expr::new(ExprKind::Lambda { param: pat, body: Box::new(body) }, Span::new(0, 0));
-        // Foo 1 2
-        let foo = Expr::new(ExprKind::Symbol("Foo".into()), Span::new(0, 0));
+        // .Foo 1 2
+        let foo = Expr::new(ExprKind::Symbol(".Foo".into()), Span::new(0, 0));
         let a1 = Expr::new(
             ExprKind::Apply { func: Box::new(foo), arg: Box::new(int_expr(1)) },
             Span::new(0, 0),
@@ -2384,17 +2384,17 @@ mod tests {
 
     #[test]
     fn eval_lambda_pattern_mismatch_raises() {
-        // ((\(Foo x) -> ~x) (Bar 1)) => ^(Bar(1))
+        // ((\(.Foo x) -> ~x) (.Bar 1)) => ^(.Bar(1))
         let pat = Pattern {
             kind: PatternKind::Ctor {
-                name: "Foo".into(),
+                name: ".Foo".into(),
                 args: vec![Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) }],
             },
             span: Span::new(0, 0),
         };
         let body = Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0));
         let lam = Expr::new(ExprKind::Lambda { param: pat, body: Box::new(body) }, Span::new(0, 0));
-        let bar = Expr::new(ExprKind::Symbol("Bar".into()), Span::new(0, 0));
+        let bar = Expr::new(ExprKind::Symbol(".Bar".into()), Span::new(0, 0));
         let bar1 = Expr::new(
             ExprKind::Apply { func: Box::new(bar), arg: Box::new(int_expr(1)) },
             Span::new(0, 0),
@@ -2407,7 +2407,7 @@ mod tests {
         match v {
             Value::Raised(b) => match *b {
                 Value::Ctor { name, args } => {
-                    assert_eq!(name, "Bar");
+                    assert_eq!(name, ".Bar");
                     assert_eq!(args.len(), 1);
                 }
                 other => panic!("unexpected payload: {:?}", other),
