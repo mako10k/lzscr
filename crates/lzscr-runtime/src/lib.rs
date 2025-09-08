@@ -120,7 +120,7 @@ pub enum Value {
 
 #[derive(Debug, Clone)]
 pub enum ThunkKind {
-    Expr { expr: Expr, env: Env },
+    Expr { expr: Expr, env: std::rc::Rc<std::cell::RefCell<Env>> },
     Project { src: Box<Value>, pattern: Pattern, var: String },
 }
 
@@ -1629,7 +1629,11 @@ fn force_value(env: &Env, v: &Value) -> Result<Value, EvalError> {
             drop(st);
             // compute
             let result = match kind {
-                ThunkKind::Expr { expr, env: tenv } => eval(tenv, expr)?,
+                ThunkKind::Expr { expr, env: tenv } => {
+                    // Evaluate using the shared environment (which may contain recursive bindings)
+                    let borrowed = tenv.borrow();
+                    eval(&borrowed, expr)?
+                }
                 ThunkKind::Project { src, pattern, var } => {
                     let base = force_value(env, src)?;
                     let mm = match_pattern(env, pattern, &base).ok_or(EvalError::TypeError)?;
@@ -1793,18 +1797,19 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Char(c) => Ok(Value::Char(*c)),
         ExprKind::LetGroup { bindings, body, .. } => {
             // Support recursion for non-functions via lazy bindings
-            let mut env2 = env.clone();
-            // Prepare: create a "whole-value thunk" per binding
+            // Use a shared environment so RHS thunks see recursive names.
+            let shared_env = std::rc::Rc::new(std::cell::RefCell::new(env.clone()));
+            // Prepare: create a "whole-value thunk" per binding capturing the shared env
             let mut whole_thunks: Vec<(Pattern, Value)> = Vec::new();
             for (p, ex) in bindings.iter() {
                 let state = std::rc::Rc::new(std::cell::RefCell::new(ThunkState::Unevaluated));
                 let whole = Value::Thunk {
                     state: state.clone(),
-                    kind: ThunkKind::Expr { expr: ex.clone(), env: env2.clone() },
+                    kind: ThunkKind::Expr { expr: ex.clone(), env: shared_env.clone() },
                 };
                 whole_thunks.push((p.clone(), whole));
             }
-            // Register variable name -> derived thunk into the environment
+            // Register variable name -> derived thunk into the shared environment
             fn collect_vars(p: &Pattern, out: &mut Vec<String>) {
                 match &p.kind {
                     PatternKind::Wildcard
@@ -1857,11 +1862,12 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                             var: n.clone(),
                         },
                     };
-                    env2.vars.insert(n, derived);
+                    shared_env.borrow_mut().vars.insert(n, derived);
                 }
             }
-            // Evaluate the body (forcing thunks as needed)
-            eval(&env2, body)
+            // Evaluate the body (forcing thunks as needed) using the shared environment
+            let borrowed = shared_env.borrow();
+            eval(&borrowed, body)
         }
         ExprKind::List(xs) => {
             let mut out = Vec::with_capacity(xs.len());

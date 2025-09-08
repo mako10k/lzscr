@@ -716,8 +716,25 @@ fn infer_pattern(
             Ok(PatInfo { bindings: binds, subst: s })
         }
         PatternKind::Ctor { name, args } => {
-            let payload: Vec<Type> = if let Some(tmpls) = typedefs_lookup_ctor(ctx, name) {
-                if tmpls.len() == args.len() {
+            // Special-case tuple constructor '.,' in patterns:
+            // \(.,( a , b )) should be treated as a binary ctor with two payloads,
+            // not as a unary ctor carrying a 2-tuple. This matches term-level typing and runtime.
+            let (eff_name, eff_args): (String, Vec<Pattern>) = if name == ".," && args.len() == 1 {
+                if let PatternKind::Tuple(items) = &args[0].kind {
+                    if items.len() == 2 {
+                        (name.clone(), vec![items[0].clone(), items[1].clone()])
+                    } else {
+                        (name.clone(), args.clone())
+                    }
+                } else {
+                    (name.clone(), args.clone())
+                }
+            } else {
+                (name.clone(), args.clone())
+            };
+
+            let payload: Vec<Type> = if let Some(tmpls) = typedefs_lookup_ctor(ctx, &eff_name) {
+                if tmpls.len() == eff_args.len() {
                     // Clone templates to drop immutable borrow of ctx before mutably borrowing ctx.tv
                     let tmpls_vec = tmpls.clone();
                     let mut out = Vec::with_capacity(tmpls_vec.len());
@@ -726,15 +743,15 @@ fn infer_pattern(
                     }
                     out
                 } else {
-                    (0..args.len()).map(|_| ctx.tv.fresh()).collect()
+                    (0..eff_args.len()).map(|_| ctx.tv.fresh()).collect()
                 }
             } else {
-                (0..args.len()).map(|_| ctx.tv.fresh()).collect()
+                (0..eff_args.len()).map(|_| ctx.tv.fresh()).collect()
             };
-            let want = Type::Ctor { tag: name.clone(), payload: payload.clone() };
+            let want = Type::Ctor { tag: eff_name.clone(), payload: payload.clone() };
             let mut s = ctx_unify(ctx, scrutinee, &want)?;
             let mut binds = vec![];
-            for (p, ta) in args.iter().zip(payload.into_iter()) {
+            for (p, ta) in eff_args.iter().zip(payload.into_iter()) {
                 let pi = infer_pattern(ctx, p, &ta.apply(&s))?;
                 s = pi.subst.compose(s);
                 binds.extend(pi.bindings);
@@ -944,12 +961,107 @@ fn infer_expr(
             Ok((ty, s_body.compose(pi.subst)))
         }
         ExprKind::Apply { func, arg } => {
-            // Special-case: constructor application via symbol, e.g., (.Some x)
+            // Special-case: (~if cond then else)
+            // Recognize nested application: (((if cond) then) else)
+            if let ExprKind::Apply { func: f_then, arg: then_branch } = &func.kind {
+                if let ExprKind::Apply { func: f_if, arg: cond } = &f_then.kind {
+                    if let ExprKind::Ref(if_name) = &f_if.kind {
+                        if if_name == "if" {
+                            // Infer cond, then, else
+                            let (tc, sc) = infer_expr(ctx, cond, allow_effects)?;
+                            let (tt, st) = infer_expr(ctx, then_branch, allow_effects)?;
+                            let (te, se) = infer_expr(ctx, arg, allow_effects)?;
+                            // cond : Bool
+                            let s0 = ctx_unify(ctx, &tc.apply(&st).apply(&sc), &Type::Bool)?;
+                            let s_acc = s0.compose(st).compose(sc);
+                            // helper to merge ctor-like types into a finite union
+                            fn is_ctor_like(t: &Type) -> bool {
+                                matches!(t, Type::Ctor { .. } | Type::SumCtor(_))
+                            }
+                            fn merge_variants(
+                                ctx: &mut InferCtx,
+                                acc: &mut BTreeMap<String, Vec<Type>>,
+                                t: &Type,
+                            ) -> Result<Subst, TypeError> {
+                                let mut s = Subst::new();
+                                match t {
+                                    Type::Ctor { tag, payload } => {
+                                        if let Some(existing) = acc.get_mut(tag) {
+                                            if existing.len() != payload.len() {
+                                                return Err(TypeError::Mismatch {
+                                                    expected: Type::Ctor {
+                                                        tag: tag.clone(),
+                                                        payload: existing.clone(),
+                                                    },
+                                                    actual: t.clone(),
+                                                    span_offset: 0,
+                                                    span_len: 0,
+                                                });
+                                            }
+                                            for (x, y) in existing.iter_mut().zip(payload.iter()) {
+                                                let s1 =
+                                                    ctx_unify(ctx, &x.apply(&s), &y.apply(&s))?;
+                                                *x = x.apply(&s1);
+                                                s = s1.compose(s);
+                                            }
+                                        } else {
+                                            acc.insert(tag.clone(), payload.clone());
+                                        }
+                                    }
+                                    Type::SumCtor(vs) => {
+                                        for (tag, payload) in vs {
+                                            let tmp = Type::Ctor {
+                                                tag: tag.clone(),
+                                                payload: payload.clone(),
+                                            };
+                                            let s1 = merge_variants(ctx, acc, &tmp)?;
+                                            s = s1.compose(s);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                                Ok(s)
+                            }
+                            let mut acc: BTreeMap<String, Vec<Type>> = BTreeMap::new();
+                            let t1 = tt.apply(&s_acc).apply(&se);
+                            let t2 = te.apply(&s_acc).apply(&se);
+                            if is_ctor_like(&t1) && is_ctor_like(&t2) {
+                                let s1 = merge_variants(ctx, &mut acc, &t1)?
+                                    .compose(merge_variants(ctx, &mut acc, &t2)?);
+                                // Build union type from acc
+                                let variants: Vec<(String, Vec<Type>)> =
+                                    acc.into_iter().map(|(k, v)| (k, v)).collect();
+                                let ret = Type::SumCtor(variants);
+                                let s = s1.compose(se).compose(s_acc);
+                                return Ok((ret.apply(&s), s));
+                            }
+                            // Fallback to regular if typing: unify branch types to a common var
+                            let r = ctx.tv.fresh();
+                            let s1 = ctx_unify(ctx, &tt.apply(&se).apply(&s_acc), &r)?;
+                            let s2 = ctx_unify(ctx, &te.apply(&s1).apply(&se).apply(&s_acc), &r)?;
+                            let s = s2.compose(s1).compose(se).compose(s_acc);
+                            return Ok((r.apply(&s), s));
+                        }
+                    }
+                }
+            }
+            // Special-case: constructor application via symbol, e.g., (.Some x) or (., a) b
             if let ExprKind::Symbol(tag) = &func.kind {
                 if tag.starts_with('.') {
                     let (ta, sa) = infer_expr(ctx, arg, allow_effects)?;
-                    let ty = Type::Ctor { tag: tag.clone(), payload: vec![ta.apply(&sa)] };
-                    return Ok((ty, sa));
+                    if tag == ".," {
+                        // Pair constructor is binary: (., a) : b -> .,(a,b)
+                        let b = ctx.tv.fresh();
+                        let ret = Type::Ctor {
+                            tag: tag.clone(),
+                            payload: vec![ta.apply(&sa), b.clone()],
+                        };
+                        return Ok((Type::fun(b, ret), sa));
+                    } else {
+                        // Default: unary constructor
+                        let ty = Type::Ctor { tag: tag.clone(), payload: vec![ta.apply(&sa)] };
+                        return Ok((ty, sa));
+                    }
                 }
             }
             // Special-case: record field access via symbol application.
@@ -1180,8 +1292,34 @@ fn infer_expr(
             let mut seen = HashSet::<String>::new();
             let mut param_ty = ctx.tv.fresh();
             let mut s_all = Subst::new();
-            // Unify both branches to a fresh return type
-            let branch_ret = ctx.tv.fresh();
+            // Collect return type candidates; allow finite ctor-union for returns as well.
+            // If all branches return ctor-like values, build SumCtor([...]) as return type.
+            let mut ret_variants: Vec<(String, Vec<Type>)> = vec![];
+            let mut ret_seen = HashSet::<String>::new();
+            let mut ret_other: Option<Type> = None; // non-ctor return type fallback
+            fn merge_ret(
+                acc: &mut Vec<(String, Vec<Type>)>,
+                seen: &mut HashSet<String>,
+                t: &Type,
+            ) -> bool {
+                match t {
+                    Type::Ctor { tag, payload } => {
+                        if seen.insert(tag.clone()) {
+                            acc.push((tag.clone(), payload.clone()));
+                        }
+                        true
+                    }
+                    Type::SumCtor(vs) => {
+                        for (tg, ps) in vs {
+                            if seen.insert(tg.clone()) {
+                                acc.push((tg.clone(), ps.clone()));
+                            }
+                        }
+                        true
+                    }
+                    _ => false,
+                }
+            }
 
             // Heuristic: if both patterns are list-like, specialize param_ty to List(fresh)
             fn is_list_like(pk: &PatternKind) -> bool {
@@ -1204,8 +1342,21 @@ fn infer_expr(
                     let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
                     ctx.env = prev;
                     let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let s1 = unify(&tb_final, &branch_ret.apply(&sb).apply(&pi.subst))?;
-                    s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
+                    // Try to accumulate ctor-like returns; otherwise remember as fallback type
+                    let tbf_applied = tb_final.clone();
+                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                        match &mut ret_other {
+                            None => ret_other = Some(tbf_applied),
+                            Some(existing) => {
+                                // best-effort: unify non-ctor returns together
+                                let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                *existing = existing.apply(&s1);
+                                s_all = s1.compose(s_all);
+                            }
+                        }
+                    }
+                    // Compose substitutions gathered for this branch
+                    s_all = sb.compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                 }
                 PatternKind::Ctor { name, args } => {
@@ -1226,8 +1377,18 @@ fn infer_expr(
                     let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
                     ctx.env = prev;
                     let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let s1 = unify(&tb_final, &branch_ret.apply(&sb).apply(&pi.subst))?;
-                    s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
+                    let tbf_applied = tb_final.clone();
+                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                        match &mut ret_other {
+                            None => ret_other = Some(tbf_applied),
+                            Some(existing) => {
+                                let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                *existing = existing.apply(&s1);
+                                s_all = s1.compose(s_all);
+                            }
+                        }
+                    }
+                    s_all = sb.compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                 }
                 PatternKind::Symbol(name) => {
@@ -1247,8 +1408,18 @@ fn infer_expr(
                     let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
                     ctx.env = prev;
                     let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let s1 = unify(&tb_final, &branch_ret.apply(&sb).apply(&pi.subst))?;
-                    s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
+                    let tbf_applied = tb_final.clone();
+                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                        match &mut ret_other {
+                            None => ret_other = Some(tbf_applied),
+                            Some(existing) => {
+                                let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                *existing = existing.apply(&s1);
+                                s_all = s1.compose(s_all);
+                            }
+                        }
+                    }
+                    s_all = sb.compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                 }
                 // Other structural patterns (list/tuple/record/cons/etc.)
@@ -1262,8 +1433,18 @@ fn infer_expr(
                     let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
                     ctx.env = prev;
                     let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let s1 = unify(&tb_final, &branch_ret.apply(&sb).apply(&pi.subst))?;
-                    s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
+                    let tbf_applied = tb_final.clone();
+                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                        match &mut ret_other {
+                            None => ret_other = Some(tbf_applied),
+                            Some(existing) => {
+                                let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                *existing = existing.apply(&s1);
+                                s_all = s1.compose(s_all);
+                            }
+                        }
+                    }
+                    s_all = sb.compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                 }
             }
@@ -1280,8 +1461,18 @@ fn infer_expr(
                     let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
                     ctx.env = prev;
                     let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let s1 = unify(&tb_final, &branch_ret.apply(&sb).apply(&pi.subst))?;
-                    s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
+                    let tbf_applied = tb_final.clone();
+                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                        match &mut ret_other {
+                            None => ret_other = Some(tbf_applied),
+                            Some(existing) => {
+                                let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                *existing = existing.apply(&s1);
+                                s_all = s1.compose(s_all);
+                            }
+                        }
+                    }
+                    s_all = sb.compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                 }
                 PatternKind::Ctor { name, args } => {
@@ -1302,8 +1493,18 @@ fn infer_expr(
                     let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
                     ctx.env = prev;
                     let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let s1 = unify(&tb_final, &branch_ret.apply(&sb).apply(&pi.subst))?;
-                    s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
+                    let tbf_applied = tb_final.clone();
+                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                        match &mut ret_other {
+                            None => ret_other = Some(tbf_applied),
+                            Some(existing) => {
+                                let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                *existing = existing.apply(&s1);
+                                s_all = s1.compose(s_all);
+                            }
+                        }
+                    }
+                    s_all = sb.compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                 }
                 PatternKind::Symbol(name) => {
@@ -1323,8 +1524,18 @@ fn infer_expr(
                     let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
                     ctx.env = prev;
                     let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let s1 = unify(&tb_final, &branch_ret.apply(&sb).apply(&pi.subst))?;
-                    s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
+                    let tbf_applied = tb_final.clone();
+                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                        match &mut ret_other {
+                            None => ret_other = Some(tbf_applied),
+                            Some(existing) => {
+                                let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                *existing = existing.apply(&s1);
+                                s_all = s1.compose(s_all);
+                            }
+                        }
+                    }
+                    s_all = sb.compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                 }
                 _ => {
@@ -1337,8 +1548,18 @@ fn infer_expr(
                     let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
                     ctx.env = prev;
                     let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let s1 = unify(&tb_final, &branch_ret.apply(&sb).apply(&pi.subst))?;
-                    s_all = s1.compose(sb).compose(pi.subst).compose(s_all);
+                    let tbf_applied = tb_final.clone();
+                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                        match &mut ret_other {
+                            None => ret_other = Some(tbf_applied),
+                            Some(existing) => {
+                                let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                *existing = existing.apply(&s1);
+                                s_all = s1.compose(s_all);
+                            }
+                        }
+                    }
+                    s_all = sb.compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                 }
             }
@@ -1349,7 +1570,18 @@ fn infer_expr(
             if !variants.is_empty() {
                 param_ty = Type::SumCtor(variants);
             }
-            Ok((Type::fun(param_ty.apply(&s_all), branch_ret.apply(&s_all)), s_all))
+            // Determine/Refine return type
+            let ret_ty = if !ret_variants.is_empty() && ret_other.is_none() {
+                // All branches returned ctor-like values; build their union
+                Type::SumCtor(ret_variants)
+            } else if let Some(t) = ret_other {
+                // Non-ctor returns unified into t
+                t
+            } else {
+                // Fallback (shouldn't really happen with two branches): fresh var
+                ctx.tv.fresh()
+            };
+            Ok((Type::fun(param_ty.apply(&s_all), ret_ty.apply(&s_all)), s_all))
         }
     }
 }

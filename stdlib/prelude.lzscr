@@ -23,23 +23,23 @@
 ~unwrap_or_else ~f = \(.Ok ~x) -> ~x | \(.Err ~e) -> (~f ~e);
 
 # List primitives (lambda-alt on the structural arg)
-~length ~xs = (\[] -> 0 | \[ _ : ~tail ] -> 1 + (~length ~tail)) ~xs;
+~length ~xs = (\[] -> 0 | \( _ : ~tail ) -> 1 + (~length ~tail)) ~xs;
 
-~append ~xs ~ys = (\[] -> ~ys | \[ ~h : ~t ] -> (~cons ~h (~append ~t ~ys))) ~xs;
+~append ~xs ~ys = (\[] -> ~ys | \( ~h : ~t ) -> (~cons ~h (~append ~t ~ys))) ~xs;
 
 ~reverse ~xs = (~foldl (\~acc ~x -> (~cons ~x ~acc)) [] ~xs);
 
-~foldl ~f ~acc ~xs = (\[] -> ~acc | \[ ~h : ~t ] -> ~foldl ~f (~f ~acc ~h) ~t) ~xs;
+~foldl ~f ~acc ~xs = (\[] -> ~acc | \( ~h : ~t ) -> ~foldl ~f (~f ~acc ~h) ~t) ~xs;
 
-~foldr ~f ~acc ~xs = (\[] -> ~acc | \[ ~h : ~t ] -> ~f ~h (~foldr ~f ~acc ~t)) ~xs;
+~foldr ~f ~acc ~xs = (\[] -> ~acc | \( ~h : ~t ) -> ~f ~h (~foldr ~f ~acc ~t)) ~xs;
 
-~map ~f ~xs = (\[] -> [] | \[ ~h : ~t ] -> (~cons (~f ~h) (~map ~f ~t))) ~xs;
+~map ~f ~xs = (\[] -> [] | \( ~h : ~t ) -> (~cons (~f ~h) (~map ~f ~t))) ~xs;
 
-~filter ~p ~xs = (\[] -> [] | \[ ~h : ~t ] -> (~if (~p ~h) (~cons ~h (~filter ~p ~t)) (~filter ~p ~t))) ~xs;
+~filter ~p ~xs = (\[] -> [] | \( ~h : ~t ) -> (~if (~p ~h) (~cons ~h (~filter ~p ~t)) (~filter ~p ~t))) ~xs;
 
-~take ~n ~xs = (~if (~n <= 0) [] ((\[] -> [] | \[ ~h : ~t ] -> (~cons ~h (~take (~n - 1) ~t))) ~xs));
+~take ~n ~xs = (~if (~n <= 0) [] ((\[] -> [] | \( ~h : ~t ) -> (~cons ~h (~take (~n - 1) ~t))) ~xs));
 
-~drop ~n ~xs = (~if (~n <= 0) ~xs ((\[] -> [] | \[ _ : ~t ] -> (~drop (~n - 1) ~t)) ~xs));
+~drop ~n ~xs = (~if (~n <= 0) ~xs ((\[] -> [] | \( _ : ~t ) -> (~drop (~n - 1) ~t)) ~xs));
 
 # String wrappers
 ~str_len ~s = (~Str .len ~s);
@@ -139,16 +139,16 @@
     ~neg = ((~Str .slice ~s 0 1) == "-");
     ~start = (~if (~neg) 1 0);
     ~if (~start >= ~len) .None (
-      ~loop ~i ~acc = (~if (~i >= ~len) .,( ~true , ~acc ) (
+  ~loop ~i ~acc = (~if (~i >= ~len) ( ~true , ~acc ) (
         ((\(.Some ~c) -> (~if ((~Char .is_digit ~c)) (
             ~d = ((~Unicode .to_int ~c) - (~Unicode .to_int '0'));
             ~loop (~i + 1) ((~acc * 10) + ~d)
-          ) .,( ~false , ~acc )))
-         | (\.None -> .,( ~false , ~acc )))
+          ) ( ~false , ~acc )))
+         | (\.None -> ( ~false , ~acc )))
         ((~Str .char_at ~s ~i))
       ));
       ~res = (~loop ~start 0);
-      ((\(.,( ~ok , ~v )) -> (~if (~ok) (.Some (~if (~neg) (0 - ~v) ~v)) .None))) ~res
+      (((\( (~ok , ~v) ) -> (~if (~ok) (.Some (~if (~neg) (0 - ~v) ~v)) .None)))) ~res
     )
   )
 );
