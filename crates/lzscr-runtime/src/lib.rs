@@ -872,7 +872,10 @@ impl Env {
                             Some(ch) => {
                                 let ns = make_scan(s.clone(), i + 1);
                                 // 2-tuple tag is '.,'
-                                let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Char(ch as i32), ns] };
+                                let pair = Value::Ctor {
+                                    name: ".,".into(),
+                                    args: vec![Value::Char(ch as i32), ns],
+                                };
                                 Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
                             }
                             None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
@@ -896,7 +899,10 @@ impl Env {
                             let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
                             if as_bool(env, &res)? {
                                 let ns = make_scan(s.clone(), i + 1);
-                                let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Char(ch as i32), ns] };
+                                let pair = Value::Ctor {
+                                    name: ".,".into(),
+                                    args: vec![Value::Char(ch as i32), ns],
+                                };
                                 return Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] });
                             }
                         }
@@ -1070,7 +1076,9 @@ impl Env {
                         }
                         Ok(Value::Record(map))
                     }
-                    Value::Ctor { name, args } if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') => {
+                    Value::Ctor { name, args }
+                        if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') =>
+                    {
                         let mut map: std::collections::BTreeMap<String, Value> =
                             std::collections::BTreeMap::new();
                         for kv in args {

@@ -1069,7 +1069,8 @@ fn infer_expr(
                             payload.extend(params.iter().cloned());
                             let ret = Type::Ctor { tag: tag.clone(), payload };
                             // fold params into function type
-                            let ty_fun = params.iter().rev().fold(ret, |acc, p| Type::fun(p.clone(), acc));
+                            let ty_fun =
+                                params.iter().rev().fold(ret, |acc, p| Type::fun(p.clone(), acc));
                             return Ok((ty_fun, sa));
                         }
                     }
