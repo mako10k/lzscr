@@ -25,6 +25,6 @@
     }
   },
   "files.associations": {
-    "*.lzscr": "plaintext"
+    "*.lzscr": "lzscr"
   }
 }
