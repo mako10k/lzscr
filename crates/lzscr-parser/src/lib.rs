@@ -126,20 +126,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 } else if t.text == "_" {
                     Pattern::new(PatternKind::Wildcard, t.span)
                 } else {
-                    let h = t;
-                    let mut args = Vec::new();
-                    loop {
-                        let Some(nxt) = toks.get(*i) else { break };
-                        match nxt.tok {
-                            Tok::Arrow | Tok::RParen | Tok::Comma | Tok::Eq | Tok::Semicolon => break,
-                            Tok::Tilde | Tok::Ident | Tok::Member(_) | Tok::LBracket | Tok::LBrace | Tok::LParen | Tok::Int(_) | Tok::Float(_) | Tok::Str(_) | Tok::Char(_) => {
-                                let a = parse_pat_atom(i, toks)?; args.push(a);
-                            }
-                            _ => break,
-                        }
-                    }
-                    let end = if args.is_empty() { h.span.offset + h.span.len } else { let last = args.last().unwrap(); last.span.offset + last.span.len };
-                    Pattern::new(PatternKind::Ctor { name: h.text.to_string(), args }, Span::new(h.span.offset, end - h.span.offset))
+                    return Err(ParseError::Generic("invalid bare identifier in pattern".into()));
                 }
             }
             Tok::Member(m) => {
@@ -229,6 +216,121 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             acc = Expr::new(ExprKind::Lambda { param: p.clone(), body: Box::new(acc) }, span);
         }
         acc
+    }
+
+    // Minimal reusable TypeExpr parser for use in %type declarations (sum arms etc.)
+    fn parse_type_expr<'a>(j: &mut usize, toks: &'a [lzscr_lexer::Lexed<'a>]) -> Result<TypeExpr, ParseError> {
+        fn parse_type_atom<'b>(j: &mut usize, toks: &'b [lzscr_lexer::Lexed<'b>]) -> Result<TypeExpr, ParseError> {
+            let t = bump(j, toks).ok_or_else(|| ParseError::Generic("expected type".into()))?;
+            Ok(match &t.tok {
+                Tok::Ident => match t.text {
+                    "Unit" => TypeExpr::Unit,
+                    "Int" => TypeExpr::Int,
+                    "Float" => TypeExpr::Float,
+                    "Bool" => TypeExpr::Bool,
+                    "Str" => TypeExpr::Str,
+                    "Char" => TypeExpr::Char,
+                    other => TypeExpr::Ctor { tag: other.to_string(), args: vec![] },
+                },
+                Tok::TyVar(name) => TypeExpr::Var(name.clone()),
+                Tok::Member(name) => TypeExpr::Ctor { tag: name.clone(), args: vec![] },
+                Tok::LBracket => {
+                    let inner = parse_type_expr(j, toks)?;
+                    let rb = bump(j, toks).ok_or_else(|| ParseError::Generic("] expected in type".into()))?;
+                    if !matches!(rb.tok, Tok::RBracket) { return Err(ParseError::Generic("] expected in type".into())); }
+                    TypeExpr::List(Box::new(inner))
+                }
+                Tok::LParen => {
+                    if let Some(nxt) = toks.get(*j) { if matches!(nxt.tok, Tok::RParen) { let _ = bump(j, toks); return Ok(TypeExpr::Tuple(vec![])); } }
+                    let first = parse_type_expr(j, toks)?;
+                    let mut items = vec![first];
+                    loop {
+                        let Some(nxt) = toks.get(*j) else { return Err(ParseError::Generic(") expected in type".into())); };
+                        match nxt.tok {
+                            Tok::Comma => { let _ = bump(j, toks); let t2 = parse_type_expr(j, toks)?; items.push(t2); }
+                            Tok::RParen => { let _ = bump(j, toks); break; }
+                            _ => return Err(ParseError::Generic("expected , or ) in type".into())),
+                        }
+                    }
+                    TypeExpr::Tuple(items)
+                }
+                Tok::LBrace => {
+                    if let Some(nxt) = toks.get(*j) { if matches!(nxt.tok, Tok::RBrace) { let _ = bump(j, toks); return Ok(TypeExpr::Record(vec![])); } }
+                    let mut fields = Vec::new();
+                    loop {
+                        let k = bump(j, toks).ok_or_else(|| ParseError::Generic("expected key in type record".into()))?;
+                        let key = match &k.tok { Tok::Ident => k.text.to_string(), _ => return Err(ParseError::Generic("expected ident key in type record".into())) };
+                        let col = bump(j, toks).ok_or_else(|| ParseError::Generic(": expected in type record".into()))?;
+                        if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected in type record".into())); }
+                        let tv = parse_type_expr(j, toks)?;
+                        fields.push((key, tv));
+                        let sep = bump(j, toks).ok_or_else(|| ParseError::Generic("expected , or } in type record".into()))?;
+                        match sep.tok { Tok::Comma => continue, Tok::RBrace => break, _ => return Err(ParseError::Generic("expected , or } in type record".into())), }
+                    }
+                    TypeExpr::Record(fields)
+                }
+                Tok::Question => {
+                    let name = if let Some(nx) = toks.get(*j) { if matches!(nx.tok, Tok::Ident) { let n = nx.text.to_string(); let _ = bump(j, toks); Some(n) } else { None } } else { None };
+                    TypeExpr::Hole(name)
+                }
+                _ => return Err(ParseError::Generic("unexpected token in type".into())),
+            })
+        }
+        fn parse_type_bp<'b>(j: &mut usize, toks: &'b [lzscr_lexer::Lexed<'b>], bp: u8) -> Result<TypeExpr, ParseError> {
+            let mut lhs = parse_type_atom(j, toks)?;
+            loop {
+                let Some(nxt) = toks.get(*j) else { break };
+                if matches!(nxt.tok, Tok::Arrow) {
+                    if 5 < bp { break; }
+                    let _ = bump(j, toks);
+                    let rhs = parse_type_bp(j, toks, 5)?;
+                    lhs = TypeExpr::Fun(Box::new(lhs), Box::new(rhs));
+                    continue;
+                }
+                break;
+            }
+            Ok(lhs)
+        }
+        parse_type_bp(j, toks, 0)
+    }
+
+    // Try to parse a type declaration: %Name %a* = %{ .Tag Ty* ( '|' .Tag Ty* )* '}' ';'?
+    // On success, returns Some((decl, new_index)); on failure to match, returns Ok(None) and does not consume.
+    fn try_parse_type_decl<'a>(j: &mut usize, toks: &'a [lzscr_lexer::Lexed<'a>]) -> Result<Option<(TypeDecl, usize)>, ParseError> {
+        let save = *j;
+        let head = match toks.get(*j) { Some(h) => h, None => return Ok(None) };
+        if !matches!(head.tok, Tok::TyVar(_)) { return Ok(None); }
+        *j += 1;
+        let mut params: Vec<String> = Vec::new();
+        while let Some(nx) = toks.get(*j) { if let Tok::TyVar(pn) = &nx.tok { params.push(pn.clone()); *j += 1; } else { break; } }
+        if let Some(eq) = toks.get(*j) { if matches!(eq.tok, Tok::Eq) { *j += 1; } else { *j = save; return Ok(None); } } else { *j = save; return Ok(None); }
+        if let Some(op) = toks.get(*j) { if matches!(op.tok, Tok::TypeOpen) { *j += 1; } else { *j = save; return Ok(None); } } else { *j = save; return Ok(None); }
+        let mut alts: Vec<(String, Vec<TypeExpr>)> = Vec::new();
+        loop {
+            let tagtok = match toks.get(*j) { Some(t) => t, None => { *j = save; return Ok(None); } };
+            let tag = match &tagtok.tok { Tok::Member(name) => name.clone(), _ => { *j = save; return Ok(None); } };
+            *j += 1;
+            let mut args: Vec<TypeExpr> = Vec::new();
+            loop {
+                let Some(nxt) = toks.get(*j) else { *j = save; return Ok(None) };
+                match nxt.tok {
+                    Tok::Pipe | Tok::RBrace => break,
+                    _ => { let te = parse_type_expr(j, toks)?; args.push(te); }
+                }
+            }
+            alts.push((tag, args));
+            let sep = match toks.get(*j) { Some(s) => s, None => { *j = save; return Ok(None); } };
+            match sep.tok {
+                Tok::Pipe => { *j += 1; continue; }
+                Tok::RBrace => { *j += 1; break; }
+                _ => { *j = save; return Ok(None); }
+            }
+        }
+        // optional ';'
+        if let Some(semi) = toks.get(*j) { if matches!(semi.tok, Tok::Semicolon) { *j += 1; } }
+        let span = Span::new(head.span.offset, toks.get(*j - 1).map(|t| t.span.offset + t.span.len).unwrap_or(head.span.offset) - head.span.offset);
+        let name = match &head.tok { Tok::TyVar(n) => n.clone(), _ => unreachable!() };
+        Ok(Some((TypeDecl { name, params, body: TypeDefBody::Sum(alts), span }, *j)))
     }
 
     fn parse_atom<'a>(
@@ -567,10 +669,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 // Try LetGroup with only bindings (no %type decl yet). Fallback to group/tuple.
                 let save_i = *i;
                 let mut it = *i;
+                let mut leading_types: Vec<TypeDecl> = Vec::new();
                 let mut leading: Vec<(Pattern, Expr)> = Vec::new();
                 loop {
                     let before = it;
                     let mut j = it;
+                    if let Some((decl, new_j)) = try_parse_type_decl(&mut j, toks)? {
+                        leading_types.push(decl);
+                        it = new_j;
+                        continue;
+                    }
                     // Try param-chain: ~name pat* = expr ;
                     if let Some((fname, params, _)) = try_parse_lhs_param_chain(&mut j, toks) {
                         // check duplicate binders
@@ -611,6 +719,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 let mut j = it;
                 let body_expr = parse_expr_bp(&mut j, toks, 0)?;
                 // Optional trailing bindings
+                let mut trailing_types: Vec<TypeDecl> = Vec::new();
                 let mut trailing: Vec<(Pattern, Expr)> = Vec::new();
                 if let Some(sep) = toks.get(j) {
                     if matches!(sep.tok, Tok::Semicolon) {
@@ -618,6 +727,11 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         loop {
                             let before = j;
                             let mut k = j;
+                            if let Some((decl2, new_k)) = try_parse_type_decl(&mut k, toks)? {
+                                trailing_types.push(decl2);
+                                j = new_k;
+                                continue;
+                            }
                             if let Some((fname, params, _)) = try_parse_lhs_param_chain(&mut k, toks) {
                                 let mut names: Vec<String> = Vec::new();
                                 for p in &params { collect_binders(p, &mut names); }
@@ -653,14 +767,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         }
                     }
                 }
-                // Commit if we have at least one binding and next token is ')'
+                // Commit if we have at least one binding or type decl and next token is ')'
                 if let Some(rp) = toks.get(j) {
-                    if matches!(rp.tok, Tok::RParen) && (!leading.is_empty() || !trailing.is_empty()) {
+                    if matches!(rp.tok, Tok::RParen) && (!leading.is_empty() || !trailing.is_empty() || !leading_types.is_empty() || !trailing_types.is_empty()) {
                         *i = j + 1;
                         let mut all = leading;
                         all.extend(trailing);
+                        let mut tys = leading_types;
+                        tys.extend(trailing_types);
                         let span_all = Span::new(t.span.offset, rp.span.offset + rp.span.len - t.span.offset);
-                        return Ok(Expr::new(ExprKind::LetGroup { type_decls: vec![], bindings: all, body: Box::new(body_expr) }, span_all));
+                        return Ok(Expr::new(ExprKind::LetGroup { type_decls: tys, bindings: all, body: Box::new(body_expr) }, span_all));
                     }
                 }
 
