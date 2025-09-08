@@ -1,404 +1,223 @@
-## lzscr 言語概要と開発環境選定
+## lzscr: Language overview and development plan
 
-本ドキュメントは、GitHub: mako10k/lazyscript を下敷きにした焼き直し計画のための要点整理です。
+This document consolidates the practical overview, design choices, and roadmap for the lzscr implementation (a reboot inspired by GitHub: mako10k/lazyscript), updated to match the current .Member-only constructor policy and the English-only docs policy.
 
-### 1) 言語の要点（原版 lazyScript から抽出）
+### 1) Language highlights (from the original lazyScript, adapted)
 
-- 目的: 遅延評価を中核とした実験的スクリプト言語。式ベースで、トップレベルは `prog ::= expr ';'`。
-- 値・実行時概念（代表）:
-	- thunk による遅延評価。主な種別: lambda, appl, ref, int, str, builtin, alge（タプル/データ的包）、choice、bottom（エラー相当）。
-	- 参照: `~name` で評価時に束縛を解決。
-	- ラムダ: `\x -> expr`。ブロック `{ expr }` は式。
-	- リスト/タプル: リテラル・コンス `:` などを糖衣/デシュガで表現。
-	- 裸シンボル: これまでの「alge の頭」から拡張し、同名の「コンストラクタ変数」（型から型への写像）として扱う（詳細は章 10）。
-	  - ゼロ引数のコンストラクタは必ず `S()` で記述（素の `S` は変数束縛/参照と解釈）。
-- シンタックスシュガー（現在の既定ルートモジュールは `prelude`）:
-	- `~~sym` → `(~prelude sym)`（純粋 API の短縮）
-	- `!sym` → `(~prelude .env .sym)`（効果 API の短縮。例: `!println`, `!require`, `!def`）
-	- `!{ ... }` → `chain/bind` への展開（do 記法相当）。
-	- ルートモジュールは CLI/環境変数で切替可能（互換のため当面は `--sugar-namespace` を使用）。
- 	- 例外系糖衣: `^(Expr)` は Bottom を投げる（raise）。`Expr ^| <lamchain>` は左からの Bottom を捕捉（caret パターンで束縛）。
-- 実行セマンティクス:
-	- ファイル実行は既定で `main` 関数を探して実行（`--entry` で変更可）。
-	- `-e` で 1 行式を評価し最終値を出力（`main` は無視）。
-	- strict-effects: 効果を持つビルトイン（println/print/def/require 等）は `seq/chain/bind` の文脈に制限。
-- ビルトイン/プレリュード:
-	- コア: `to_str, print, println, seq, add, sub, lt, eq, chain, bind, return` 等。
-	- プレリュードはプラグイン（.so）で差し替え可能。`ls_prelude_register` により `prelude` モジュールを提供。
-	- 実行時拡張: `~~require "path.ls"`, `~~def Name value` 等で動的ロード/定義。
-- 中間表現:
-	- Core IR を生成/実行する経路あり（最小タイプチェック、将来 LLVM IR 降ろし）。
-- ツール:
-	- フォーマッタ、VS Code 機能拡張（構文ハイライト/フォーマット/診断）。
+- Goal: A small, lazy, expression-oriented scripting language. Top-level is an expression; the CLI wraps file contents as a LetGroup to allow definitions before the final expression.
+- Runtime model (representative):
+	- Lazy evaluation via thunks. Core value kinds: lambda/closure, application, reference, int, str, char, tuple/record, list, ctor (algebraic-like), symbol, native, choice, raised (caret-exception), thunk.
+	- Reference: `~name` resolves to a statically-bound slot at runtime evaluation.
+	- Lambda: `\x -> expr`. Blocks `{ expr }` are expressions.
+	- Lists/tuples/records: have sugars and desugars, consistent with the parser and formatter.
+	- Constructors: values use .Member-only tags, like `.Some`, `.None`, `.Ok`, `.Err`. Zero-arity forms are written as `.Tag()`. Bare `Tag` is a variable; `.Tag` is a constructor tag/symbol.
+- Syntax sugar (current root module is `Builtins` via prelude wiring):
+	- Effect sugar: `!name` → `(~effects .name)`
+	- Do-notation: `!{ ... }` → desugars to `chain/bind` sequencing
+	- Exceptions: `^(Expr)` raises; `Expr ^| lam` catches caret-style exceptions
+- Execution semantics:
+	- File mode: by default looks for `main` (configurable with `--entry`). `-e` evaluates a one-liner and prints the final value.
+	- strict-effects: effectful builtins (println/print/def/require, etc.) are restricted to effect-contexts formed by `seq/chain/bind`.
+- Builtins/prelude:
+	- Core: `to_str, print, println, seq, add, sub, lt, eq, chain, bind, return`, etc.
+	- Prelude can be swapped (cdylib) and provides a `Builtins` root record/namespace when available.
+	- Dynamic loading: `~require`, `!def` as runtime-level features under effect discipline.
+- Intermediate Representation (IR):
+	- A Core IR exists for lowering/diagnostics; an IR evaluator is planned; LLVM IR is future work.
+- Tooling:
+	- Formatter and a VS Code extension (highlight/format/diagnostics) are planned; rustfmt/clippy/tests are enforced.
 
-### 2) 焼き直しの方針と選定
+### 2) Implementation choices
 
-選定: 実装言語は Rust（stable）を採用。
+- Implementation language: Rust (stable toolchain).
 
-主な理由:
-- 安全性/安定性: 所有権と型でメモリ安全・未定義動作を抑止。C 実装の GC 依存を脱却。
-- パーサ/診断体験: `chumsky`/`lalrpop`/`logos` + `ariadne`/`miette` による高品質エラーメッセージ。
-- プラグイン/FFI: `libloading` 経由で `cdylib` プラグイン（プレリュード）をロード可能。
-- 将来の IR/LLVM: `inkwell` により LLVM IR 出力への道筋が明確。
-- 配布性/開発速度: Cargo による依存/ビルド管理、単一バイナリ配布、クロスプラットフォーム性。
+Reasons:
+- Safety/stability with ownership and types; no undefined behavior; no GC required.
+- Good lexing/parsing/diagnostics ecosystem (`logos`, `chumsky`, `miette`/`ariadne`).
+- Plugin/FFI via `libloading` and a simple C-ABI for prelude providers.
+- Future LLVM via `inkwell` is feasible.
+- Cargo makes distribution and development fast and portable.
 
-比較メモ:
-- C(+Flex/Bison): 原版踏襲で移植は容易だが、安全性/開発体験で Rust に劣る。
-- Zig: 単一バイナリや FFI は良いが、エコシステム/パーサまわりの成熟度で Rust 優位。
-- OCaml: 言語処理系向きだが配布/FFI/周辺の導入障壁を考慮して今回は見送り。
+Other options considered (brief):
+- C(+Flex/Bison): easy to port from original, but worse safety/devex.
+- Zig: nice single binary/FFI, but parser/diagnostic ecosystem is less mature for this use.
+- OCaml: great for language work, but distribution/FFI/editor tooling trade-offs.
 
-### 3) 提案アーキテクチャ（Cargo Workspace）
+### 3) Workspace architecture (Cargo workspace)
 
-推奨ワークスペース構成（例）:
+Suggested layout (current repository follows this):
 - crates/
-	- lzscr-lexer: logos ベースの字句解析。
-	- lzscr-ast: AST と位置情報、表示/フォーマット補助。
-	- lzscr-parser: chumsky で構文解析 + デシュガ（`~~`, `!`, `!{}`）。
-	- lzscr-runtime: thunk/環境/評価器、効果規律（strict-effects）検証。
-	- lzscr-coreir: Core IR 定義・ロワリング・最小タイプチェック。
-	- lzscr-llvmir (opt): inkwell による LLVM IR 出力（後段）。
-	- lzscr-cli: `lzscr` 本体（-e, --strict-effects, --entry 等の互換 CLI）。
-	- lzscr-compiler (opt): `lzscrc`（Core IR 出力/型検証）。
-	- lzscr-prelude: `cdylib` プラグイン（`ls_prelude_register()` を C-ABI で公開）。
-	- lzscr-format: フォーマッタ（AST -> 再整形）。
+	- lzscr-lexer: tokenization (logos)
+	- lzscr-ast: AST and spans, printing/formatting helpers
+	- lzscr-parser: syntax parsing (chumsky) + sugars (`!`, `!{}`)
+	- lzscr-runtime: evaluator, env/effects, strict-effects checking
+	- lzscr-coreir: Core IR definitions, lowering, minimal type checks
+	- lzscr-cli: CLI binary (`-e`, `--strict-effects`, `--entry`, etc.)
+	- Optional: lzscr-llvmir (inkwell), lzscr-compiler, lzscr-format, lzscr-prelude
 
-設計ノート:
-- メモリ/所有権: 遅延評価の循環参照は arena/slotmap で ID 管理し、`Rc`+`RefCell` の循環は許容/リークなし方針。
-- 効果規律: ランタイムで `seq/chain/bind` の文脈を追跡し、効果ビルトイン呼出を検証。
-- プラグイン ABI: `#[no_mangle] extern "C" fn ls_prelude_register(env: *mut Env) -> i32`（原版互換）を想定。`libloading` で動的解決。
+Design notes:
+- Memory/ownership: arena/slotmap for cycles; avoid `Rc<RefCell<_>>` cycles when possible.
+- Effect rules: runtime enforces effect-context for effectful calls.
+- Plugin ABI: `#[no_mangle] extern "C" fn ls_prelude_register(env: *mut Env) -> i32` expected; loaded via `libloading`.
 
-補足（原版との差分の明示）:
-- List 構文を実装済み: リストリテラル `[a, b, ...]`、空リスト `[]`、cons 演算子 `h : t`（右結合）。
-	- デシュガ: `h : t` → `((~cons h) t)`、`[a,b,c]` → `(~cons a (~cons b (~cons c [])))`。
-	- `cons : a -> List a -> List a` はビルトイン関数。
+Additional deltas from original:
+- List syntax implemented: `[a, b, ...]`, `[]`, and right-associative `h : t`.
+	- Desugar: `h : t` → `((~cons h) t)`, `[a,b,c]` → `(~cons a (~cons b (~cons c [])))`.
+	- `cons : a -> List a -> List a` is a builtin.
 
-### 1.1) 用語の整理（名称の変更）
+### 1.1) Terminology
 
-- 名前空間（namespace）: コンパイル時の名前解決ドメイン（レキシカル/モジュール/インポートの集合）。識別子→スロット/インデックスへの静的リンクを担う概念。
-- モジュール（module）: 実行時の辞書的コンテナ（値）。`(~prelude sym)` や `(~prelude .env .println)` のような値レベルのメンバアクセスはモジュールアクセス。
-- 環境（environment）: 評価時の実行環境（フレーム/クロージャ捕捉を含む）。
+- Namespace (compile-time) vs Module (runtime record). Value-level member access uses symbols like `.name`.
+- Environment means the runtime evaluation environment (frames and closure captures).
 
-備考: 互換のため CLI のオプション名 `--sugar-namespace` は当面維持しますが、文書上は「ルートモジュール」と表記します。
+CLI flag `--sugar-namespace` remains for compatibility, but docs refer to the prelude root as a module/record.
 
-### 4) 開発環境セットアップ（推奨）
+### 4) Dev environment (recommended)
 
-- ツールチェーン: Rust stable（rustup）、rustfmt、clippy。
-- エディタ: VS Code + rust-analyzer（推奨設定: 保存時フォーマット/Clippy 警告表示）。
-- CI: GitHub Actions（build + test + clippy）。
-- 追加（将来の LLVM 機能用）: LLVM 15+ と `inkwell`（オプション）。
-- テスト: `cargo test`（パーサのゴールデンテスト、評価器の期待出力テスト、プロパティテストに `proptest`）。
+- Rust stable (rustup), rustfmt, clippy
+- VS Code + rust-analyzer (format-on-save, show clippy warnings)
+- CI: GitHub Actions (build + test + clippy with cache)
+- Optional: LLVM 15+ and inkwell
+- Tests: `cargo test` across crates (parser golden tests, runtime expectations, property tests with `proptest`)
 
-拡張子/MIME:
-- 公式拡張子: `.lzscr`
+File type/MIME:
+- Extension: `.lzscr`
 - MIME: `text/vnd.lzscr; charset=utf-8`
-- 当面のエディタ関連付け: VS Code は `*.lzscr` を `plaintext` に関連付け（`.vscode/settings.json`）。将来的に専用拡張でシンタックスハイライト/言語機能を提供予定。
+- Editor association: initially plaintext; a dedicated VS Code extension is planned.
 
-#### 4.1) CLI/ENV 互換方針（初期 + 将来）
+#### 4.1) CLI/ENV compatibility (initial + future)
 
-- 初期にサポート: `-e/--eval`, `-s/--strict-effects`, `--entry`, `-p/--prelude-so`, `-n/--sugar-namespace`。
-- 環境変数: `LAZYSCRIPT_PRELUDE_SO`, `LAZYSCRIPT_SUGAR_NS`, `LAZYSCRIPT_INIT` は CLI と等価に扱う。
-- 将来対応（拡張）: `-i/--dump-coreir`, `-c/--eval-coreir`, `-t/--typecheck`, `--no-kind-warn`, `--kind-error`, `--init`, `--trace-map`, `--trace-stack-depth`, `-d/--debug`, `-v/--version`。
-	- 将来、別名 `--sugar-module` を追加し、`--sugar-namespace` は非推奨化（互換維持）を検討。
+- Initial flags: `-e/--eval`, `-s/--strict-effects`, `--entry`, `-p/--prelude-so`, `-n/--sugar-namespace`
+- Env vars: `LAZYSCRIPT_PRELUDE_SO`, `LAZYSCRIPT_SUGAR_NS`, `LAZYSCRIPT_INIT`
+- Future: `-i/--dump-coreir`, `-c/--eval-coreir`, `-t/--typecheck`, `--no-kind-warn`, `--kind-error`, `--init`, `--trace-*`, `-d/--debug`, `-v/--version`
+
+### 5) Near-term milestones
+
+1. Workspace skeleton (crates, minimal CLI)
+2. Lexer/parser/desugar for comments/numbers/strings/refs/lambdas/blocks/cons
+3. Minimal evaluator and core pure builtins (`to_str`, `add/sub/eq/lt`)
+4. Effects API (`println/print/def/require`) and strict-effects verification
+5. Prelude cdylib design and dynamic loading (`--prelude-so`)
+6. Formatter/editor wiring
+7. Core IR and minimal type checks; future LLVM groundwork
 
-### 5) 当面のマイルストーン
-
-1. ワークスペース雛形の作成（crates 配置、最小 CLI: `-e` と `--strict-effects`）。
-2. 字句/構文/デシュガの実装（コメント/数値/文字列/参照/ラムダ/ブロック/cons ほか）。
-3. 最小評価器（int/str/lambda/appl/ref）とコア純粋ビルトイン（`to_str`, `add/sub/eq/lt`）。
-4. 効果 API の導入（`println/print/def/require`）と strict-effects 検証。
-5. プレリュード `cdylib` の設計と動的ロード互換（`--prelude-so`）。
-6. フォーマッタ/VS Code 連携の基礎（拡張は後続）。
-7. Core IR の導入と最小タイプチェッカ、将来の LLVM 連携土台作り。
-
-補足: 型のプリミティブ
-
-- Unit / Int / Float / Bool / Str / Char（新規）
-		- 文字リテラル: 'a', '\n', '\\', '\'', '\u{1F600}' 等をサポート（単一の Unicode コードポイント）。
-		- 表示仕様: 値の表示は評価可能なクォート付き文字リテラルで行う（例: Char(97) は 'a'、改行は '\n'）。
-			- CLI 出力、print/println、to_str、Core IR のダンプ/評価結果のいずれも '...' 形式に統一。
-
-【残作業メモ】
-- Char リテラルのエラーテスト強化（不正な \u{}、複数コードポイント、空リテラルなど）
-- CLI/ランタイム: 文字のユーティリティ（例: char_to_int / int_to_char の型注釈とドキュメント）
-- Core IR 評価器: 例外/効果/letrec 対応の拡張（IR 作業再開時）
-- ドキュメント: Char の文法/エスケープ表の追加（仕様章へ転記）
-
-### 6) 束縛解決戦略（できる限り早期リンク）
-
-目的: 参照（`~name` や糖衣展開後の名前）を実行時ではなくコンパイル時（IR 生成時）に可能な限り位置参照へ解決し、ランタイムの名前探索を最小化する。
-
-設計方針（要約）:
-- 二相処理: 1) 名前解決（スコープ/束縛の収集と参照解決）→ 2) パターンの実行時代入を含む IR 生成。
-- 参照種別:
-	- ローカル束縛: de Bruijn インデックスまたは連番スロットに静的解決（関数引数・`let`/`bind` の LHS 名）。
-	- クロージャ捕捉: upvalue テーブル（親フレームのスロット参照）に静的解決。
-	- モジュール（トップレベル）束縛: モジュール内シンボル表の固定スロットに解決（相互再帰を許す）。
-	- モジュールアクセス（`(~mod name)`）: `mod` 自体への参照は静的スロット化、メンバは「未知可変境界」として遅延（プラグイン/実行時 import に対応）。
-	- 動的環境操作（`!require`, `!def` 等）: 遅延境界。これらが導入する名前は静的解決の対象外とし、明示的に「動的アクセス」ノードで扱う。
-
-パターン束縛の扱い:
-- LHS パターンに現れる識別子は「スコープに宣言された静的スロット」を即時確保し、RHS 評価後のパターン実行で「そのスロットに代入」する。
-- したがって、RHS 内の該当識別子参照は「静的にそのスロットを指す」ことが可能（ただしパターンの評価順序上、未束縛使用があれば別途検出）。
-- 失敗時（パターン不一致）は Bottom を生成し、上位に伝播（`^|` で捕捉可能）。
-
-トップレベル（モジュール）束縛:
-- 1 パス目で宣言名をすべて収集しスロット割当（相互再帰を許可）。
-- 2 パス目で各式/関数本体の参照を解決。初期化は実行時に thunk として遅延可能。
-
-IR への落とし方（最小案）:
-- VarRef(kind, slot, upvalue_path) で識別子参照を表現（文字列を持たない）。
-- PatBind: 実行時オペコードで、マッチ成功時に「事前確保されたスロット」へ代入。
-- ModuleRef(mod_slot) + DynMember(".env"/name) でモジュールの動的境界を明確化。
-
-エラー検出（名前解決段階）:
-- 未束縛参照（lexical/global）を静的にエラー化。
-- パターン LHS の重複名/隠蔽の衝突検出。
-- 使用前参照（初期化前使用）: 依存グラフで自己参照の不正なパスを検知（関数定義は許可、値定義の即時自己参照はエラー）。
-
-例外系糖衣との整合:
-- `^(Expr)` は IR で Raise(Expr) とし、`^|` は TryCatchCaret(chain) に降ろす。名前解決済みの参照を含むため、捕捉側の caret パターンも静的スロット確保→実行時代入の流れ。
-
-互換ポリシー:
-- 既存の `~~sym`/`!sym`/`!{}` はパーサ段階でデシュガ→名前解決フェーズへ。
-- プレリュードのシンボルは「モジュールスロット + 動的メンバ」扱いにしてプラグイン差替えへ対応。
-
-実装ステップ（短期）:
-1) スコープ/シンボル表の導入（モジュール/ラムダ単位）。
-2) LHS パターンの宣言スキャン→スロット予約→RHS/本体内参照の静的解決。
-3) パターンコンパイル（実行時代入）とエラー伝播の IR 化。
-4) upvalue 解析とクロージャのキャプチャ表構築。
-
-品質ゲート:
-- 単体: 参照解決テスト（シャドーイング/相互再帰/パターン束縛）
-- プロパティ: α変換不変性（名前の置換で意味不変）
-- レグレッション: require/def の動的導入は静的解決の対象外であることの確認
-
-### 7) 開発Tips（bash の `!` ヒストリ展開）
-
-`-e` で `!{ ... }` を渡す際、bash のヒストリ展開に注意。
-- 推奨: 外側で `set +H` を有効化、もしくは単引用符/ヒアドキュメントを使う。
-- 例: `( set +H; ./target/debug/lzscr -e '!{ !println ("ok"); };' )`
-
-### 8) 将来対応（拡張）
-
-- Core IR ダンプ/実行、最小タイプチェック、Kind 警告/エラー、実行トレース（sourcemap/stack 深さ）等の CLI オプション追加。
-
-## 優先度ロードマップ（2025-09 現在）
-
-優先度の高い順に並べています。各項目の実施可否/方法は順次指示に従って詳細化します。
-
-1. Core IR 拡張と実行経路の整備（~chain/~bind/~raise/~catch/~alt）
-	- 概要: 既存の (~seq) 降ろしに加え、効果連鎖/例外/代替ラムダを IR にロワリングし、IR 実行器と CLI フラグ（-i/-c）を用意。
-	- 現状: (~seq) のみ IR 化。IR 実行は未実装。
-
-2. 静的名前解決/アップバリュー解析（スロット化）
-	- 概要: 参照をスロット/アップバリューに固定し、ランタイムの名前探索を排除。パターン束縛のスロット予約も含む。
-	- 現状: 設計方針を文書化済み。実装未着手。
-
-3. 型推論（HM ランク1）と Kind/効果規律の統合
-	- 概要: IR 上でのアルゴリズム W、let-多相、Kind=Pure/IO による strict-effects の静的検証を統合。
-	- 現状: 効果規律はランタイム/限定的型規則で対応。推論/Kind 統合は未。
-
-4. 例外系（raise/catch）と alt の型整合/IR 連携
-	- 概要: caret パターンを含む型付け、Bottom 伝播フラグ、IR ロワリングの一貫化。
-	- 現状: AST/ランタイムは動作。型/IR は要拡張。
-
-5. コンストラクタ変数/ADT の静的化（アリティ確定と宣言）
-	- 概要: S()/S a b のアリティ確定、矛盾検出、パターン/値の整合。将来の ADT 宣言の足場。
-	- 現状: 方針を文書化。実装は部分（実行時アリティ検査のみ）。
-
-6. 標準ライブラリ拡充（Option/List/Result/文字列ユーティリティ）
-	- 概要: 最小主義を維持しつつ、map/bind/unwrap/fold/検索など基本関数を prelude に整理。
-	- 現状: Option/List の一部あり。体系化とテストを強化。
-
-7. 文字/文字列リテラル強化（Char リテラル、エスケープ、UTF-8 ユーティリティ）
-	- 概要: '\'uXXXX 等のエスケープ、Char リテラル、スライス安全 API の整理。
-	- 現状: 文字列/Char 実装はあり。リテラル/エスケープは未整備。
-
-8. CLI 拡張と診断（-i/--dump-coreir, -c/--eval-coreir, -t/--typecheck, --trace-*）
-	- 概要: 解析/実行フローをスイッチ可能にし、型/Kind/IR の診断を CLI で制御。
-	- 現状: 一部フラグ/機能はあり。拡張は未。
-
-9. アナライザ/リンタの再配線（IR 後工程対応）
-	- 概要: 重複/未束縛/隠蔽/未使用/arity 等の検査を IR ベースに統合し品質向上。
-	- 現状: AST ベースで一部提供。IR 導入後に統合要。
-
-10. VS Code 最小拡張（シンタックス/フォーマット/診断連携）
-	 - 概要: TextMate/Tree-sitter いずれかでハイライト、フォーマッタ呼び出し、簡易診断連携。
-	 - 現状: 未。
-
-11. フォーマッタの安定化（ラウンドトリップ/スタイル）
-	 - 概要: ゴールデンテスト整備、オプション最小化、安定出力の担保。
-	 - 現状: あり/要強化。
-
-12. パフォーマンス/メモリ最適化（ベンチ/キャッシュ）
-	 - 概要: ベンチ導入、サイクル検知/メモ化、アロケーション削減。
-	 - 現状: 計測未整備。
-
-13. ドキュメント整備（仕様の現状反映とチュートリアル）
-	 - 概要: 仕様/CLI/標準ライブラリの最新化、入門/レシピ追加。
-	 - 現状: 部分更新。ロードマップ反映済み。
-
-### 9) 型システム（MVP）
-
-目的: 実行前に可能な範囲で型・効果の誤りを検出し、実装の安全性とエラーメッセージ品質を高める。
-
-方針（最小）:
-- 種別（Kind）と型（Type）を分離。
-	- Kind: `Pure` | `IO`（効果あり）。式やビルトインに付く分類。既存の strict-effects 規律と整合。
-	- Type: HM 風の単相/多相型（ランク1）。`Int`, `Str`, `Unit`, `Tuple[t1,...,tn]`, `List[t]`, `Func[t1 -> t2]`。
-- 型注釈は当面なし（将来 `x : T` を導入可）。ビルトインとプリミティブに十分なシグネチャを付与。
-- 名前解決後の IR 上で型推論（アルゴリズム W）と Kind 検証を行う。
-
-代表的な型規則（概要）:
-- 参照: 解決済みスロットに付与された型変数/スキームをインスタンス化。
-- ラムダ: 引数に新鮮な型変数 α を割当て、`body` の型 β を推論し `α -> β`。
-- 適用: `f : α -> β`, `x : α` を要求して β を得る（単一化）。
-- タプル/リスト: 要素型をそれぞれ推論し構成（リストは同一要素型）。
-- パターン束縛: 右辺の型に基づき LHS パターンへ制約を付与し、各変数に型を割当てる（タプル分解等）。
-- raise/catch:
-	- `^(e)` は「任意型 ρ」を返せるが Bottom を導入。`e` の型はペイロード型 γ とし、`^|` の caret パターンは γ を受ける。
-	- `x ^| handler` は `x` と `handler` の戻り型が一致すること。
-
-Kind 規律（最小）:
-- `IO` Kind の値/関数は、`chain/seq/bind` の文脈内でのみ評価を許可。`Pure` はどこでも可。
-- ビルトインに Kind 注釈を付与し、型検査時に違反を報告（CLI: `--no-kind-warn`/`--kind-error` に対応）。
-
-主なビルトインの型/Kind（例）:
-- `to_str : forall a. a -> Str`（Pure）
-- `add, sub : Int -> Int -> Int`（Pure）
-- `eq : forall a. a -> a -> Bool`（Pure）
-- `lt : Int -> Int -> Bool`（Pure）
-- `print : Str -> Unit`（IO）
-- `println : Str -> Unit`（IO）
-- `return : forall a. a -> a`（Pure）
-- `seq : a -> b -> b`（Pure、ただし第二引数側の Kind が IO の場合は文脈検証で許可）
-- `chain : m -> (Unit -> k) -> k`（文脈的: 実装では Kind 検証で取り扱う）
-- `bind : m -> (x -> k) -> k`（同上）
-
-注: `Bool` は lzscr で導入（原版は明示的な Bool 型の代わりに代数的表現を取ることがあった）。既存テスト移行時は真偽値表現をマッピングする。
-
-#### 9.1) Bool の設計（提案/合意）
-
-- Bool は「タグ `.false` | `.true` を受け取って Bool 値を返す」1 引数コンストラクタ関数として定義する。
-	- 型: `Bool : (.false | .true) -> Bool`
-	- 例: `Bool .true` は真、`Bool .false` は偽。
-- 実用上の書き方として、以下の等価関係を採用:
-	- `true = Bool .true`、`false = Bool .false`
-	- ゼロ引数コンストラクタの規約に従い、`true()`/`false()` と書ける（`()` は Unit を表す慣習的プレースホルダ）。
-
-備考（PoC 現状との整合）:
-- 現在の実装では簡便のため `~true`/`~false` が直接 Bool 値を参照として提供される。
-	- 追加済みの糖衣: `true()`/`false()` は `~true`/`~false` に展開される。
-	- 追加済みのコンストラクタ: `(~Bool .true)` / `(~Bool .false)` が Bool 値を返す。
-	- 将来、`~true`/`~false` を非推奨化（互換期は両対応）を検討。
-
-エラーの種類（例）:
-- 型不一致/単一化失敗、未解決型変数の漏れ（総称化漏れ）、リスト要素型の不一致。
-- 関数適用の多寡（arity）不一致。
-- Kind 規律違反（`println` を `chain/seq/bind` 外で使用）。
-
-検証と実装ノート:
-- IR 上での型推論（アルゴリズム W）実装と制約ソルバ（発見的に発生順で単一化）。
-- let-多相: トップレベル/`let` 的束縛で一般化、利用時にインスタンス化。
-- パターン束縛は RHS 推論後に制約適用→スロットへ型割当て。
-- 例外（Bottom）を伴う経路は型は維持しつつ、別途「Bottom 到達可能」フラグを保持（将来のデッドコード警告用途）。
-
-テスト計画（最小）:
-- 単体: 算術/比較/文字列連結、ラムダ/適用、タプル/リスト、パターン分解の型付け。
-- Kind: `println` の許可/拒否ケース、`chain/seq/bind` 文脈の境界。
-- 回帰: 相互再帰関数、未束縛名、raise/catch の型整合。
-
-### 10) コンストラクタ変数（裸シンボルの再解釈）
-
-目的: 裸シンボルを「コンストラクタ変数」として扱い、同名出現間で型の互換性を静的に管理しつつ、パターン/値両方で統一的に利用できるようにする。
-
-直観:
-- `Foo` は初出時に「型から型への写像」として導入される。語義上は型コンストラクタ（kind `* -> *`、多引数は `*^n -> *` としてタプル化）に相当。
-- 値レベルではコンストラクタ関数として振る舞い、`Foo a b` のように適用すると payload 型が `(type(a), type(b))` のタプルになる。
-- パターン `Foo x y` は scrutinee の型が `Ctor<'Foo, (tx, ty)>` であることを要求し、`x:tx`, `y:ty` を束縛する。
-
-型表現（MVP 案）:
-- 新しい型コンストラクタ `Ctor<'Sym, P>` を導入（`'Sym` はスコープ内で一意なタグ、`P` は payload 型）。
-- 裸シンボル `S` の主型は「アリティ n を持つカリー化関数」として扱う。初回に「完全適用」された使用が現れた時点でアリティ n を確定し、
-	主型は `forall a1..an. a1 -> ... -> an -> Ctor<'S, (a1,..,an)>` となる（payload は n-タプル）。
-- 多引数の値構築は `S a b c` のように通常の関数適用で表現でき、部分適用も許可される（例: `S a : forall b c. b -> c -> Ctor<'S,(type(a),b,c)>`）。
- - n=0（ゼロ引数）の場合、payload は `Unit` とし、必ず `S()` で構築・パターン記述する（素の `S` は変数として解釈）。
-
-Bool への適用例:
-- `Bool` は 1 引数のコンストラクタで、payload はタグ `.true`/`.false` のいずれか。
-- 便宜上のシノニム: `true = Bool .true`, `false = Bool .false`。ゼロ引数コンストラクタ規約に則り `true()`/`false()` と記述する。
-
-推論/互換性（相互チェック）:
-- 同一スコープ内の同名 `S` の出現は、payload 形状が単一化可能であることが必要（例: `S Int` と `S Str` は矛盾→エラー）。
-- 形状が整合する場合、最汎一般単一化（MGU）で payload の型変数が絞り込まれ、「より厳しい型」への強化を実現。
-- let-多相により、`S` 自体のスキームは `forall P` を保つ（各使用点でインスタンス化）。ただし、スコープ内で矛盾する使用があると検出される。
-
-アリティ確定と曖昧性:
-- 少なくとも 1 か所、完全適用の使用が同一スコープ（SCC）内に必要。これがない場合、`S` のアリティが決められず曖昧性エラーを報告（将来は型注釈で解消可能）。
-- 複数の完全適用が存在し、異なる引数個数を要求する場合はエラー（`S a b` と `S x` が同スコープに混在など）。
- - 0 引数のコンストラクタは常に `S()` を要求（式/パターン双方）。`S` 単体の出現はコンストラクタと見なさない。
-
-スコープ:
-- 通常変数と同様にレキシカルスコープ。トップレベルでの初出はモジュール内で有効。
-- シャドーイングは可能だが、可読性のため警告（将来のリンタ対象）。
-- モジュール間で同名でも別タグ。インポートで同一視する場合は別名束縛（alias）で統合。
-
-動的導入との関係:
-- `!def`/`!require` によって実行時に導入される名前は、コンストラクタ変数としては扱わない（静的解決対象外）。
-- コンストラクタ変数は静的解析で導入された裸シンボルに限定し、ダイナミックな上書き/導入はエラーまたは警告とする（リンタ/オプションで制御）。
-
-パターンとの整合:
-- パターン側の `S` も同じタグ `'S` を参照。スコープに未登録なら初出として導入され、以降の出現と単一化される。
-- パターン中での arity/形状不一致（例: `S x` と `S (x,y)` が混在）はエラー。
- - 0 引数のパターンは `S()` のみ許可（`S` は変数束縛）。
-
-IR 影響:
-- 既存の alge 実装を流用し、タグに `'S` の ID を割当て、payload を格納（実行時表現は従来と同等）。
-- `S` は「カリー化されたコンストラクタビルトイン」として実装可能（部分適用はクロージャで引数を蓄積し、飽和時に alge を構築）。
-- 型検査器のみ `Ctor<'S,P>` を理解し、`S` の出現間の単一化を行う。
-
-エラー例:
-- `S 1` と `S "x"` の混在（同スコープ）→ payload 型 `Int` と `Str` の単一化失敗。
-- `match v with S x -> ... | S (x,y) -> ...`（同スコープ）→ 形状不一致。
-
-備考（実務上の注意）:
-- 暗黙宣言（初出で導入）はタイポを招きやすい。将来、`--warn-implicit-ctor` などで警告/禁止を切替可能にする。
-- 将来的に ADT 宣言やエクスポートを導入する場合は、この「暗黙コンストラクタ変数」を表明/固定化する構文を追加する。
-
----
-
-決定事項: 再実装は Rust（Cargo workspace）で進める。CLI 互換性とプレリュード・プラグイン機構は維持しつつ、診断品質と安全性を向上させる。
-
-## 構文と名前解決（再確認と暫定実装メモ）
-
-- 識別子: 仕様通り「前置記号なしの裸の識別子はコンストラクタ変数」。
-- 参照: 実体（値）への参照は `~name`。ビルトイン呼び出しは `(~add 1 2)` のように書く。
-- 0 引数コンストラクタ: あいまいさ回避のため `S()` を必須とする。
-
-補足（現状仕様の要点）:
-- 中値演算子: `+ - * /`（Int）、`.+ .- .* ./`（Float）、比較 `< <= > >=` と `== !=`、Float 比較は `. < .<= .> .>=`。
-	- OrElse 演算子は `||`（従来の `|` から移行済み）。パーサ/整形出力も `||` を使用。
-	- 代替ラムダ合成演算子 `|` を導入。
-		- 構文制約: 左右オペランドはいずれもラムダ（`\pat -> body`）でなければならない（右結合。ネストされた `|` は可）。
-		- 優先順位: `->`（ラムダ矢印）より低い、`||` よりも低い。すなわち `\p -> e1 | \q -> e2` は `(\p -> e1) | (\q -> e2)` と解釈される。
-		- 意味論: 適用時に「左ラムダのパターン照合が失敗した場合のみ」右ラムダを試す。左がマッチした後に本体でエラーになっても右は評価しない。
-		- デシュガ（実装内部）: `\x -> (~alt left right x)` に展開。`alt : (a->r) -> (a->r) -> a -> r` はランタイムのビルトイン。
-		- 例:
-			- `((\[~h:~t] -> ~h) | (\[] -> 0)) xs` は、空でなければ先頭、空なら 0。
-- タプル/レコード糖衣: `(a,b,...)` → `(.Tuple a b ...)`、`{k:v,...}` → `(.Record (.KV "k" v) ...)`。
-	- レコードのキーは識別子（ident）のみ許可。`{a:1, b:2}` は可だが、`{"a":1}` のような文字列キーは不可。
-	- フィールドアクセスは「レコードを関数としてシンボルで呼び出す」方式のみ: `{a:1, b:2} .a`。文字列キーでのアクセス（例: `{a:1} "a"`）は非対応。
-- Bool: `true()`/`false()` は `~true`/`~false` に展開。`(~Bool .true)`/`(~Bool .false)` でも構築可能。
-- Ctor アリティ: CLI で `--ctor-arity 'Foo=2,Bar=0'` のように宣言。実行時の誤用をエラー化、`--analyze` と併用で静的検出（over/zero-arity-applied）も可。
-
-CLI 例:
+Type primitives (current): Unit / Int / Float / Bool / Str / Char
+- Chars: `'a'`, `'\n'`, `'\\'`, `'\''`, `'\u{1F600}'` are supported (one Unicode scalar)
+- Display: CLI/print/to_str show single-quoted char forms
+
+Open items:
+- Char literal error coverage (invalid `\u{}`, multi-scalar, empty)
+- CLI/runtime: char utilities docs (`char_to_int`/`int_to_char`)
+- Core IR evaluator: exceptions/effects/letrec (future IR pass)
+- Documentation: grammar and escape table for Char
+
+### 6) Name resolution strategy (resolve early)
+
+Resolve `~name` references at compile-time (IR build) where possible, so the evaluator avoids dynamic name lookups.
+
+Two-phase approach:
+- Phase 1: collect and assign slots (locals/modules), analyze upvalues
+- Phase 2: lower to IR with pattern-binding code that writes into pre-allocated slots
+
+Kinds of references:
+- Local binds: slots or de Bruijn-like indices
+- Closure upvalues: upvalue tables to parent frames
+- Module (top-level): fixed module slots (mutual recursion allowed)
+- Dynamic module member access remains deferred for plugin/import compatibility
+- Dynamic env operations (`!require`, `!def`) are always dynamic (explicit nodes)
+
+Patterns (LHS):
+- Reserve slots for binders (`~x`, etc.) during resolution; at runtime, matching writes values into those slots
+- RHS references can be resolved to those slots; detect use-before-initialization paths statically where applicable
+- On mismatch, produce a caret-style `Raised` value; can be caught by `^|` or alt lambdas
+
+IR sketch:
+- VarRef(kind, slot, upvalue_path), PatBind opcode, ModuleRef + DynMember(".env"/name)
+
+Static errors:
+- Unbound references, duplicate pattern binders, use-before-initialization in values
+
+Exceptions integration:
+- `^(e)` → Raise(e); `x ^| h` → try-catch chain; caret patterns allocate slots like normal patterns
+
+Compatibility:
+- `!name`/`!{}` sugars desugar before resolution; prelude symbols appear as module+member accesses
+
+### 7) Bash history expansion tip
+
+When using `-e '!{ ... }'`, turn off history expansion: `set +H`, or use single quotes/heredocs.
+Example: `( set +H; ./target/debug/lzscr -e '!{ !println ("ok"); };' )`
+
+### 8) Future scope (selected)
+
+- Core IR dump/eval, typecheck, kind warnings/errors, execution tracing
+
+## Current roadmap (as of 2025-09)
+
+Ordered roughly by priority. Items will be detailed and adjusted as implementation proceeds.
+
+1. Core IR for `~chain/~bind/~raise/~catch/~alt` (lowering + executor)
+2. Static name resolution and upvalue analysis (slotting)
+3. HM rank-1 inference; future kind/effect integration with strict-effects
+4. Exceptions and alt-lambda typing; IR integration
+5. Constructor variables/ADT arity checking and declarations (later)
+6. Stdlib build-out (Option/List/Result/String)
+7. Char/String literal improvements; Unicode utilities
+8. CLI diagnostics (`-i/-c/-t/--trace-*`)
+9. Analyzer/linter rewire on IR
+10. VS Code minimal extension
+11. Formatter stabilization
+12. Perf/memory optimizations
+13. Documentation updates (specs and tutorials)
+
+### 9) Type system (MVP sketch)
+
+Goal: catch type/effect errors early to improve safety and diagnostics.
+
+Minimal policy (current state may be ahead; see specs for details):
+- Separate kind (Pure/IO) from types; enforce effect-context for IO
+- HM rank-1 on IR: `Int/Str/Unit/Tuple/List/Func`
+- References instantiate schemes; lambdas introduce fresh type vars
+- Applications unify; tuples/lists compose
+- Patterns constrain by RHS type and bind variable types
+- Exceptions: `^(e)` introduces non-returning paths; caret handlers align return types
+
+Representative builtin kinds:
+- `to_str : forall a. a -> Str` (Pure)
+- `add/sub : Int -> Int -> Int` (Pure)
+- `eq : forall a. a -> a -> Bool` (Pure)
+- `lt : Int -> Int -> Bool` (Pure)
+- `print/println : Str -> Unit` (IO)
+- `seq : a -> b -> b` (Pure; second arg may be IO under context check)
+- `chain/bind` are context-driven (checked by the runtime and, future, by kinds)
+
+Note: We represent booleans as `.true`/`.false` tags via a `Bool` constructor in the surface language; `true()`/`false()` sugar expands to `~true`/`~false` for convenience.
+
+### 10) Constructors and patterns (.Member-only)
+
+Policy: Constructors at the surface level are .Member-only.
+- Values: `.Tag arg1 arg2 ...`; zero-arity must be `.Tag()`
+- Patterns: `\(.Tag ~x ~y) -> ...`; zero-arity: `.Tag()`
+- Bare uppercase identifiers have no special meaning; they are just variables.
+
+Sugars and operators (excerpt):
+- Arithmetic: `+ - * /` (Int), float: `.+ .- .* ./`
+- Comparisons: `< <= > >=`, equality `== !=`; float variants `. < .<= .> .>=`
+- OrElse is `||` (parser/formatter use `||`)
+- Alternative lambda composition `|`: only between lambdas; lower precedence than `->` and `||`; right-associative
+	- Semantics: on application, try left; if its pattern fails, try right; if left matches and later raises, right is not evaluated
+	- Desugar: `\x -> (~alt left right x)` with builtin `alt : (a->r) -> (a->r) -> a -> r`
+
+Tuples/records sugars:
+- `(a,b,...)` → `(.Tuple a b ...)`
+- `{k:v,...}` → `(.Record (.KV "k" v) ...)` (keys are identifiers)
+- Field access is function-call style with a symbol: `{a:1, b:2} .a`
+
+CLI example:
 
 ```
-# 解析（テキスト）
 cargo run -p lzscr-cli -- -e '.Foo 1 2' --analyze --ctor-arity 'Foo=1'
-
-# 解析（JSON）
+```
 cargo run -p lzscr-cli -- -e '.Foo 1 2' --analyze --format json --ctor-arity 'Foo=1'
 
 # 実行時エラー例（過剰適用）
