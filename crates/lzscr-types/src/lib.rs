@@ -26,6 +26,8 @@ pub enum Type {
     Tuple(Vec<Type>),
     Record(BTreeMap<String, Type>),
     Ctor { tag: String, payload: Vec<Type> },
+    // Named ADT (from % type declarations), e.g., Option a
+    Named { name: String, args: Vec<Type> },
     // Limited union for constructor tags used by AltLambda chains
     SumCtor(Vec<(String, Vec<Type>)>),
 }
@@ -90,6 +92,10 @@ impl TypesApply for Type {
                 tag: tag.clone(),
                 payload: payload.iter().map(|t| t.apply(s)).collect(),
             },
+            Type::Named { name, args } => Type::Named {
+                name: name.clone(),
+                args: args.iter().map(|t| t.apply(s)).collect(),
+            },
             Type::SumCtor(vs) => Type::SumCtor(
                 vs.iter()
                     .map(|(n, ps)| (n.clone(), ps.iter().map(|t| t.apply(s)).collect()))
@@ -125,6 +131,11 @@ impl TypesApply for Type {
             }
             Type::Ctor { payload, .. } => {
                 for t in payload {
+                    s.extend(t.ftv());
+                }
+            }
+            Type::Named { args, .. } => {
+                for t in args {
                     s.extend(t.ftv());
                 }
             }
@@ -215,6 +226,40 @@ fn typedefs_lookup_ctor<'a>(ctx: &'a InferCtx, tag: &str) -> Option<&'a Vec<Type
     None
 }
 
+// Named type definitions (for μ-types via isorecursive unfolding)
+#[derive(Clone)]
+struct TypeNameDef {
+    params: Vec<String>,
+    alts: Vec<(String, Vec<TypeExpr>)>,
+    span_offset: usize,
+    span_len: usize,
+}
+type TypeNameDefsFrame = HashMap<String, TypeNameDef>; // name -> def
+
+fn build_typename_frame(decls: &[TypeDecl]) -> TypeNameDefsFrame {
+    let mut m = HashMap::new();
+    for d in decls {
+        let TypeDefBody::Sum(alts) = &d.body;
+        m.insert(
+            d.name.clone(),
+            TypeNameDef {
+                params: d.params.clone(),
+                alts: alts.clone(),
+                span_offset: d.span.offset,
+                span_len: d.span.len,
+            },
+        );
+    }
+    m
+}
+
+fn typedefs_lookup_typename<'a>(ctx: &'a InferCtx, name: &str) -> Option<&'a TypeNameDef> {
+    for fr in ctx.typedef_types.iter().rev() {
+        if let Some(d) = fr.get(name) { return Some(d); }
+    }
+    None
+}
+
 // ---------- Errors ----------
 
 #[derive(thiserror::Error, Debug)]
@@ -235,6 +280,10 @@ pub enum TypeError {
     UnboundRef { name: String, span_offset: usize, span_len: usize },
     #[error("effect not allowed at ({span_offset},{span_len})")]
     EffectNotAllowed { span_offset: usize, span_len: usize },
+    #[error("negative occurrence of recursive type {type_name} at ({span_offset},{span_len})")]
+    NegativeOccurrence { type_name: String, span_offset: usize, span_len: usize },
+    #[error("invalid type declaration: {msg} at ({span_offset},{span_len})")]
+    InvalidTypeDecl { msg: String, span_offset: usize, span_len: usize },
 }
 
 // ---------- Unification ----------
@@ -366,6 +415,148 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
     }
 }
 
+// Positivity (no negative occurrence) check for a type declaration body
+fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> bool {
+    match te {
+        TypeExpr::Unit | TypeExpr::Int | TypeExpr::Float | TypeExpr::Bool | TypeExpr::Str | TypeExpr::Char => true,
+        TypeExpr::Var(_) => true,
+        TypeExpr::Hole(_) => false, // holes are not allowed in type decls
+        TypeExpr::List(t) => check_positive_occurrence(t, target, polarity),
+        TypeExpr::Tuple(xs) => xs.iter().all(|t| check_positive_occurrence(t, target, polarity)),
+        TypeExpr::Record(fs) => fs.iter().all(|(_, t)| check_positive_occurrence(t, target, polarity)),
+        TypeExpr::Fun(a, b) => check_positive_occurrence(a, target, !polarity)
+            && check_positive_occurrence(b, target, polarity),
+        TypeExpr::Ctor { tag, args } => {
+            let self_occ_ok = if tag == target { polarity } else { true };
+            self_occ_ok && args.iter().all(|t| check_positive_occurrence(t, target, polarity))
+        }
+    }
+}
+
+fn validate_typedecls_positive(decls: &[TypeDecl]) -> Result<(), TypeError> {
+    for d in decls {
+        let alts = match &d.body { TypeDefBody::Sum(a) => a };
+        for (_tag, payloads) in alts {
+            for t in payloads {
+                if !check_positive_occurrence(t, &d.name, true) {
+                    return Err(TypeError::NegativeOccurrence {
+                        type_name: d.name.clone(),
+                        span_offset: d.span.offset,
+                        span_len: d.span.len,
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+// Convert TypeExpr to Type for instantiating named type defs (substitute params with args)
+fn conv_typeexpr_with_subst(
+    ctx: &InferCtx,
+    te: &TypeExpr,
+    subst: &HashMap<String, Type>,
+) -> Result<Type, TypeError> {
+    Ok(match te {
+        TypeExpr::Unit => Type::Unit,
+        TypeExpr::Int => Type::Int,
+        TypeExpr::Float => Type::Float,
+        TypeExpr::Bool => Type::Bool,
+        TypeExpr::Str => Type::Str,
+        TypeExpr::Char => Type::Char,
+        TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr_with_subst(ctx, t, subst)?)),
+        TypeExpr::Tuple(xs) => {
+            Type::Tuple(xs.iter().map(|t| conv_typeexpr_with_subst(ctx, t, subst)).collect::<Result<Vec<_>,_>>()?)
+        }
+        TypeExpr::Record(fs) => {
+            let mut m = BTreeMap::new();
+            for (k, v) in fs {
+                m.insert(k.clone(), conv_typeexpr_with_subst(ctx, v, subst)?);
+            }
+            Type::Record(m)
+        }
+        TypeExpr::Fun(a, b) => Type::fun(
+            conv_typeexpr_with_subst(ctx, a, subst)?,
+            conv_typeexpr_with_subst(ctx, b, subst)?,
+        ),
+        TypeExpr::Ctor { tag, args } => {
+            let conv_args = args
+                .iter()
+                .map(|t| conv_typeexpr_with_subst(ctx, t, subst))
+                .collect::<Result<Vec<_>, _>>()?;
+            if typedefs_lookup_typename(ctx, tag).is_some() {
+                Type::Named { name: tag.clone(), args: conv_args }
+            } else {
+                Type::Ctor { tag: tag.clone(), payload: conv_args }
+            }
+        }
+        TypeExpr::Var(nm) => match subst.get(nm) {
+            Some(t) => t.clone(),
+            None => {
+                return Err(TypeError::InvalidTypeDecl {
+                    msg: format!("unbound type variable '%{} in type declaration", nm),
+                    span_offset: 0,
+                    span_len: 0,
+                })
+            }
+        },
+        TypeExpr::Hole(_) => {
+            return Err(TypeError::InvalidTypeDecl {
+                msg: "holes are not allowed in type declarations".into(),
+                span_offset: 0,
+                span_len: 0,
+            })
+        }
+    })
+}
+
+fn instantiate_named_sum(
+    ctx: &InferCtx,
+    name: &str,
+    args: &[Type],
+) -> Result<Vec<(String, Vec<Type>)>, TypeError> {
+    let def = typedefs_lookup_typename(ctx, name).ok_or_else(|| TypeError::InvalidTypeDecl {
+        msg: format!("unknown type name {}", name),
+        span_offset: 0,
+        span_len: 0,
+    })?;
+    if def.params.len() != args.len() {
+        return Err(TypeError::InvalidTypeDecl {
+            msg: format!("type {} arity mismatch: expected {}, got {}", name, def.params.len(), args.len()),
+            span_offset: def.span_offset,
+            span_len: def.span_len,
+        });
+    }
+    let mut map = HashMap::new();
+    for (p, a) in def.params.iter().zip(args.iter()) {
+        map.insert(p.clone(), a.clone());
+    }
+    let mut out = Vec::with_capacity(def.alts.len());
+    for (tag, payload_tes) in &def.alts {
+        let mut payload = Vec::with_capacity(payload_tes.len());
+        for te in payload_tes {
+            payload.push(conv_typeexpr_with_subst(ctx, te, &map)?);
+        }
+        out.push((tag.clone(), payload));
+    }
+    Ok(out)
+}
+
+// Unification with awareness of Named types (μ-types): one-step unfold into SumCtor
+fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
+    match (a, b) {
+        (Type::Named { name: na, args: aa }, _) => {
+            let sa = instantiate_named_sum(ctx, na, aa)?;
+            ctx_unify(ctx, &Type::SumCtor(sa), b)
+        }
+        (_, Type::Named { name: nb, args: ab }) => {
+            let sb = instantiate_named_sum(ctx, nb, ab)?;
+            ctx_unify(ctx, a, &Type::SumCtor(sb))
+        }
+        _ => unify(a, b),
+    }
+}
+
 fn bind(v: TvId, t: Type) -> Result<Subst, TypeError> {
     match t {
         Type::Var(v2) if v == v2 => Ok(Subst::new()),
@@ -422,22 +613,22 @@ fn infer_pattern(ctx: &mut InferCtx, pat: &Pattern, scrutinee: &Type) -> Result<
             Ok(PatInfo { bindings: vec![(n.clone(), scrutinee.clone())], subst: Subst::new() })
         }
         PatternKind::Unit => {
-            unify(scrutinee, &Type::Unit).map(|s| PatInfo { bindings: vec![], subst: s })
+            ctx_unify(ctx, scrutinee, &Type::Unit).map(|s| PatInfo { bindings: vec![], subst: s })
         }
         PatternKind::Int(_) => {
-            unify(scrutinee, &Type::Int).map(|s| PatInfo { bindings: vec![], subst: s })
+            ctx_unify(ctx, scrutinee, &Type::Int).map(|s| PatInfo { bindings: vec![], subst: s })
         }
         PatternKind::Float(_) => {
-            unify(scrutinee, &Type::Float).map(|s| PatInfo { bindings: vec![], subst: s })
+            ctx_unify(ctx, scrutinee, &Type::Float).map(|s| PatInfo { bindings: vec![], subst: s })
         }
         PatternKind::Str(_) => {
-            unify(scrutinee, &Type::Str).map(|s| PatInfo { bindings: vec![], subst: s })
+            ctx_unify(ctx, scrutinee, &Type::Str).map(|s| PatInfo { bindings: vec![], subst: s })
         }
         PatternKind::Char(_) => {
-            unify(scrutinee, &Type::Char).map(|s| PatInfo { bindings: vec![], subst: s })
+            ctx_unify(ctx, scrutinee, &Type::Char).map(|s| PatInfo { bindings: vec![], subst: s })
         }
         PatternKind::Bool(_) => {
-            unify(scrutinee, &Type::Bool).map(|s| PatInfo { bindings: vec![], subst: s })
+            ctx_unify(ctx, scrutinee, &Type::Bool).map(|s| PatInfo { bindings: vec![], subst: s })
         }
         PatternKind::Tuple(xs) => {
             let mut s = Subst::new();
@@ -446,7 +637,7 @@ fn infer_pattern(ctx: &mut InferCtx, pat: &Pattern, scrutinee: &Type) -> Result<
                 tys.push(ctx.tv.fresh());
             }
             let tup = Type::Tuple(tys.clone());
-            let s0 = unify(&scrutinee.apply(&s), &tup)?;
+            let s0 = ctx_unify(ctx, &scrutinee.apply(&s), &tup)?;
             s = s0.compose(s);
             let mut binds = vec![];
             for (p, t_elem) in xs.iter().zip(tys.into_iter()) {
@@ -458,7 +649,7 @@ fn infer_pattern(ctx: &mut InferCtx, pat: &Pattern, scrutinee: &Type) -> Result<
         }
         PatternKind::List(items) => {
             let a = ctx.tv.fresh();
-            let mut s = unify(scrutinee, &Type::List(Box::new(a.clone())))?;
+            let mut s = ctx_unify(ctx, scrutinee, &Type::List(Box::new(a.clone())))?;
             let mut binds = vec![];
             for p in items {
                 let pi = infer_pattern(ctx, p, &a.apply(&s))?;
@@ -469,7 +660,7 @@ fn infer_pattern(ctx: &mut InferCtx, pat: &Pattern, scrutinee: &Type) -> Result<
         }
         PatternKind::Cons(h, t) => {
             let a = ctx.tv.fresh();
-            let s0 = unify(scrutinee, &Type::List(Box::new(a.clone())))?;
+            let s0 = ctx_unify(ctx, scrutinee, &Type::List(Box::new(a.clone())))?;
             let mut s = s0;
             let ph = infer_pattern(ctx, h, &a.apply(&s))?;
             s = ph.subst.compose(s);
@@ -484,7 +675,7 @@ fn infer_pattern(ctx: &mut InferCtx, pat: &Pattern, scrutinee: &Type) -> Result<
             for (k, _) in fields {
                 want.insert(k.clone(), ctx.tv.fresh());
             }
-            let s0 = unify(scrutinee, &Type::Record(want.clone()))?;
+            let s0 = ctx_unify(ctx, scrutinee, &Type::Record(want.clone()))?;
             let mut s = s0;
             let mut binds = vec![];
             for (k, p) in fields {
@@ -510,7 +701,7 @@ fn infer_pattern(ctx: &mut InferCtx, pat: &Pattern, scrutinee: &Type) -> Result<
                 }
             } else { (0..args.len()).map(|_| ctx.tv.fresh()).collect() };
             let want = Type::Ctor { tag: name.clone(), payload: payload.clone() };
-            let mut s = unify(scrutinee, &want)?;
+            let mut s = ctx_unify(ctx, scrutinee, &want)?;
             let mut binds = vec![];
             for (p, ta) in args.iter().zip(payload.into_iter()) {
                 let pi = infer_pattern(ctx, p, &ta.apply(&s))?;
@@ -521,7 +712,7 @@ fn infer_pattern(ctx: &mut InferCtx, pat: &Pattern, scrutinee: &Type) -> Result<
         }
         PatternKind::Symbol(sym) => {
             let want = Type::Ctor { tag: sym.clone(), payload: vec![] };
-            let s = unify(scrutinee, &want)?;
+            let s = ctx_unify(ctx, scrutinee, &want)?;
             Ok(PatInfo { bindings: vec![], subst: s })
         }
         PatternKind::As(a, b) => {
@@ -545,6 +736,7 @@ struct InferCtx {
     env: TypeEnv,
     tyvars: Vec<HashMap<String, TvId>>, // stack of frames; lookup is from last to first
     typedefs: Vec<TypeDefsFrame>,       // stack of ctor templates from % declarations
+    typedef_types: Vec<TypeNameDefsFrame>, // stack of named type defs (μ-types)
 }
 
 fn lookup_tyvar(ctx: &InferCtx, name: &str) -> Option<TvId> {
@@ -638,8 +830,12 @@ fn infer_expr(
                 Type::fun(conv_typeexpr(ctx, a, holes), conv_typeexpr(ctx, b, holes))
             }
             TypeExpr::Ctor { tag, args } => {
-                let payload = args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect();
-                Type::Ctor { tag: tag.clone(), payload }
+                let conv_args = args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect::<Vec<_>>();
+                if typedefs_lookup_typename(ctx, tag).is_some() {
+                    Type::Named { name: tag.clone(), args: conv_args }
+                } else {
+                    Type::Ctor { tag: tag.clone(), payload: conv_args }
+                }
             }
             TypeExpr::Var(name) => {
                 if let Some(id) = lookup_tyvar(ctx, name) {
@@ -675,7 +871,7 @@ fn infer_expr(
             let (got, s) = infer_expr(ctx, expr, allow_effects)?;
             let mut holes = HashMap::new();
             let want = conv_typeexpr(ctx, ty, &mut holes);
-            let s2 = unify(&got.apply(&s), &want)?;
+            let s2 = ctx_unify(ctx, &got.apply(&s), &want)?;
             Ok((want.apply(&s2), s2.compose(s)))
         }
         ExprKind::TypeVal(_ty) => Ok((Type::Str, Subst::new())),
@@ -777,7 +973,7 @@ fn infer_expr(
             let (tf, sf) = infer_expr(ctx, func, allow_effects)?;
             let (ta, sa) = infer_expr(ctx, arg, allow_effects)?;
             let r = ctx.tv.fresh();
-            let s1 = unify(&tf.apply(&sa).apply(&sf), &Type::fun(ta.apply(&sa), r.clone()))?;
+            let s1 = ctx_unify(ctx, &tf.apply(&sa).apply(&sf), &Type::fun(ta.apply(&sa), r.clone()))?;
             let s = s1.compose(sa).compose(sf);
             // If this is an effect application like ((~effects .sym) x), forbid unless allowed
             if !allow_effects {
@@ -800,7 +996,7 @@ fn infer_expr(
             let mut s = Subst::new();
             for it in items {
                 let (ti, si) = infer_expr(ctx, it, allow_effects)?;
-                let s1 = unify(&ti.apply(&s).apply(&si), &a.apply(&s).apply(&si))?;
+                let s1 = ctx_unify(ctx, &ti.apply(&s).apply(&si), &a.apply(&s).apply(&si))?;
                 s = s1.compose(si).compose(s);
             }
             Ok((Type::List(Box::new(a.apply(&s))), s))
@@ -811,10 +1007,17 @@ fn infer_expr(
             // 2) Infer each RHS under env' = env0 + assumptions.
             // 3) Unify RHS type with pattern-scrutinee and update env' entries with generalized types.
             let env0 = ctx.env.clone();
-            // Push typedefs frame for ctor templates declared in this group
+            // Validate and push type declaration frames (constructors and named types)
+            if !type_decls.is_empty() {
+                validate_typedecls_positive(type_decls)?;
+            }
             let pushed_typedefs = if !type_decls.is_empty() {
                 let fr = build_typedefs_frame(type_decls);
                 if !fr.is_empty() { ctx.typedefs.push(fr); true } else { false }
+            } else { false };
+            let pushed_typenames = if !type_decls.is_empty() {
+                let fr = build_typename_frame(type_decls);
+                if !fr.is_empty() { ctx.typedef_types.push(fr); true } else { false }
             } else { false };
             // Precompute pattern cores, pushed frames, scrutinee vars, and pattern infos
             struct PreBind {
@@ -844,7 +1047,7 @@ fn infer_expr(
                 let (t_rhs, s_rhs) = infer_expr(ctx, ex, allow_effects)?;
                 ctx.env = saved;
                 // Unify scrutinee with RHS and compose with pattern subst
-                let s = unify(&pre.a_scrut.apply(&s_rhs), &t_rhs.apply(&s_rhs))?;
+                let s = ctx_unify(ctx, &pre.a_scrut.apply(&s_rhs), &t_rhs.apply(&s_rhs))?;
                 let subst_all = s.compose(s_rhs.clone()).compose(pre.pat_info.subst.clone());
                 // Update env_final entries with generalized types against env0
                 for (n, t) in pre.pat_info.bindings.iter() {
@@ -858,6 +1061,7 @@ fn infer_expr(
             // Infer body under finalized environment
             let saved = std::mem::replace(&mut ctx.env, env_final);
             let res = infer_expr(ctx, body, allow_effects);
+            if pushed_typenames { let _ = ctx.typedef_types.pop(); }
             if pushed_typedefs { let _ = ctx.typedefs.pop(); }
             ctx.env = saved;
             res
@@ -870,7 +1074,7 @@ fn infer_expr(
         ExprKind::OrElse { left, right } => {
             let (tl, sl) = infer_expr(ctx, left, allow_effects)?;
             let (tr, sr) = infer_expr(ctx, right, allow_effects)?;
-            let s1 = unify(&tl.apply(&sr).apply(&sl), &tr.apply(&sr))?;
+            let s1 = ctx_unify(ctx, &tl.apply(&sr).apply(&sl), &tr.apply(&sr))?;
             let s = s1.compose(sr).compose(sl);
             Ok((tr.apply(&s), s))
         }
@@ -879,8 +1083,8 @@ fn infer_expr(
             let a = ctx.tv.fresh();
             let r = ctx.tv.fresh();
             let (tr, sr) = infer_expr(ctx, right, allow_effects)?;
-            let s1 = unify(&tr.apply(&sr).apply(&sl), &Type::fun(a, r.clone()))?;
-            let s2 = unify(&tl.apply(&s1).apply(&sr).apply(&sl), &r)?;
+            let s1 = ctx_unify(ctx, &tr.apply(&sr).apply(&sl), &Type::fun(a, r.clone()))?;
+            let s2 = ctx_unify(ctx, &tl.apply(&s1).apply(&sr).apply(&sl), &r)?;
             let s = s2.compose(s1).compose(sr).compose(sl);
             Ok((r.apply(&s), s))
         }
@@ -1106,6 +1310,13 @@ fn pp_type(t: &Type) -> String {
                 format!("{}({})", tag, payload.iter().map(pp_type).collect::<Vec<_>>().join(", "))
             }
         }
+        Type::Named { name, args } => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                format!("{}<{}>", name, args.iter().map(pp_type).collect::<Vec<_>>().join(", "))
+            }
+        }
         Type::SumCtor(vs) => {
             let inner = vs
                 .iter()
@@ -1138,7 +1349,7 @@ pub mod api {
 
     pub fn infer_program(src: &str) -> Result<String, String> {
         let ast = parse_expr(src).map_err(|e| format!("parse error: {e}"))?;
-    let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![], typedefs: vec![] };
+    let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![], typedefs: vec![], typedef_types: vec![] };
         match infer_expr(&mut ctx, &ast, false) {
             Ok((t, _s)) => Ok(pp_type(&t)),
             Err(e) => Err(format!("{e}")),
@@ -1147,7 +1358,7 @@ pub mod api {
 
     // Prefer this from tools that already have an AST with precise spans (e.g., CLI after ~require expansion).
     pub fn infer_ast(ast: &Expr) -> Result<String, super::TypeError> {
-    let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![], typedefs: vec![] };
+    let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![], typedefs: vec![], typedef_types: vec![] };
         match infer_expr(&mut ctx, ast, false) {
             Ok((t, _s)) => Ok(pp_type(&t)),
             Err(e) => Err(e),
