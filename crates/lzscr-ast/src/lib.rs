@@ -35,6 +35,21 @@ pub mod ast {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub enum TypeDefBody {
+        // 和型: .Tag T1 T2 | .Tag2 ...
+        Sum(Vec<(String, Vec<TypeExpr>)>),
+        // 将来的に alias/record 等を拡張予定
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct TypeDecl {
+        pub name: String,          // 型名（%を除いた識別子）
+        pub params: Vec<String>,   // 形式型変数（%を除いた識別子）
+        pub body: TypeDefBody,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum PatternKind {
         Wildcard,                                  // _
         Var(String),                               // ~x（パース時は ~ident で生成）
@@ -87,7 +102,8 @@ pub mod ast {
         List(Vec<Expr>),
         // Let-group: (p1 = e1; ...; body; pN = eN; ...)
         // Bindings can mutually/recursively reference each other within the group scope.
-        LetGroup { bindings: Vec<(Pattern, Expr)>, body: Box<Expr> },
+    // type_decls は Let グループ内の % 型宣言列（先行/後行の両方をマージ）
+    LetGroup { type_decls: Vec<TypeDecl>, bindings: Vec<(Pattern, Expr)>, body: Box<Expr> },
         // Exceptions / control
         Raise(Box<Expr>), // ^(Expr)
         // Alternative lambda composition: (\p1 -> e1) | (\p2 -> e2)
@@ -190,7 +206,8 @@ pub mod pretty {
             ExprKind::List(xs) => {
                 format!("[{}]", xs.iter().map(print_expr).collect::<Vec<_>>().join(", "))
             }
-            ExprKind::LetGroup { bindings, body } => {
+            ExprKind::LetGroup { bindings, body, .. } => {
+                // 型宣言は簡易表示（件数のみ）
                 let bs = bindings
                     .iter()
                     .map(|(p, ex)| format!("{} = {};", print_pattern(p), print_expr(ex)))

@@ -740,7 +740,7 @@ fn infer_expr(
             }
             Ok((Type::List(Box::new(a.apply(&s))), s))
         }
-        ExprKind::LetGroup { bindings, body } => {
+    ExprKind::LetGroup { bindings, body, .. } => {
             // Recursive let-group inference (Algorithm W style for letrec):
             // 1) Create monomorphic assumptions for each binder in all patterns using fresh type vars.
             // 2) Infer each RHS under env' = env0 + assumptions.

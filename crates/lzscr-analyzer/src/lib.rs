@@ -175,7 +175,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                         go(x, h, sz);
                     }
                 }
-                LetGroup { bindings, body } => {
+                LetGroup { bindings, body, .. } => {
                     h.write_u8(18);
                     h.write_usize(bindings.len());
                     for (p, ex) in bindings {
@@ -208,7 +208,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             Lambda { body, .. } => format!("lam -> [{}]", body.span.len),
             Apply { func, arg } => format!("ap({},{})", func.span.len, arg.span.len),
             Block(inner) => format!("blk({})", inner.span.len),
-            LetGroup { bindings, body } => format!("letg[{};{}]", bindings.len(), body.span.len),
+            LetGroup { bindings, body, .. } => format!("letg[{};{}]", bindings.len(), body.span.len),
             List(xs) => format!("list({})", xs.len()),
         }
     }
@@ -270,7 +270,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                     collect(x, opt, map);
                 }
             }
-            ExprKind::LetGroup { bindings, body } => {
+            ExprKind::LetGroup { bindings, body, .. } => {
                 for (_p, ex) in bindings {
                     collect(ex, opt, map);
                 }
@@ -400,7 +400,7 @@ pub fn analyze_ctor_arity(
                 check(func, arities, out);
                 check(arg, arities, out);
             }
-            ExprKind::LetGroup { bindings, body } => {
+            ExprKind::LetGroup { bindings, body, .. } => {
                 for (_p, ex) in bindings {
                     check(ex, arities, out);
                 }
@@ -441,7 +441,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                     walk(x, scopes, allow, out);
                 }
             }
-            ExprKind::LetGroup { bindings, body } => {
+            ExprKind::LetGroup { bindings, body, .. } => {
                 // let-group 全体のスコープを 1 つ作成（全束縛名を可視化）
                 fn binds(p: &Pattern, acc: &mut HashSet<String>) {
                     match &p.kind {
@@ -658,7 +658,7 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                 walk(func, scopes, out);
                 walk(arg, scopes, out);
             }
-            ExprKind::LetGroup { bindings, body } => {
+            ExprKind::LetGroup { bindings, body, .. } => {
                 fn pat_idents(p: &Pattern, outn: &mut Vec<String>) {
                     match &p.kind {
                         PatternKind::Wildcard
@@ -907,7 +907,7 @@ pub fn analyze_unused_let_bindings(expr: &Expr) -> Vec<UnusedLet> {
             | ExprKind::Catch { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::Block(inner) => used_in(inner, target),
             ExprKind::List(xs) => xs.iter().any(|x| used_in(x, target)),
-            ExprKind::LetGroup { bindings, body } => {
+            ExprKind::LetGroup { bindings, body, .. } => {
                 let in_body = used_in(body, target);
                 let in_bindings = bindings.iter().any(|(_p, ex)| used_in(ex, target));
                 in_body || in_bindings
@@ -950,7 +950,7 @@ pub fn analyze_unused_let_bindings(expr: &Expr) -> Vec<UnusedLet> {
 
     fn walk(e: &Expr, out: &mut Vec<UnusedLet>) {
         match &e.kind {
-            ExprKind::LetGroup { bindings, body } => {
+            ExprKind::LetGroup { bindings, body, .. } => {
                 // gather all bound names in this group
                 let mut names = Vec::new();
                 for (p, _ex) in bindings.iter() {
@@ -1040,7 +1040,7 @@ pub fn analyze_let_collisions(expr: &Expr) -> Vec<LetCollision> {
 
     fn walk(e: &Expr, out: &mut Vec<LetCollision>) {
         match &e.kind {
-            ExprKind::LetGroup { bindings, body } => {
+            ExprKind::LetGroup { bindings, body, .. } => {
                 let mut seen = std::collections::HashMap::<String, usize>::new();
                 let mut duped = std::collections::HashSet::<String>::new();
                 for (p, _ex) in bindings.iter() {

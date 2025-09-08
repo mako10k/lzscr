@@ -361,7 +361,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Apply { func, arg } => 1 + count(func) + count(arg),
                     Block(inner) => 1 + count(inner),
                     List(xs) => 1 + xs.iter().map(count).sum::<usize>(),
-                    LetGroup { bindings, body } => {
+                    LetGroup { bindings, body, .. } => {
                         1 + count(body) + bindings.iter().map(|(_, ex)| count(ex)).sum::<usize>()
                     }
                     Raise(inner) => 1 + count(inner),
@@ -799,16 +799,20 @@ fn expand_requires_in_expr(
                 .map(|x| expand_requires_in_expr(x, search_paths, stack, src_reg))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
-        LetGroup { bindings, body } => {
+        LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
                 new_bs
                     .push((p.clone(), expand_requires_in_expr(ex, search_paths, stack, src_reg)?));
             }
-            LetGroup {
-                bindings: new_bs,
-                body: Box::new(expand_requires_in_expr(body, search_paths, stack, src_reg)?),
-            }
+            // type_decls は require 展開の対象外なので、そのまま温存
+            if let LetGroup { type_decls, .. } = &e.kind {
+                LetGroup {
+                    type_decls: type_decls.clone(),
+                    bindings: new_bs,
+                    body: Box::new(expand_requires_in_expr(body, search_paths, stack, src_reg)?),
+                }
+            } else { unreachable!() }
         }
         Raise(inner) => {
             Raise(Box::new(expand_requires_in_expr(inner, search_paths, stack, src_reg)?))
@@ -850,12 +854,14 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
         Apply { func, arg } => Apply { func: map_box(func), arg: map_box(arg) },
         Block(b) => Block(map_box(b)),
         List(xs) => List(map_list(xs)),
-        LetGroup { bindings, body } => {
+        LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
                 new_bs.push((rebase_pattern_with_minus(p, add, minus), map_expr(ex)));
             }
-            LetGroup { bindings: new_bs, body: map_box(body) }
+            if let LetGroup { type_decls, .. } = &e.kind {
+                LetGroup { type_decls: type_decls.clone(), bindings: new_bs, body: map_box(body) }
+            } else { unreachable!() }
         }
         Raise(inner) => Raise(map_box(inner)),
         AltLambda { left, right } => AltLambda { left: map_box(left), right: map_box(right) },
