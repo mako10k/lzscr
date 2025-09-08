@@ -54,7 +54,7 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         if: ${{ steps.detect.outputs.exists == 'true' }}
         with:
           node-version: '20'
