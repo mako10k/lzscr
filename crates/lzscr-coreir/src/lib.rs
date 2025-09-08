@@ -152,7 +152,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Char(c) => Term::new(Op::Char(*c)),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
-    ExprKind::LetGroup { bindings, body, .. } => {
+        ExprKind::LetGroup { bindings, body, .. } => {
             let bs: Vec<(String, Term)> =
                 bindings.iter().map(|(p, ex)| (print_pattern(p), lower_expr_to_core(ex))).collect();
             Term::new(Op::LetRec { bindings: bs, body: Box::new(lower_expr_to_core(body)) })
@@ -552,12 +552,10 @@ mod tests {
         let e = Expr::new(
             ExprKind::LetGroup {
                 type_decls: vec![],
-                bindings: vec![
-                    (
-                        Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
-                        Expr::new(ExprKind::Int(1), Span::new(0, 0)),
-                    ),
-                ],
+                bindings: vec![(
+                    Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
+                    Expr::new(ExprKind::Int(1), Span::new(0, 0)),
+                )],
                 body: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
             },
             Span::new(0, 0),
@@ -584,12 +582,10 @@ mod tests {
         let e = Expr::new(
             ExprKind::LetGroup {
                 type_decls: vec![opt_td],
-                bindings: vec![
-                    (
-                        Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
-                        Expr::new(ExprKind::Int(1), Span::new(0, 0)),
-                    ),
-                ],
+                bindings: vec![(
+                    Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
+                    Expr::new(ExprKind::Int(1), Span::new(0, 0)),
+                )],
                 body: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
             },
             Span::new(0, 0),

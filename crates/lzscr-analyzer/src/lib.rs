@@ -208,7 +208,9 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             Lambda { body, .. } => format!("lam -> [{}]", body.span.len),
             Apply { func, arg } => format!("ap({},{})", func.span.len, arg.span.len),
             Block(inner) => format!("blk({})", inner.span.len),
-            LetGroup { bindings, body, .. } => format!("letg[{};{}]", bindings.len(), body.span.len),
+            LetGroup { bindings, body, .. } => {
+                format!("letg[{};{}]", bindings.len(), body.span.len)
+            }
             List(xs) => format!("list({})", xs.len()),
         }
     }

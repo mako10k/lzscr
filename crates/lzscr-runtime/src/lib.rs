@@ -1791,7 +1791,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Str(s) => Ok(Value::Str(env.intern_string(s))),
         ExprKind::Float(f) => Ok(Value::Float(*f)),
         ExprKind::Char(c) => Ok(Value::Char(*c)),
-    ExprKind::LetGroup { bindings, body, .. } => {
+        ExprKind::LetGroup { bindings, body, .. } => {
             // 遅延束縛により非関数の再帰もサポート
             let mut env2 = env.clone();
             // 準備: 各バインディングごとに「全体値のサンク」を作る

@@ -92,10 +92,9 @@ impl TypesApply for Type {
                 tag: tag.clone(),
                 payload: payload.iter().map(|t| t.apply(s)).collect(),
             },
-            Type::Named { name, args } => Type::Named {
-                name: name.clone(),
-                args: args.iter().map(|t| t.apply(s)).collect(),
-            },
+            Type::Named { name, args } => {
+                Type::Named { name: name.clone(), args: args.iter().map(|t| t.apply(s)).collect() }
+            }
             Type::SumCtor(vs) => Type::SumCtor(
                 vs.iter()
                     .map(|(n, ps)| (n.clone(), ps.iter().map(|t| t.apply(s)).collect()))
@@ -221,7 +220,9 @@ fn build_typedefs_frame(decls: &[TypeDecl]) -> TypeDefsFrame {
 
 fn typedefs_lookup_ctor<'a>(ctx: &'a InferCtx, tag: &str) -> Option<&'a Vec<TypeExpr>> {
     for fr in ctx.typedefs.iter().rev() {
-        if let Some(v) = fr.get(tag) { return Some(v); }
+        if let Some(v) = fr.get(tag) {
+            return Some(v);
+        }
     }
     None
 }
@@ -255,7 +256,9 @@ fn build_typename_frame(decls: &[TypeDecl]) -> TypeNameDefsFrame {
 
 fn typedefs_lookup_typename<'a>(ctx: &'a InferCtx, name: &str) -> Option<&'a TypeNameDef> {
     for fr in ctx.typedef_types.iter().rev() {
-        if let Some(d) = fr.get(name) { return Some(d); }
+        if let Some(d) = fr.get(name) {
+            return Some(d);
+        }
     }
     None
 }
@@ -292,6 +295,7 @@ fn occurs(v: TvId, t: &Type) -> bool {
     t.ftv().contains(&v)
 }
 
+#[allow(clippy::result_large_err)]
 fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
     match (a, b) {
         (Type::Var(x), t) => bind(*x, t.clone()),
@@ -380,8 +384,7 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
         }
         // Allow a single constructor to unify with a union that contains it
         (Type::Ctor { tag, payload }, Type::SumCtor(variants))
-            | (Type::SumCtor(variants), Type::Ctor { tag, payload }) =>
-        {
+        | (Type::SumCtor(variants), Type::Ctor { tag, payload }) => {
             if let Some((_, ps_other)) = variants.iter().find(|(t, _)| t == tag) {
                 if ps_other.len() != payload.len() {
                     return Err(TypeError::Mismatch {
@@ -418,14 +421,23 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
 // Positivity (no negative occurrence) check for a type declaration body
 fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> bool {
     match te {
-        TypeExpr::Unit | TypeExpr::Int | TypeExpr::Float | TypeExpr::Bool | TypeExpr::Str | TypeExpr::Char => true,
+        TypeExpr::Unit
+        | TypeExpr::Int
+        | TypeExpr::Float
+        | TypeExpr::Bool
+        | TypeExpr::Str
+        | TypeExpr::Char => true,
         TypeExpr::Var(_) => true,
         TypeExpr::Hole(_) => false, // holes are not allowed in type decls
         TypeExpr::List(t) => check_positive_occurrence(t, target, polarity),
         TypeExpr::Tuple(xs) => xs.iter().all(|t| check_positive_occurrence(t, target, polarity)),
-        TypeExpr::Record(fs) => fs.iter().all(|(_, t)| check_positive_occurrence(t, target, polarity)),
-        TypeExpr::Fun(a, b) => check_positive_occurrence(a, target, !polarity)
-            && check_positive_occurrence(b, target, polarity),
+        TypeExpr::Record(fs) => {
+            fs.iter().all(|(_, t)| check_positive_occurrence(t, target, polarity))
+        }
+        TypeExpr::Fun(a, b) => {
+            check_positive_occurrence(a, target, !polarity)
+                && check_positive_occurrence(b, target, polarity)
+        }
         TypeExpr::Ctor { tag, args } => {
             let self_occ_ok = if tag == target { polarity } else { true };
             self_occ_ok && args.iter().all(|t| check_positive_occurrence(t, target, polarity))
@@ -433,9 +445,10 @@ fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> boo
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_typedecls_positive(decls: &[TypeDecl]) -> Result<(), TypeError> {
     for d in decls {
-        let alts = match &d.body { TypeDefBody::Sum(a) => a };
+    let TypeDefBody::Sum(alts) = &d.body;
         for (_tag, payloads) in alts {
             for t in payloads {
                 if !check_positive_occurrence(t, &d.name, true) {
@@ -452,6 +465,7 @@ fn validate_typedecls_positive(decls: &[TypeDecl]) -> Result<(), TypeError> {
 }
 
 // Convert TypeExpr to Type for instantiating named type defs (substitute params with args)
+#[allow(clippy::result_large_err)]
 fn conv_typeexpr_with_subst(
     ctx: &InferCtx,
     te: &TypeExpr,
@@ -465,9 +479,11 @@ fn conv_typeexpr_with_subst(
         TypeExpr::Str => Type::Str,
         TypeExpr::Char => Type::Char,
         TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr_with_subst(ctx, t, subst)?)),
-        TypeExpr::Tuple(xs) => {
-            Type::Tuple(xs.iter().map(|t| conv_typeexpr_with_subst(ctx, t, subst)).collect::<Result<Vec<_>,_>>()?)
-        }
+        TypeExpr::Tuple(xs) => Type::Tuple(
+            xs.iter()
+                .map(|t| conv_typeexpr_with_subst(ctx, t, subst))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
         TypeExpr::Record(fs) => {
             let mut m = BTreeMap::new();
             for (k, v) in fs {
@@ -510,6 +526,7 @@ fn conv_typeexpr_with_subst(
     })
 }
 
+#[allow(clippy::result_large_err)]
 fn instantiate_named_sum(
     ctx: &InferCtx,
     name: &str,
@@ -522,7 +539,12 @@ fn instantiate_named_sum(
     })?;
     if def.params.len() != args.len() {
         return Err(TypeError::InvalidTypeDecl {
-            msg: format!("type {} arity mismatch: expected {}, got {}", name, def.params.len(), args.len()),
+            msg: format!(
+                "type {} arity mismatch: expected {}, got {}",
+                name,
+                def.params.len(),
+                args.len()
+            ),
             span_offset: def.span_offset,
             span_len: def.span_len,
         });
@@ -543,6 +565,7 @@ fn instantiate_named_sum(
 }
 
 // Unification with awareness of Named types (μ-types): one-step unfold into SumCtor
+#[allow(clippy::result_large_err)]
 fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
     match (a, b) {
         (Type::Named { name: na, args: aa }, _) => {
@@ -557,6 +580,7 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn bind(v: TvId, t: Type) -> Result<Subst, TypeError> {
     match t {
         Type::Var(v2) if v == v2 => Ok(Subst::new()),
@@ -606,7 +630,12 @@ struct PatInfo {
     subst: Subst,
 }
 
-fn infer_pattern(ctx: &mut InferCtx, pat: &Pattern, scrutinee: &Type) -> Result<PatInfo, TypeError> {
+#[allow(clippy::result_large_err)]
+fn infer_pattern(
+    ctx: &mut InferCtx,
+    pat: &Pattern,
+    scrutinee: &Type,
+) -> Result<PatInfo, TypeError> {
     match &pat.kind {
         PatternKind::Wildcard => Ok(PatInfo::default()),
         PatternKind::Var(n) => {
@@ -699,7 +728,9 @@ fn infer_pattern(ctx: &mut InferCtx, pat: &Pattern, scrutinee: &Type) -> Result<
                 } else {
                     (0..args.len()).map(|_| ctx.tv.fresh()).collect()
                 }
-            } else { (0..args.len()).map(|_| ctx.tv.fresh()).collect() };
+            } else {
+                (0..args.len()).map(|_| ctx.tv.fresh()).collect()
+            };
             let want = Type::Ctor { tag: name.clone(), payload: payload.clone() };
             let mut s = ctx_unify(ctx, scrutinee, &want)?;
             let mut binds = vec![];
@@ -788,7 +819,9 @@ fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
         TypeExpr::Tuple(xs) => Type::Tuple(xs.iter().map(|t| conv_typeexpr_fresh(tv, t)).collect()),
         TypeExpr::Record(fs) => {
             let mut m = BTreeMap::new();
-            for (k, v) in fs { m.insert(k.clone(), conv_typeexpr_fresh(tv, v)); }
+            for (k, v) in fs {
+                m.insert(k.clone(), conv_typeexpr_fresh(tv, v));
+            }
             Type::Record(m)
         }
         TypeExpr::Fun(a, b) => Type::fun(conv_typeexpr_fresh(tv, a), conv_typeexpr_fresh(tv, b)),
@@ -801,6 +834,7 @@ fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn infer_expr(
     ctx: &mut InferCtx,
     e: &Expr,
@@ -830,7 +864,8 @@ fn infer_expr(
                 Type::fun(conv_typeexpr(ctx, a, holes), conv_typeexpr(ctx, b, holes))
             }
             TypeExpr::Ctor { tag, args } => {
-                let conv_args = args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect::<Vec<_>>();
+                let conv_args =
+                    args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect::<Vec<_>>();
                 if typedefs_lookup_typename(ctx, tag).is_some() {
                     Type::Named { name: tag.clone(), args: conv_args }
                 } else {
@@ -973,7 +1008,8 @@ fn infer_expr(
             let (tf, sf) = infer_expr(ctx, func, allow_effects)?;
             let (ta, sa) = infer_expr(ctx, arg, allow_effects)?;
             let r = ctx.tv.fresh();
-            let s1 = ctx_unify(ctx, &tf.apply(&sa).apply(&sf), &Type::fun(ta.apply(&sa), r.clone()))?;
+            let s1 =
+                ctx_unify(ctx, &tf.apply(&sa).apply(&sf), &Type::fun(ta.apply(&sa), r.clone()))?;
             let s = s1.compose(sa).compose(sf);
             // If this is an effect application like ((~effects .sym) x), forbid unless allowed
             if !allow_effects {
@@ -1001,7 +1037,7 @@ fn infer_expr(
             }
             Ok((Type::List(Box::new(a.apply(&s))), s))
         }
-    ExprKind::LetGroup { type_decls, bindings, body, .. } => {
+        ExprKind::LetGroup { type_decls, bindings, body, .. } => {
             // Recursive let-group inference (Algorithm W style for letrec):
             // 1) Create monomorphic assumptions for each binder in all patterns using fresh type vars.
             // 2) Infer each RHS under env' = env0 + assumptions.
@@ -1013,12 +1049,26 @@ fn infer_expr(
             }
             let pushed_typedefs = if !type_decls.is_empty() {
                 let fr = build_typedefs_frame(type_decls);
-                if !fr.is_empty() { ctx.typedefs.push(fr); true } else { false }
-            } else { false };
+                if !fr.is_empty() {
+                    ctx.typedefs.push(fr);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
             let pushed_typenames = if !type_decls.is_empty() {
                 let fr = build_typename_frame(type_decls);
-                if !fr.is_empty() { ctx.typedef_types.push(fr); true } else { false }
-            } else { false };
+                if !fr.is_empty() {
+                    ctx.typedef_types.push(fr);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
             // Precompute pattern cores, pushed frames, scrutinee vars, and pattern infos
             struct PreBind {
                 _p_core: Pattern,
@@ -1061,8 +1111,12 @@ fn infer_expr(
             // Infer body under finalized environment
             let saved = std::mem::replace(&mut ctx.env, env_final);
             let res = infer_expr(ctx, body, allow_effects);
-            if pushed_typenames { let _ = ctx.typedef_types.pop(); }
-            if pushed_typedefs { let _ = ctx.typedefs.pop(); }
+            if pushed_typenames {
+                let _ = ctx.typedef_types.pop();
+            }
+            if pushed_typedefs {
+                let _ = ctx.typedefs.pop();
+            }
             ctx.env = saved;
             res
         }
@@ -1105,16 +1159,18 @@ fn infer_expr(
 
             // If either branch uses a constructor-like pattern, reject mixing with non-constructor
             // patterns except for a wildcard default. Variable/default binders are NOT allowed in MVP.
-            let left_is_ctor = matches!(pl_core.kind, PatternKind::Ctor { .. } | PatternKind::Symbol(_));
-            let right_is_ctor = matches!(pr_core.kind, PatternKind::Ctor { .. } | PatternKind::Symbol(_));
+            let left_is_ctor =
+                matches!(pl_core.kind, PatternKind::Ctor { .. } | PatternKind::Symbol(_));
+            let right_is_ctor =
+                matches!(pr_core.kind, PatternKind::Ctor { .. } | PatternKind::Symbol(_));
             let left_is_wild = matches!(pl_core.kind, PatternKind::Wildcard);
             let right_is_wild = matches!(pr_core.kind, PatternKind::Wildcard);
-            if left_is_ctor || right_is_ctor {
-                if !((left_is_ctor || left_is_wild) && (right_is_ctor || right_is_wild)) {
-                    pop_tyvars(ctx, r_pushed);
-                    pop_tyvars(ctx, l_pushed);
-                    return Err(TypeError::MixedAltBranches);
-                }
+            if (left_is_ctor || right_is_ctor)
+                && !((left_is_ctor || left_is_wild) && (right_is_ctor || right_is_wild))
+            {
+                pop_tyvars(ctx, r_pushed);
+                pop_tyvars(ctx, l_pushed);
+                return Err(TypeError::MixedAltBranches);
             }
 
             // Allow any structural patterns; if both are ctor-like, we'll also compute a SumCtor param type.
@@ -1363,7 +1419,13 @@ pub mod api {
 
     pub fn infer_program(src: &str) -> Result<String, String> {
         let ast = parse_expr(src).map_err(|e| format!("parse error: {e}"))?;
-    let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![], typedefs: vec![], typedef_types: vec![] };
+        let mut ctx = InferCtx {
+            tv: TvGen { next: 0 },
+            env: prelude_env(),
+            tyvars: vec![],
+            typedefs: vec![],
+            typedef_types: vec![],
+        };
         match infer_expr(&mut ctx, &ast, false) {
             Ok((t, _s)) => Ok(pp_type(&t)),
             Err(e) => Err(format!("{e}")),
@@ -1371,8 +1433,15 @@ pub mod api {
     }
 
     // Prefer this from tools that already have an AST with precise spans (e.g., CLI after ~require expansion).
+    #[allow(clippy::result_large_err)]
     pub fn infer_ast(ast: &Expr) -> Result<String, super::TypeError> {
-    let mut ctx = InferCtx { tv: TvGen { next: 0 }, env: prelude_env(), tyvars: vec![], typedefs: vec![], typedef_types: vec![] };
+        let mut ctx = InferCtx {
+            tv: TvGen { next: 0 },
+            env: prelude_env(),
+            tyvars: vec![],
+            typedefs: vec![],
+            typedef_types: vec![],
+        };
         match infer_expr(&mut ctx, ast, false) {
             Ok((t, _s)) => Ok(pp_type(&t)),
             Err(e) => Err(e),
@@ -1432,26 +1501,50 @@ pub mod api {
         env.insert("effects".into(), Scheme { vars: vec![s3, a3], ty: eff_ty });
 
         // Arithmetic and comparison commonly used in prelude
-        env.insert("add".into(), Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Int)) });
-        env.insert("sub".into(), Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Int)) });
-        env.insert("mul".into(), Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Int)) });
         env.insert(
-            "eq".into(),
-            {
-                let a = TvId(1010);
-                Scheme { vars: vec![a], ty: Type::fun(Type::Var(a), Type::fun(Type::Var(a), Type::Bool)) }
-            },
+            "add".into(),
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Int)) },
         );
-        env.insert("lt".into(), Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) });
-        env.insert("le".into(), Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) });
-        env.insert("gt".into(), Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) });
-        env.insert("ge".into(), Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) });
+        env.insert(
+            "sub".into(),
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Int)) },
+        );
+        env.insert(
+            "mul".into(),
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Int)) },
+        );
+        env.insert("eq".into(), {
+            let a = TvId(1010);
+            Scheme {
+                vars: vec![a],
+                ty: Type::fun(Type::Var(a), Type::fun(Type::Var(a), Type::Bool)),
+            }
+        });
+        env.insert(
+            "lt".into(),
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) },
+        );
+        env.insert(
+            "le".into(),
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) },
+        );
+        env.insert(
+            "gt".into(),
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) },
+        );
+        env.insert(
+            "ge".into(),
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) },
+        );
 
         // cons : forall a. a -> List a -> List a
         let a_cons = TvId(1012);
         let cons_ty = Type::fun(
             Type::Var(a_cons),
-            Type::fun(Type::List(Box::new(Type::Var(a_cons))), Type::List(Box::new(Type::Var(a_cons)))),
+            Type::fun(
+                Type::List(Box::new(Type::Var(a_cons))),
+                Type::List(Box::new(Type::Var(a_cons))),
+            ),
         );
         env.insert("cons".into(), Scheme { vars: vec![a_cons], ty: cons_ty });
 
@@ -1488,15 +1581,16 @@ pub mod api {
                     Type::Str,
                     Type::fun(
                         Type::Int,
-                        Type::SumCtor(vec![(".Some".into(), vec![Type::Char]), (".None".into(), vec![])]),
+                        Type::SumCtor(vec![
+                            (".Some".into(), vec![Type::Char]),
+                            (".None".into(), vec![]),
+                        ]),
                     ),
                 ),
             ),
         ]);
         // Math namespace (minimal for now)
-        let math_ns = record(vec![
-            ("abs", Type::fun(Type::Int, Type::Int)),
-        ]);
+        let math_ns = record(vec![("abs", Type::fun(Type::Int, Type::Int))]);
         // Char namespace
         let char_ns = record(vec![
             ("is_digit", Type::fun(Type::Char, Type::Bool)),
@@ -1530,10 +1624,19 @@ pub mod api {
                 "peek",
                 Type::fun(
                     scan_state.clone(),
-                    Type::SumCtor(vec![(".Some".into(), vec![Type::Char]), (".None".into(), vec![])]),
+                    Type::SumCtor(vec![
+                        (".Some".into(), vec![Type::Char]),
+                        (".None".into(), vec![]),
+                    ]),
                 ),
             ),
-            ("slice_span", Type::fun(scan_state.clone(), Type::fun(Type::Int, Type::fun(Type::Int, Type::Str)))),
+            (
+                "slice_span",
+                Type::fun(
+                    scan_state.clone(),
+                    Type::fun(Type::Int, Type::fun(Type::Int, Type::Str)),
+                ),
+            ),
         ]);
         let builtins_ty = record(vec![
             ("string", string_ns),

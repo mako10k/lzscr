@@ -305,7 +305,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let pre_end = pre_start + pre_src.len(); // before inserted '\n'
                             if span_offset >= pre_start && span_offset < pre_end {
                                 let rel = span_offset - pre_start;
-                                eprintln!("{}", format_span_caret(pre_src, pre_name, rel, span_len));
+                                eprintln!(
+                                    "{}",
+                                    format_span_caret(pre_src, pre_name, rel, span_len)
+                                );
                             } else {
                                 // Compute user segment start in the combined buffer
                                 let mut user_start = 0usize;
@@ -316,7 +319,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     user_start += 1;
                                 }
                                 let rel = span_offset.saturating_sub(user_start);
-                                eprintln!("{}", format_span_caret(&user_raw, &input_name, rel, span_len));
+                                eprintln!(
+                                    "{}",
+                                    format_span_caret(&user_raw, &input_name, rel, span_len)
+                                );
                             }
                         } else {
                             // No prelude; show against the current input
@@ -812,7 +818,9 @@ fn expand_requires_in_expr(
                     bindings: new_bs,
                     body: Box::new(expand_requires_in_expr(body, search_paths, stack, src_reg)?),
                 }
-            } else { unreachable!() }
+            } else {
+                unreachable!()
+            }
         }
         Raise(inner) => {
             Raise(Box::new(expand_requires_in_expr(inner, search_paths, stack, src_reg)?))
@@ -861,7 +869,9 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
             }
             if let LetGroup { type_decls, .. } = &e.kind {
                 LetGroup { type_decls: type_decls.clone(), bindings: new_bs, body: map_box(body) }
-            } else { unreachable!() }
+            } else {
+                unreachable!()
+            }
         }
         Raise(inner) => Raise(map_box(inner)),
         AltLambda { left, right } => AltLambda { left: map_box(left), right: map_box(right) },

@@ -4,50 +4,77 @@ on:
   push:
     branches: [ main ]
   pull_request:
+    branches: [ main ]
   workflow_dispatch:
   schedule:
     - cron: '0 3 * * 1' # weekly sanity (audit/deny)
+permissions:
+  contents: read
+  checks: write
 
 jobs:
   build:
+    name: Build & Test (Rust)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+
       - name: Cargo fmt
         run: cargo fmt --all -- --check
+
       - name: Cargo clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Cargo build
+        run: cargo build --workspace --all-features --verbose
+
       - name: Cargo test
-        run: cargo test --all --locked
+        run: cargo test --workspace --all-features --verbose
 
   vsix:
     name: Build VSIX (VS Code extension)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Detect extension workspace
+        id: detect
+        run: |
+          if [ -f extensions/lzscr-vscode/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Setup Node.js
         uses: actions/setup-node@v4
+        if: ${{ steps.detect.outputs.exists == 'true' }}
         with:
           node-version: '20'
       - name: Install dependencies
+        if: ${{ steps.detect.outputs.exists == 'true' }}
         run: npm ci
         working-directory: extensions/lzscr-vscode
       - name: Package VSIX
+        if: ${{ steps.detect.outputs.exists == 'true' }}
         run: npm run package
         working-directory: extensions/lzscr-vscode
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
+        if: ${{ steps.detect.outputs.exists == 'true' }}
         with:
           name: lzscr-vscode-vsix
           path: extensions/lzscr-vscode/*.vsix
 
   audit:
+    name: Security audit (cargo-audit)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -64,6 +91,7 @@ jobs:
         run: cargo audit -q
 
   deny:
+    name: License/Advisory check (cargo-deny)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -72,6 +100,7 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2
 
   coverage:
+    name: Coverage (tarpaulin)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -89,10 +118,11 @@ jobs:
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
-            name: coverage-xml
-            path: cobertura.xml
+          name: coverage-xml
+          path: cobertura.xml
 
   udeps:
+    name: Unused deps (cargo-udeps)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
