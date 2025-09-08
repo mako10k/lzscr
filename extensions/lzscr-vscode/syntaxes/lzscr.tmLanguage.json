@@ -4,12 +4,14 @@
     { "include": "#comments" },
     { "include": "#strings" },
     { "include": "#numbers" },
-    { "include": "#keywords" }
+  { "include": "#keywords" },
+  { "include": "#operators" },
+  { "include": "#member" }
   ],
   "repository": {
     "comments": {
       "patterns": [
-        { "name": "comment.line.double-slash.lzscr", "match": "//.*$" },
+    { "name": "comment.line.number-sign.lzscr", "match": "#.*$" },
         {
           "name": "comment.block.lzscr",
           "begin": "\\{-",
@@ -39,8 +41,32 @@
     },
     "keywords": {
       "patterns": [
-        { "name": "keyword.control.lzscr", "match": "\\b(let|in|if|then|else|match|with|fun|rec)\\b" },
-        { "name": "keyword.operator.lzscr", "match": "[+\\-*/=<>|:&^.]" }
+        { "name": "keyword.control.lzscr", "match": "\\b(let|in|if|then|else|match|with|fun|rec)\\b" }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.logical.or.lzscr", "match": "\\|\\|" },
+        { "name": "keyword.operator.lambda.arrow.lzscr", "match": "->" },
+        { "name": "keyword.operator.caret.catch.lzscr", "match": "\\^\\|" },
+        { "name": "keyword.operator.lambda.backslash.lzscr", "match": "\\\\" },
+        { "name": "keyword.operator.raise.caret.lzscr", "match": "\\^" },
+        { "name": "keyword.operator.pipe.alt.lzscr", "match": "\\|" },
+        { "name": "keyword.operator.tilde.ref.lzscr", "match": "~{1,2}" },
+        { "name": "keyword.operator.bang.effect.lzscr", "match": "!" },
+        { "name": "keyword.operator.assignment.equals.lzscr", "match": "=" },
+        { "name": "keyword.operator.math.lzscr", "match": "[+\\-*/]" },
+        { "name": "keyword.operator.compare.lzscr", "match": "[<>]=?|==|!=" },
+        { "name": "keyword.operator.cons.colon.lzscr", "match": ":" }
+      ]
+    },
+    "member": {
+      "patterns": [
+        {
+          "name": "meta.member.access.lzscr",
+          "match": "\\.([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": { "1": { "name": "variable.other.member.lzscr" } }
+        }
       ]
     }
   }
