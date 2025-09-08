@@ -1,66 +1,66 @@
-# モジュール仕様（ドラフト）
+# Module spec (draft)
 
-本仕様は「モジュール = レコード」として扱い、`~require` による事前解決（実行前の静的展開）を定義します。目的は名前空間の衝突回避と自己ホスト（パーサ/実行環境の lzscr 実装）への道筋を作ることです。
+Treat a module as a record value and define a pre-resolution mechanism via `~require` (static expansion before execution). Goals: avoid namespace collisions and pave the way to self-hosting (an lzscr implementation of parser/runtime).
 
-## 基本モデル
-- モジュールは単なるレコード値。
-- モジュールファイル（拡張子 `.lzscr`）は、トップレベルで「プライベートな `~` 定義」と「最終式としてのレコード」を持つ構成を推奨:
+## Basic model
+- A module is just a record value.
+- A module file (`.lzscr`) is recommended to contain private `~` bindings at the top level and a final record expression exposing the public API:
 
 ```lzscr
 ~helper = ...;
 ~internal_state = ...;
 
-{  # これがモジュールの公開面（レコード）
+{  # this record is the public surface of the module
   publicFn: \x -> ...;
   publicConst: 42;
 };
 
-~more_privates = ...;   # ここに書いた定義は公開されない（最終式ではないため）
+~more_privates = ...;   # not exported because it's not the final expression
 ```
 
-上記の最終式レコードが、モジュールの公開 API になります。レコード式以外を最終式にしてもよいが、`~require` の利用者視点では「レコードであること」を前提にするのが自然です。
+The final record expression becomes the public API. Other final expressions are allowed, but consumers of `~require` typically expect a record for field access.
 
-## `~require`（事前解決）
-`~require` は特別扱いのビルトインで、実行前に解決され、呼び出し位置へモジュールの AST がインライン展開されます。
+## `~require` (pre-resolution)
+`~require` is a special builtin resolved before execution; it inlines the module's AST at the call site.
 
-- 構文（可読のための擬似 BNF）:
+- Syntax (readable pseudo BNF):
   - `(~require .seg1 .seg2 ... .segN)`
-  - 引数は 1 個以上の Ctor ラベル（先頭ドット付き識別子）に限る。
-- 例:
+  - Arguments must be one or more ctor labels (dot-prefixed identifiers)
+- Example:
   - `~Json = ~require .std .data .json;`
-  - 使用: `~Json .parse "..."`（レコードのフィールド参照を想定）
+  - Usage: `~Json .parse "..."` (field access on the record)
 
-### 解決ルール
-1. 事前条件: すべての引数が Ctor（`.name`）でなければエラー（静的エラー）。
-2. パス解決: `seg1/seg2/.../segN.lzscr` という相対パスに変換し、以下の検索ルートを順に探索:
-   - ワークスペースのカレントディレクトリ（ユーザープロジェクト）
-   - CLI の `--stdlib-dir` で指定されたディレクトリ
-   - 将来: 追加の `--module-path`（コロン区切りの複数パス）
-3. ファイル存在チェック: 見つからなければ静的エラー。
-4. 解析・型検査: モジュールファイルを個別にパース（`--no-typecheck` でない場合は型検査）。失敗時は静的エラー。
-5. 展開: モジュール AST を「その `~require` の発生位置」に匿名の let グループでインライン展開:
-   - 具体的には、モジュールファイルの「トップレベルの `~` 定義群」と「最終式（レコード）」を `let { ... } in <record>` 形式にして 1 つの式として差し替える。
-   - これによりモジュールのプライベート識別子は展開位置のローカルスコープに閉じ込められ、外部に漏れない（ハイジーン）。
+### Resolution rules
+1. Precondition: all args must be ctors (`.name`) or it's a static error.
+2. Path resolution: map to relative path `seg1/seg2/.../segN.lzscr` and search in order:
+  - workspace current directory (user project)
+  - directory provided via CLI `--stdlib-dir`
+  - future: extra `--module-path` (colon-separated list)
+3. File existence: static error if not found.
+4. Parse/typecheck: parse the module file (typecheck unless `--no-typecheck`); static error on failure.
+5. Expansion: inline the module AST at the `~require` call using an anonymous let-group:
+  - Concretely, replace with `let { <top-level ~ bindings> } in <final-record>`.
+  - Private identifiers remain scoped to the expansion site (hygienic).
 
-### エラー条件
-- 引数が Ctor 以外や未確定な値: エラー。
-- パスに対応するファイルが見つからない: エラー。
-- モジュールファイルのパース/型検査に失敗: エラー。
-- 循環参照（A が B を require し、B が A を require）: エラー。検出時は参照チェーンを含むメッセージを返す。
+### Error conditions
+- Non-ctor args or indeterminate values: error
+- File not found: error
+- Parse/typecheck failure: error
+- Cycles (A requires B, B requires A): error; include reference chain in message
 
-### 実装ノート（CLI/フロントエンド）
-- 展開パスは CLI の「前処理フェーズ」で AST を走査して行う。
-- キャッシュ: 同一パスを複数回 `~require` する場合は 1 度だけ読み取り/解析し、AST を再利用（但し展開は各箇所で行う）。
-- デバッグ: `--dump-coreir(-json)` の場合、展開後の IR を出力（展開の有無で IR が変わることに注意）。
-- 位置情報: エラーメッセージには呼び出し側/定義側のスパンを両方含めると可読性が高い。
+### Implementation notes (CLI/frontend)
+- Perform expansion in a preprocessing pass walking the AST.
+- Cache: if the same path is required multiple times, read/parse once and reuse the AST (still expand at each site).
+- Debug: when `--dump-coreir(-json)` is used, output IR after expansion (IR differs with/without expansion).
+- Spans: include both call-site and definition-site spans in error messages if possible.
 
-## 型と評価の意味論
-- 展開後は単なる式（レコード）として通常の型推論/評価が行われる。
-- `~require` 自体は実行時に残らず、副作用も持たない（純粋構文として使用可能）。
-- モジュールがレコード以外の式を最終式にしてもよいが、利用者がフィールド参照を前提にするならレコードを推奨。
+## Typing and evaluation semantics
+- After expansion, normal type inference/evaluation applies to the resulting expression (a record).
+- `~require` does not remain at runtime and has no effects (pure syntax).
+- The final expression can be non-record, but records are recommended for consumers expecting field access.
 
-## 使用例
-モジュールファイル `std/data/json.lzscr`:
+## Example
+Module file `std/data/json.lzscr`:
 
 ```lzscr
 ~ws = ...;         # private
@@ -69,14 +69,14 @@
 { parse: \s -> ...; from_int: \n -> ... };
 ```
 
-呼び出し側:
+Caller:
 
 ```lzscr
 ~Json = ~require .std .data .json;
 ~Json .parse "{\"x\": 1}";
 ```
 
-## 制限と今後
-- 変数引数や動的パスは不可（純粋性のため）。
-- パラメトリックモジュール（ファンクタ）やエイリアス、再エクスポートは将来検討。
-- 将来的な `import` 構文（`from M import f, g` 等）は別途仕様化し、`~require` は下位機構として残す想定。
+## Limitations and future work
+- No variable arguments or dynamic paths (purity)
+- Parameterized modules (functors), aliases, and re-exports are future work
+- A future `import` syntax (`from M import f, g`) may be specified separately; keep `~require` as a low-level mechanism

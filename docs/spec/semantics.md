@@ -1,28 +1,28 @@
-# セマンティクス（現状）
+# Semantics (current)
 
-- 評価器: `crates/lzscr-runtime`
-  - 値: Unit/Int/Float/Bool/Str/Symbol/List/Tuple/Record/Native/Closure
-  - 環境Env: `vars: HashMap<String, Value>`, `strict_effects: bool`, `in_effect_context: bool`
-  - 適用:
-    - Native: 逐次カリー化、arity到達で実行。剰余は過剰適用処理。
-    - Closure: `param` に値束縛して `body` を評価。
-    - Symbol: 未飽和関数様として保持（PoC段階）。
-  - 特別形:
-    - `(~seq a b)` は `a` を評価後、`b` を effect-context で評価。
-    - `(~chain a b)` は `a` を評価後、`b` を effect-context で評価し、その値を返す。
-    - `(~bind e k)` は `e` を評価して値 `v` を得て、`k` を effect-context で評価したのち `k v` を適用して返す。
-  - 効果: `(~effects .sym)` で効果関数を取得。
-    - `.print`/`.println` を実装。
-    - strict-effects時、effect-context外では `EffectNotAllowed`。
-- ビルトイン（例）:
+- Evaluator: `crates/lzscr-runtime`
+  - Values: Unit/Int/Float/Bool/Str/Symbol/List/Tuple/Record/Native/Closure
+  - Env: `vars: HashMap<String, Value>`, `strict_effects: bool`, `in_effect_context: bool`
+  - Application:
+    - Native: curried; execute when arity is satisfied; extra args are applied to the result
+    - Closure: bind value to `param` via pattern and evaluate `body`
+    - Symbol: behaves like an unapplied constructor/function-like value (PoC semantics)
+  - Special forms:
+    - `(~seq a b)`: evaluate `a`, then evaluate `b` in effect-context
+    - `(~chain a b)`: evaluate `a`, then evaluate `b` in effect-context and return its value
+    - `(~bind e k)`: evaluate `e` to value `v`, evaluate `k` in effect-context, then apply `k v`
+  - Effects: `(~effects .sym)` retrieves an effect function
+    - Implements `.print`/`.println`
+    - With strict-effects, effects outside the effect-context raise `EffectNotAllowed`
+- Builtins (examples):
   - `to_str : a -> Str`
   - `add, sub : Int -> Int -> Int`
-  - `eq : a -> a -> Symbol("True"|"False")`（Int/Float/Bool/Str/Unit/Symbolに対応）
+  - `eq : a -> a -> Symbol("True"|"False")` (supports Int/Float/Bool/Str/Unit/Symbol)
   - `lt : Int|Float -> Int|Float -> Symbol("True"|"False")`
-  - `seq : a -> b -> b`（実装では参照と特別形）
-  - `effects .println : Str -> Unit`（effect-contextでのみ許可）
-補足:
-- Bool は一時的に `~true`/`~false` を環境に注入（将来はリテラル導入）。
-- Float はリテラルをサポート（例: 1.0, .5, 10.）。
-- Char は現時点で Int と同一カテゴリ（0..=255 を意図）。専用リテラルは未実装。
-- List/Tuple/Record は不変値としてランタイムの表示や to_str に対応（構文は未定）。
+  - `seq : a -> b -> b` (implemented via ref + special form)
+  - `effects .println : Str -> Unit` (only in effect-context)
+Notes:
+- Bool currently injects `~true`/`~false` into the environment (literals planned)
+- Float supports literals (e.g., 1.0, .5, 10.)
+- Char is currently treated as Int (intended 0..=0x10FFFF); dedicated literal not implemented
+- List/Tuple/Record are immutable values with runtime display and to_str support

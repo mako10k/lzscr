@@ -1,28 +1,28 @@
-# Core IR（PoC）
+# Core IR (PoC)
 
-定義: `crates/lzscr-coreir`
+Location: `crates/lzscr-coreir`
 
-- 型 `Ty`:
+- Types `Ty`:
   - `Unit | Int | Float | Bool | Str | Fun(Box<Ty>, Box<Ty>) | Dyn`
-- 項 `Op` と `Term`:
+- Operators `Op` and `Term`:
   - `Unit | Int(i64) | Str(String)`
   - `Ref(String) | Symbol(String)`
   - `Lam { param, body } | App { func, arg } | Seq { first, second }`
-- モジュール `Module { body: Term }`
+- Module `Module { body: Term }`
 
-ロワリング `lower_expr_to_core(&Expr) -> Term`:
-- ASTの `(~seq a b)` を `Seq { first=a, second=b }` へ変換。
- - `(~chain a b)`, `(~bind e k)` は現在は AST 特別形として評価器が処理（将来的に IR 化を検討）。
-- それ以外は同形にマッピング。
+Lowering `lower_expr_to_core(&Expr) -> Term`:
+- Convert AST `(~seq a b)` into `Seq { first=a, second=b }`.
+ - `(~chain a b)`, `(~bind e k)` are currently handled as AST special forms by the evaluator (may become IR later).
+- Everything else maps shape-wise.
 
-テキスト化:
-- `print_term(&Term)` により、人間可読の簡易表現を出力（将来的に専用テキスト/バイナリ形式を定義）。
+Textual form:
+- `print_term(&Term)` prints a human-readable form (future: dedicated text/binary format).
 
-CLI サポート:
-- `lzscr-cli -e "..." --dump-coreir` でテキスト出力
-- `lzscr-cli -e "..." --dump-coreir-json` で JSON 出力
+CLI support:
+- `lzscr-cli -e "..." --dump-coreir` prints a textual dump
+- `lzscr-cli -e "..." --dump-coreir-json` prints a JSON dump
 
-例:
+Example:
 ```
 $ lzscr-cli -e "(~seq 1 (~add 2 3))" --dump-coreir
 (~seq 1 ((~add 2) 3))

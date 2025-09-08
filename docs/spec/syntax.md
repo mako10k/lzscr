@@ -1,79 +1,78 @@
-# 構文（現状）
+# Syntax (current)
 
-- リテラル:
+- Literals:
   - Unit: `()`
   - Int: `42`
-  - Str: `"hi"`（\エスケープ可）
-- 識別子:
-  - 参照: `~name`
-  - 裸シンボル: `Name`（値として保持、将来のコンストラクタ変数候補）
-  - メンバ風シンボル: `.println` → シンボルとしてパース
-- ラムダ: `\x -> expr`
-- 適用: `(f x)`（左結合）
-- ブロック: `{ expr }`
-- 糖衣構文:
+  - Str: `"hi"` (supports escapes)
+- Identifiers:
+  - Reference: `~name`
+  - Symbol value (member-style): `.println` parses as a Symbol
+- Lambda: `\x -> expr`
+- Application: `(f x)` (left-associative)
+- Block: `{ expr }`
+- Sugar:
   - `!sym` → `(~effects .sym)`
-- 予約/トークン: `~`, `!`, `.ident`, `(`, `)`, `{`, `}`, `,`, `->`, `\\`
+- Reserved/tokens: `~`, `!`, `.ident`, `(`, `)`, `{`, `}`, `,`, `->`, `\\`
 
 例:
-## 構文ガイド（2025-09-05）
+## Syntax guide (2025-09-05)
 
-### リテラル/基本
+### Literals/basics
 
 - Unit: `()`
 - Int: `42`
 - Float: `1.0`, `.5`, `3.`
-- Str: `"hi"`（\\エスケープ可）
-- 参照: `~name`（例: `~add`, `~true`）
-- シンボル値: `.name`（例: `.println`, `.Foo`）
-- ラムダ: `\x -> expr`
-- ブロック: `{ expr }`
-- 適用: `(f x)`（左結合）
+- Str: `"hi"` (supports escapes)
+- Ref: `~name` (e.g., `~add`, `~true`)
+- Symbol value: `.name` (e.g., `.println`, `.Foo`) — constructors are .Member-only
+- Lambda: `\x -> expr`
+- Block: `{ expr }`
+- Apply: `(f x)` (left-associative)
 
-### 糖衣構文
+### Sugar
 
-- 効果: `!println` → `(~effects .println)`
+- Effects: `!println` → `(~effects .println)`
 
-## do 記法と逐次実行
+## do-notation and sequencing
 
-- `!{ ... }` は逐次実行の糖衣。
-  - 文法: `stmt ::= pat <- expr ; | expr ;`
-  - ブロックは 0 個以上の文（末尾 `;` 任意の式文を含む）と、最後に 1 個の最終式を持つ。
-  - 展開規則:
-    - 末尾式 `E` は `(~bind E (\x -> x))` に変換（値を返す）
-    - `expr; ACC` は `(~chain expr ACC)`
-    - `pat <- expr; ACC` は `(~bind expr (\pat -> ACC))`
-- 真偽値: `true()` → `~true`, `false()` → `~false`
-- コンストラクタ値: `.Foo 1 2` → `Ctor("Foo", [1,2])`
+- `!{ ... }` is sugar for sequencing.
+  - Grammar: `stmt ::= pat <- expr ; | expr ;`
+  - A block has zero or more statements (any expression with trailing `;`) and one final expression.
+  - Expansion rules:
+    - Final `E` becomes `(~bind E (\x -> x))` (return value)
+    - `expr; ACC` becomes `(~chain expr ACC)`
+    - `pat <- expr; ACC` becomes `(~bind expr (\pat -> ACC))`
+- Booleans: `true()` → `~true`, `false()` → `~false`
+- Constructor value: `.Foo 1 2` → `Ctor(".Foo", [1,2])`
 
-### 中置演算子（左結合・Pratt 優先順位）
+### Infix operators (left-assoc; Pratt precedence)
 
-優先順位（高→低）:
+Precedence (high→low):
 - 20: `*`, `/`, `.*`, `./`
 - 10: `+`, `-`, `.+`, `.-`
 - 5: `<`, `<=`, `>`, `>=`, `.<`, `.<=`, `.>`, `.>=`
 - 4: `==`, `!=`
 
-糖衣展開（関数適用へ）:
+Desugaring (to function application):
 
-- Int 系
+- Int ops
   - `a + b` → `(~add a) b`
   - `a - b` → `(~sub a) b`
   - `a * b` → `(~mul a) b`
   - `a / b` → `(~div a) b`（0 でエラー）
-- Float 系（別記号、混在はエラー）
+- Float ops (separate symbols; mixed types are errors)
   - `a .+ b` → `(~fadd a) b`
   - `a .- b` → `(~fsub a) b`
   - `a .* b` → `(~fmul a) b`
   - `a ./ b` → `(~fdiv a) b`（0.0 でエラー）
-- 比較/等価
+- Comparisons/equality
   - `a < b`  → `(~lt a) b`、`a <= b` → `(~le a) b`、`a > b` → `(~gt a) b`、`a >= b` → `(~ge a) b`
   - `a .< b` → `(~flt a) b`、`a .<= b` → `(~fle a) b`、`a .> b` → `(~fgt a) b`、`a .>= b` → `(~fge a) b`
   - `a == b` → `(~eq a) b`、`a != b` → `(~ne a) b`
 
-戻り値は現状 `Symbol("True"|"False")`。
+Return value is currently `Symbol("True"|"False")`.
 
-### 例
+### Examples
 
 ```
 1 + 2 * 3            # => 7
