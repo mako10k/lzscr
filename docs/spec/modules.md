@@ -1,4 +1,4 @@
-# Module spec (draft)
+# Module spec (draft; WIP)
 
 Treat a module as a record value and define a pre-resolution mechanism via `~require` (static expansion before execution). Goals: avoid namespace collisions and pave the way to self-hosting (an lzscr implementation of parser/runtime).
 
@@ -76,7 +76,8 @@ Caller:
 ~Json .parse "{\"x\": 1}";
 ```
 
-## Limitations and future work
+## Limitations and future work (WIP)
+The items below are exploratory and not committed for implementation yet. Treat them as proposals subject to change.
 - No variable arguments or dynamic paths (purity)
 - Parameterized modules (functors), aliases, and re-exports are future work
 - A future `import` syntax (`from M import f, g`) may be specified separately; keep `~require` as a low-level mechanism

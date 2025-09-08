@@ -2,6 +2,8 @@ lzscr Language Specification (Consolidated, as of 2025-09)
 
 This document summarizes the currently implemented specification of lzscr, organized by layers (lexer → parser → semantics → file format → APIs). See the sibling files in this folder for details (tokenizer.md, syntax.md, semantics.md, modules.md, ast.md, ir.md).
 
+Note: For future ideas and broader roadmap (WIP, not commitments), see ../lzscr.md.
+
 - Character encoding: UTF-8
 - File extension: .lzscr (MIME: text/vnd.lzscr; charset=utf-8)
 
@@ -26,7 +28,7 @@ Lexing is implemented with logos (crates/lzscr-lexer). Representative tokens and
   - Pipe: `|`, logical or `||`
   - Arithmetic: `+ - * /`
   - Float operators: `.+ .- .* ./`
-  - Comparisons: `< <= > >= == !=` and float variants `. < .<= .> .>=`
+  - Comparisons: `< <= > >= == !=` and float variants `.< .<= .> .>=`
 - Literals:
   - Int: `[0-9]+` → Int(i64)
   - Float: `([0-9]+\.[0-9]*|\.[0-9]+)` → Float(f64)
@@ -68,7 +70,7 @@ The implementation uses a procedural parser with a PRE-AST front (chumsky as a h
   - Variable: `~x` (patterns also use the `~` prefix)
   - Wildcard: `_`
   - Basics: `()` / Int / Float / Str / Char / Bool (`true` / `false`)
-  - Constructors: `Ctor p1 p2 ...` or `.Ctor p1 ...` (zero-arity must be `Ctor()` / `.Ctor()`)
+  - Constructors: `.Tag p1 p2 ...` (Member-only policy; zero-arity must be `.Tag()`)
   - Tuples/lists: `(p1, p2, ...)`, `[p1, p2, ...]`, cons `p : ps` (right-associative)
   - Records: `{ k: p, ... }` (keys are identifiers)
   - Record field lambda sugar (definition): `field Pat1 ... PatN: Expr` ≡ `field: \Pat1 -> ( ... (\PatN -> Expr) ...)`
@@ -217,7 +219,7 @@ Type hints below are informal (to be aligned with the HM type inference). Bool n
   - Delegations to String/Char/Math/Unicode/Scan: export `string/math/char/unicode/scan` fields and helpers
 
 Notes:
-- Zero-arity constructors must be written as `Ctor()` / `.Ctor()` (bare `Ctor` is parsed as a variable name).
+- Zero-arity constructors must be written as `.Ctor()` (bare `Ctor` is parsed as a variable name; Member-only policy).
 - Provide sugar where `true()` / `false()` expand to `~true` / `~false`.
 
 ---
@@ -311,7 +313,7 @@ Example:
 
 6.8 Constructors and arity
 
-- A bare symbol `Foo` denotes a constructor function with principal type `∀a1..an. a1 -> .. -> an -> Ctor<'Foo,(a1,..,an)>`.
+- A member symbol `.Foo` denotes a constructor function with principal type `∀a1..an. a1 -> .. -> an -> Ctor<'Foo,(a1,..,an)>`.
 - Arity is checked against the parser/CLI setting (`--ctor-arity`). Zero-arity constructors should be written explicitly when required by the chosen surface syntax.
 
 6.9 Main builtin types
@@ -348,7 +350,7 @@ Example:
 (\%{ %a } ~x -> %{ %a } ~x)   # share the same %a
 
 # AltLambda (finite sum of Ctors)
-let f = (\(A ~x) -> ~x) | (\(B ~y ~z) -> ~z) in ~f
+let f = (\(.A ~x) -> ~x) | (\(.B ~y ~z) -> ~z) in ~f
 ```
 
 Appendix: the Analyzer/Runtime/CoreIR treat `PatternKind::TypeBind` transparently (printing/execution behave as before).

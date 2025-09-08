@@ -1,4 +1,5 @@
 # Semantics (current)
+Disclaimer: This document describes the current PoC behavior. Items labeled as planned or provisional are WIP and may change.
 
 - Evaluator: `crates/lzscr-runtime`
   - Values: Unit/Int/Float/Bool/Str/Symbol/List/Tuple/Record/Native/Closure

@@ -148,7 +148,8 @@ Compatibility:
 When using `-e '!{ ... }'`, turn off history expansion: `set +H`, or use single quotes/heredocs.
 Example: `( set +H; ./target/debug/lzscr -e '!{ !println ("ok"); };' )`
 
-### 8) Future scope (selected)
+### 8) Future scope (selected; WIP)
+The following items are exploratory and not guaranteed. They require separate design/approval before implementation.
 
 - Core IR dump/eval, typecheck, kind warnings/errors, execution tracing
 
@@ -226,8 +227,8 @@ cargo run -p lzscr-cli -- -e '.Foo 1 2' --analyze --format json --ctor-arity 'Fo
 cargo run -p lzscr-cli -- -e '.Bar 1 2' --ctor-arity 'Bar=1'
 ```
 
-Current provisional behavior:
-- Parser: `Ident` is ASTed as `Symbol` (constructor variable) while `~Ident` is a `Ref`.
-- Evaluator: a `Symbol` acts as an unresolved constructor value that accumulates arguments upon application and will be materialized at a future type/resolution pass. For now, `S()`, `S a`, `S a b`, etc. render as a partially constructed `<fun>` value (semantics will be finalized after type/IR work).
+- Current provisional behavior:
+- Parser: `Ident` at value position is a `Symbol` (constructor-like tag) and `.Member` is the canonical constructor/symbol form; `~Ident` is a `Ref`.
+- Evaluator: a `Symbol`/member tag acts like a constructor token that accumulates arguments; materialization is finalized after type/resolution work. For now, `.S()`, `.S a`, `.S a b`, etc. render as partially constructed `<fun>` values (to be finalized with type/IR work).
 - Builtins: resolved via references, so `~` is required. Example: `(~to_str (~add 1 2))`.
 

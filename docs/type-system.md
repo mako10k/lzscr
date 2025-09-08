@@ -1,4 +1,5 @@
 ## lzscr type system (current: HM rank-1 + annotations/type values/pattern type vars)
+Disclaimer: Snapshot as of 2025-09-06. Any "future" references are exploratory (WIP) and not commitments.
 
 This document describes the implemented design as of 2025-09-06. It centers on Hindley–Milner (rank-1) inference, with type annotations (`%{...}`), first-class type values, and pattern-level type variable binders.
 
@@ -101,8 +102,8 @@ Example:
 ### 10) CLI integration
 
 - Pipeline: `parse → analyzer → typecheck → eval`
-- `--no-typecheck` can disable inference (workaround for current limits).
-- Future output options (type display/JSON) will be added separately.
+- `--no-typecheck` can disable inference.
+- Output mode: `--types pretty|json` (current behavior; subject to change).
 
 ### 11) Limitations and notes
 
@@ -122,7 +123,7 @@ Example:
 (\%{ %a } ~x -> %{ %a } ~x)   # share the same %a
 
 # AltLambda (finite sum of ctor cases)
-let f = (\(A ~x) -> ~x) | (\(B ~y ~z) -> ~z) in ~f
+let f = (\(.A ~x) -> ~x) | (\(.B ~y ~z) -> ~z) in ~f
 ```
 
 Note: Analyzer/Runtime/CoreIR treat `PatternKind::TypeBind` transparently (printing/execution behave the same as without it).

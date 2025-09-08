@@ -1,5 +1,7 @@
 # lzscr type definitions (mu-types / isorecursive) design notes
 
+Status: This document includes both implemented parts and proposals for future work. Sections labeled "Open items" or marked as draft are not commitments; treat them as under discussion.
+
 This document records the plan to add user type definitions (% declarations) and introduce mu-types (isorecursive) in the internal representation. We first agree on the spec and then implement in stages.
 
 ## Goals
@@ -91,6 +93,7 @@ Option doesn’t need μ:
   - Interoperate with existing List/Option/Bool. Initially keep internal reps side-by-side; consider unifying later.
 
 ## Open items (to agree)
+These are discussion topics. Do not implement without explicit agreement.
 - How to group (file/blank-lines/block)
 - Label space (.Tag) sharing policy (likely fine as-is)
 - Equality for Named: operate on structural equality after full expansion (no nominal equality)

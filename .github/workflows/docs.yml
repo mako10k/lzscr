@@ -1,0 +1,50 @@
+name: Docs hygiene
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  docs-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for non-ASCII Japanese characters in docs
+        run: |
+          set -euo pipefail
+          if git ls-files 'docs/**' | xargs -I{} grep -nE "[\u3040-\u30ff\u4e00-\u9fff\uff66-\uff9f]" {} -H | tee /tmp/jp.txt; then
+            echo "Japanese characters detected in docs:"
+            cat /tmp/jp.txt
+            echo "Please translate to English."
+            exit 1
+          else
+            echo "No Japanese characters detected."
+          fi
+
+      - name: Check for broken relative links in docs
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r f; do
+            while IFS= read -r link; do
+              # strip markdown link syntax
+              path=$(echo "$link" | sed -E 's@^.*\(([^)#?]+)\).*@\1@')
+              # consider only relative links to files under repo
+              if echo "$path" | grep -qE '^(http|https|mailto):'; then
+                continue
+              fi
+              if [ -n "$path" ] && [ ! -e "$(dirname "$f")/$path" ]; then
+                echo "Broken link: $f -> $path"
+                failed=1
+              fi
+            done < <(grep -oE "\[[^\]]+\]\([^\)]+\)" "$f" || true)
+          done < <(git ls-files 'docs/**' | grep -E '\.md$')
+          if [ "$failed" -ne 0 ]; then
+            echo "Broken links found."
+            exit 1
+          fi
+          echo "No broken relative links in docs."

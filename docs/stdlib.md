@@ -15,7 +15,7 @@ cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
 
 Note: `prelude.lzscr` lives under `stdlib/`. The CLI prepends it by default and then appends the user code as one LetGroup (disable with `--no-stdlib`).
 
-# lzscr standard library plan (draft)
+# lzscr standard library plan (draft; WIP)
 
 This document outlines the phased plan and design principles for the lzscr standard library (stdlib). Initially, it is provided by preloading via the CLI; later, module/import syntax will be added for normal usage.
 
@@ -52,6 +52,7 @@ Parser/lexer utilities:
 - `StringCursor`-like operations can be built with `str_len/str_slice/str_codepoint_at`
 
 ## Phases (milestones)
+Note: This section outlines potential phases. It is not a commitment. Items may change or be deferred after evaluation.
 0. M0: self-host preparation (minimal builtins + stdlib base)
    - Add minimal builtins in Rust (above)
    - Implement minimal list/string/char/option/result in `stdlib/prelude.lzscr`
@@ -104,6 +105,7 @@ Parser/lexer utilities:
 Note: We build stdlib functions on top of the runtime builtins (to_str, arithmetic/comparison, effects.*). Constructor arity checks help improve safety.
 
 ## Loading design (M1: preload)
+Status: The preload mechanism exists in the CLI today. Other aspects here are subject to change.
 - On CLI start, load stdlib and merge it before user program as a LetGroup.
 - CLI flags:
   - `--no-stdlib` to disable
@@ -134,6 +136,7 @@ cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
 - Self-host prep: string slice/char-class invariants and tokenizer PoC acceptance tests
 
 ## Roadmap (task checklist)
+Note: This is a working checklist. Non-checked items are exploratory and may be reprioritized or dropped.
 - [x] Create stdlib directory: `stdlib/prelude.lzscr` (skeleton and Builtins delegation)
 - [x] Introduce `~Builtins` namespaces in runtime (string/math) and delegate from prelude
 - [ ] Minimal builtins in Rust (string ops, cp_* predicates, arithmetic/comparison exposure)
