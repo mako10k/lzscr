@@ -656,7 +656,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Value::Raised(b) => format!("^({})", val_to_string(env, b)),
                 Value::Thunk { .. } => "<thunk>".into(),
                 Value::Ctor { name, args } => {
-                    if name == ".," {
+                    if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
                         format!(
                             "({})",
                             args.iter()

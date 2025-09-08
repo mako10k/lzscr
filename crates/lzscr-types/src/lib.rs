@@ -716,13 +716,16 @@ fn infer_pattern(
             Ok(PatInfo { bindings: binds, subst: s })
         }
         PatternKind::Ctor { name, args } => {
-            // Special-case tuple constructor '.,' in patterns:
-            // \(.,( a , b )) should be treated as a binary ctor with two payloads,
-            // not as a unary ctor carrying a 2-tuple. This matches term-level typing and runtime.
-            let (eff_name, eff_args): (String, Vec<Pattern>) = if name == ".," && args.len() == 1 {
+            // Special-case tuple-like ctor tags '.,', '.,,', ... in patterns.
+            // If written as a single tuple argument whose arity matches the tag, expand to that many args.
+            let (eff_name, eff_args): (String, Vec<Pattern>) = if name.starts_with('.')
+                && name.chars().skip(1).all(|c| c == ',')
+                && args.len() == 1
+            {
                 if let PatternKind::Tuple(items) = &args[0].kind {
-                    if items.len() == 2 {
-                        (name.clone(), vec![items[0].clone(), items[1].clone()])
+                    let total_arity = name.chars().skip(1).count() + 1;
+                    if items.len() == total_arity {
+                        (name.clone(), items.clone())
                     } else {
                         (name.clone(), args.clone())
                     }
@@ -1045,19 +1048,32 @@ fn infer_expr(
                     }
                 }
             }
-            // Special-case: constructor application via symbol, e.g., (.Some x) or (., a) b
+            // Special-case: constructor application via symbol, e.g., (.Some x) or (., a) b or (.,, a) b c
             if let ExprKind::Symbol(tag) = &func.kind {
                 if tag.starts_with('.') {
                     let (ta, sa) = infer_expr(ctx, arg, allow_effects)?;
-                    if tag == ".," {
-                        // Pair constructor is binary: (., a) : b -> .,(a,b)
-                        let b = ctx.tv.fresh();
-                        let ret = Type::Ctor {
-                            tag: tag.clone(),
-                            payload: vec![ta.apply(&sa), b.clone()],
-                        };
-                        return Ok((Type::fun(b, ret), sa));
-                    } else {
+                    // Tuple-like tags: leading '.' followed by one or more ','; total payload arity = (number of commas) + 1
+                    if tag.chars().skip(1).all(|c| c == ',') {
+                        let n_commas = tag.chars().skip(1).count();
+                        let total_arity = n_commas + 1;
+                        if total_arity == 0 {
+                            // malformed, treat as unary below
+                        } else {
+                            // We have applied 1 arg now; remaining (total_arity-1) to collect
+                            let mut payload = Vec::with_capacity(total_arity);
+                            payload.push(ta.apply(&sa));
+                            let mut params: Vec<Type> = Vec::new();
+                            for _ in 1..total_arity {
+                                params.push(ctx.tv.fresh());
+                            }
+                            payload.extend(params.iter().cloned());
+                            let ret = Type::Ctor { tag: tag.clone(), payload };
+                            // fold params into function type
+                            let ty_fun = params.iter().rev().fold(ret, |acc, p| Type::fun(p.clone(), acc));
+                            return Ok((ty_fun, sa));
+                        }
+                    }
+                    {
                         // Default: unary constructor
                         let ty = Type::Ctor { tag: tag.clone(), payload: vec![ta.apply(&sa)] };
                         return Ok((ty, sa));

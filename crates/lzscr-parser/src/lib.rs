@@ -1154,7 +1154,14 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             let r = bump(i, toks).unwrap();
                             let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset);
                             if items.len() == 1 { return Ok(items.pop().unwrap()); }
-                            let mut tuple_expr = Expr::new(ExprKind::Symbol(".,".into()), t.span);
+                            // Build arity-specific tuple tag: ".," for 2, ".,," for 3, ...
+                            let tag = {
+                                let mut s = String::from(".");
+                                let n_commas = if items.len() > 0 { items.len() - 1 } else { 0 };
+                                for _ in 0..n_commas { s.push(','); }
+                                s
+                            };
+                            let mut tuple_expr = Expr::new(ExprKind::Symbol(tag), t.span);
                             for it in items {
                                 let sp = Span::new(tuple_expr.span.offset, span_all.offset + span_all.len - tuple_expr.span.offset);
                                 tuple_expr = Expr::new(ExprKind::Apply { func: Box::new(tuple_expr), arg: Box::new(it) }, sp);
@@ -1213,8 +1220,14 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         Tok::Comma => continue,
                         Tok::RBrace => {
                             let span_all = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset);
-                            // (., (.KV "k" v) ...)
-                            let mut tuple_expr = Expr::new(ExprKind::Symbol(".,".into()), t.span);
+                            // (., (.KV "k" v) ...) with arity-specific tag
+                            let tag = {
+                                let mut s = String::from(".");
+                                let n_commas = if pairs.len() > 0 { pairs.len() - 1 } else { 0 };
+                                for _ in 0..n_commas { s.push(','); }
+                                s
+                            };
+                            let mut tuple_expr = Expr::new(ExprKind::Symbol(tag), t.span);
                             for (k, v) in pairs {
                                 let kv = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Ref("KV".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Str(k), t.span)) }, t.span);
                                 let kv2 = Expr::new(ExprKind::Apply { func: Box::new(kv), arg: Box::new(v) }, t.span);

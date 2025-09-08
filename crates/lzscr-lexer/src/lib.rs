@@ -124,8 +124,8 @@ pub enum Tok {
     #[regex(r"%[a-zA-Z_][a-zA-Z0-9_]*", |lex| Some(lex.slice()[1..].to_string()))]
     TyVar(String),
 
-    // Member-ish symbol like .println or .env, and special tuple operator symbol ",." used in desugaring
-    #[token(".,", |lex| Some(lex.slice().to_string()))]
+    // Member-ish symbol like .println or .env, and special tuple operator symbols ".,", ".,,", ... used in desugaring
+    #[regex(r"\.,+", |lex| Some(lex.slice().to_string()))]
     #[regex(r"\.[a-zA-Z_][a-zA-Z0-9_]*", |lex| Some(lex.slice().to_string()))]
     Member(String),
 }

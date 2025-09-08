@@ -871,10 +871,8 @@ impl Env {
                         match c {
                             Some(ch) => {
                                 let ns = make_scan(s.clone(), i + 1);
-                                let pair = Value::Ctor {
-                                    name: ".,".into(),
-                                    args: vec![Value::Char(ch as i32), ns],
-                                };
+                                // 2-tuple tag is '.,'
+                                let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Char(ch as i32), ns] };
                                 Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
                             }
                             None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
@@ -898,10 +896,7 @@ impl Env {
                             let res = apply_value(env, pred.clone(), Value::Char(ch as i32))?;
                             if as_bool(env, &res)? {
                                 let ns = make_scan(s.clone(), i + 1);
-                                let pair = Value::Ctor {
-                                    name: ".,".into(),
-                                    args: vec![Value::Char(ch as i32), ns],
-                                };
+                                let pair = Value::Ctor { name: ".,".into(), args: vec![Value::Char(ch as i32), ns] };
                                 return Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] });
                             }
                         }
@@ -1075,7 +1070,7 @@ impl Env {
                         }
                         Ok(Value::Record(map))
                     }
-                    Value::Ctor { name, args } if name == ".," => {
+                    Value::Ctor { name, args } if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') => {
                         let mut map: std::collections::BTreeMap<String, Value> =
                             std::collections::BTreeMap::new();
                         for kv in args {
@@ -1197,7 +1192,7 @@ fn to_str_like(env: &Env, v: &Value) -> String {
         Value::Symbol(id) => env.symbol_name(*id),
         Value::Raised(b) => format!("^({})", to_str_like(env, b)),
         Value::Ctor { name, args } => {
-            if name == ".," {
+            if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
                 // print as tuple literal
                 format!(
                     "({})",
@@ -1311,7 +1306,7 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 Ok(Value::Unit)
             }
             Value::Ctor { name, args } => {
-                if name == ".," {
+                if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
                     print!(
                         "({})",
                         args.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
@@ -1398,7 +1393,7 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 Ok(Value::Unit)
             }
             Value::Ctor { name, args } => {
-                if name == ".," {
+                if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
                     println!(
                         "({})",
                         args.iter().map(|x| to_str_like(env, x)).collect::<Vec<_>>().join(", ")
@@ -1681,10 +1676,8 @@ fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalError> 
         }
         Value::Symbol(id) => {
             let name = env.symbol_name(id);
-            // Special internal tuple pack constructor '.,' accepts any arity; materialize to Tuple progressively.
-            if name == ".," {
-                // First application: (., a) => Ctor { name='.,', args=[a] }
-                // Subsequent applications collect and eventually will be printed as Tuple-like.
+            // Special internal tuple pack constructor '.,', '.,,', ... accepts any arity; collect progressively.
+            if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
                 Ok(Value::Ctor { name, args: vec![aval] })
             } else {
                 if let Some(&k) =
@@ -1699,8 +1692,8 @@ fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalError> 
         }
         Value::Ctor { name, mut args } => {
             args.push(aval);
-            if name == ".," {
-                // Never enforce arity for '.,'
+            if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
+                // Never enforce arity for tuple-like tags
                 Ok(Value::Ctor { name, args })
             } else {
                 if let Some(&k) =
