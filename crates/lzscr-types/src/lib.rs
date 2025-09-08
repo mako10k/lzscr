@@ -1103,6 +1103,20 @@ fn infer_expr(
             let (pl_core, l_pushed) = push_tyvars_from_pattern(ctx, pl);
             let (pr_core, r_pushed) = push_tyvars_from_pattern(ctx, pr);
 
+            // If either branch uses a constructor-like pattern, reject mixing with non-constructor
+            // patterns except for a wildcard default. Variable/default binders are NOT allowed in MVP.
+            let left_is_ctor = matches!(pl_core.kind, PatternKind::Ctor { .. } | PatternKind::Symbol(_));
+            let right_is_ctor = matches!(pr_core.kind, PatternKind::Ctor { .. } | PatternKind::Symbol(_));
+            let left_is_wild = matches!(pl_core.kind, PatternKind::Wildcard);
+            let right_is_wild = matches!(pr_core.kind, PatternKind::Wildcard);
+            if left_is_ctor || right_is_ctor {
+                if !((left_is_ctor || left_is_wild) && (right_is_ctor || right_is_wild)) {
+                    pop_tyvars(ctx, r_pushed);
+                    pop_tyvars(ctx, l_pushed);
+                    return Err(TypeError::MixedAltBranches);
+                }
+            }
+
             // Allow any structural patterns; if both are ctor-like, we'll also compute a SumCtor param type.
 
             let mut variants: Vec<(String, Vec<Type>)> = vec![]; // param ctor variants

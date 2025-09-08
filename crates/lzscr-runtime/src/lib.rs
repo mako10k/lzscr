@@ -2266,6 +2266,7 @@ mod tests {
         let y_pat = Pattern { kind: PatternKind::Var("y".into()), span: Span::new(0, 0) };
         let e = Expr::new(
             ExprKind::LetGroup {
+                type_decls: vec![],
                 bindings: vec![
                     (x_pat, Expr::new(ExprKind::Int(1), Span::new(0, 0))),
                     (y_pat, Expr::new(ExprKind::Int(2), Span::new(0, 0))),

@@ -568,6 +568,38 @@ mod tests {
     }
 
     #[test]
+    fn lower_let_group_with_typedecls_ignored_in_coreir() {
+        use lzscr_ast::span::Span;
+        // LetGroup に % 型宣言が含まれていても、Core IR へのロワリングでは無視される（LetRec のみ生成）
+        let opt_td = TypeDecl {
+            name: "Option".into(),
+            params: vec!["a".into()],
+            body: TypeDefBody::Sum(vec![
+                (".None".into(), vec![]),
+                (".Some".into(), vec![TypeExpr::Var("a".into())]),
+            ]),
+            span: Span::new(0, 0),
+        };
+
+        let e = Expr::new(
+            ExprKind::LetGroup {
+                type_decls: vec![opt_td],
+                bindings: vec![
+                    (
+                        Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
+                        Expr::new(ExprKind::Int(1), Span::new(0, 0)),
+                    ),
+                ],
+                body: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+            },
+            Span::new(0, 0),
+        );
+        let t = lower_expr_to_core(&e);
+        let s = print_term(&t);
+        assert!(s.contains("letrec"));
+    }
+
+    #[test]
     fn lower_chain_and_bind() {
         use lzscr_ast::span::Span;
         // (~chain 1 (~bind 2 (\~x -> ~x)))

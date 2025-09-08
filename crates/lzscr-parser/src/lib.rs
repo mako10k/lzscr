@@ -32,6 +32,41 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     fn parse_pat_atom<'a>(i: &mut usize, toks: &'a [lzscr_lexer::Lexed<'a>]) -> Result<Pattern, ParseError> {
         let t = bump(i, toks).ok_or_else(|| ParseError::Generic("unexpected EOF in pattern".into()))?;
         let pat = match &t.tok {
+            Tok::TypeOpen => {
+                // Pattern-level type binder: %{ %a, %b, ... } pat
+                // Close token is '}' (RBrace)
+                let start_off = t.span.offset;
+                let mut tvars: Vec<String> = Vec::new();
+                // Allow empty binder list: %{ } pat
+                loop {
+                    // If next is '}', end binder list
+                    if let Some(nxt) = peek(*i, toks) {
+                        if matches!(nxt.tok, Tok::RBrace) {
+                            let _ = bump(i, toks); // consume '}'
+                            break;
+                        }
+                    } else {
+                        return Err(ParseError::Generic("} expected to close %{ in pattern".into()));
+                    }
+                    // Expect a type var like %a
+                    let tv = bump(i, toks).ok_or_else(|| ParseError::Generic("expected %a in %{ ... } pattern binder".into()))?;
+                    match &tv.tok {
+                        Tok::TyVar(name) => tvars.push(name.clone()),
+                        _ => return Err(ParseError::Generic("expected %a in %{ ... } pattern binder".into())),
+                    }
+                    // Next must be ',' or '}'
+                    let sep = bump(i, toks).ok_or_else(|| ParseError::Generic(", or } expected in %{ ... } pattern binder".into()))?;
+                    match sep.tok {
+                        Tok::Comma => continue,
+                        Tok::RBrace => break,
+                        _ => return Err(ParseError::Generic(", or } expected in %{ ... } pattern binder".into())),
+                    }
+                }
+                // After binder, require a pattern
+                let inner = parse_pattern(i, toks)?;
+                let end_off = inner.span.offset + inner.span.len;
+                Pattern::new(PatternKind::TypeBind { tvars, pat: Box::new(inner) }, Span::new(start_off, end_off - start_off))
+            }
             Tok::Tilde => {
                 let id = bump(i, toks).ok_or_else(|| ParseError::Generic("expected ident after ~ in pattern".into()))?;
                 match id.tok {
@@ -125,6 +160,24 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     Pattern::new(PatternKind::Bool(t.text == "true"), t.span)
                 } else if t.text == "_" {
                     Pattern::new(PatternKind::Wildcard, t.span)
+                } else if t.text.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                    // UpperCamelCase ident in pattern position denotes a constructor (e.g., Foo ~x)
+                    // Normalize to member-like tag name (with leading '.') to match typedef frames
+                    let name = format!(".{}", t.text);
+                    let h = t;
+                    let mut args = Vec::new();
+                    loop {
+                        let Some(nxt) = toks.get(*i) else { break };
+                        match nxt.tok {
+                            Tok::Arrow | Tok::RParen | Tok::Comma | Tok::Eq | Tok::Semicolon => break,
+                            Tok::Tilde | Tok::Ident | Tok::Member(_) | Tok::LBracket | Tok::LBrace | Tok::LParen | Tok::Int(_) | Tok::Float(_) | Tok::Str(_) | Tok::Char(_) => {
+                                let a = parse_pat_atom(i, toks)?; args.push(a);
+                            }
+                            _ => break,
+                        }
+                    }
+                    let end = if args.is_empty() { h.span.offset + h.span.len } else { let last = args.last().unwrap(); last.span.offset + last.span.len };
+                    Pattern::new(PatternKind::Ctor { name, args }, Span::new(h.span.offset, end - h.span.offset))
                 } else {
                     return Err(ParseError::Generic("invalid bare identifier in pattern".into()));
                 }
