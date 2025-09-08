@@ -1,3 +1,17 @@
+## ロードマップ（実装タスク）
+ - [x] stdlib ディレクトリ作成: `stdlib/prelude.lzscr`（雛形作成・Builtins 委譲を開始）
+ - [ ] Rust ランタイムに最小ビルトインを追加（str_len/str_concat/str_slice/str_cmp/str_codepoint_at/str_from_codepoint、cp_* 判定、算術/比較の公開整理）
+ - [ ] M0 API 実装: list/string/unicode(codepoint)/option/result の最小セット（lzscr 実装）
+ - [ ] M0 検証: lzscr で簡易トークナイザ（識別子/整数/記号/空白）を実装して CLI から実行
+ - [ ] M1 API 実装: string の `join/split/find/starts_with/ends_with` と list の拡張、math 最小セット
+使用例:
+```bash
+ cargo run -p lzscr-cli -- -e '~add 1 2'                 # stdlib 有効（デフォルト）
+ cargo run -p lzscr-cli -- -e '~add 1 2' --no-stdlib     # stdlib を無効化
+ cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
+```
+
+補足: prelude は `stdlib/prelude.lzscr` に配置済み。CLI はデフォルトでこれを先頭に読み込み、ユーザコードを後置した let グループとして結合します（--no-stdlib で無効化可能）。
 # lzscr 標準ライブラリ計画（ドラフト）
 
 この文書は、lzscr の標準ライブラリ（以下、stdlib）を段階的に整備するための計画と設計方針をまとめたものです。初期は CLI による事前読込（プリロード）で提供し、将来的にモジュール/インポート構文を導入して本格運用に移行します。

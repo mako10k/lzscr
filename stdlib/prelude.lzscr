@@ -1,132 +1,160 @@
-# lzscr stdlib prelude (M1)
-# 最低限の便利関数。将来段階的に拡充します。
+# lzscr stdlib prelude (M1 minimal)
 
-# 恒等・合成
-~id = \~x -> ~x;
-~compose = \~f -> \~g -> \~x -> ~f (~g ~x);
-
-# Bool ラップ（ランタイムの and/or/not を薄く包む例）
-~bool_and = \~a -> \~b -> ~and ~a ~b;
-~bool_or  = \~a -> \~b -> ~or ~a ~b;
-~bool_not = \~a -> ~not ~a;
-
-# Result helpers
-~result_is_ok = \~r -> ((\ .Ok _ -> ~true) | (\ .Err _ -> ~false)) ~r;
-~result_is_err = \~r -> ((\ .Ok _ -> ~false) | (\ .Err _ -> ~true)) ~r;
-~result_map = \~f -> \~r -> ((\ .Ok ~x -> .Ok (~f ~x)) | (\ .Err ~e -> .Err ~e)) ~r;
-~result_map_err = \~f -> \~r -> ((\ .Ok ~x -> .Ok ~x) | (\ .Err ~e -> .Err (~f ~e))) ~r;
-~result_bind = \~f -> \~r -> ((\ .Ok ~x -> ~f ~x) | (\ .Err ~e -> .Err ~e)) ~r;
-~result_unwrap_or = \~d -> \~r -> ((\ .Ok ~x -> ~x) | (\ .Err _ -> ~d)) ~r;
-
-# Option 風（Ctor は .Some / .None を使用）。AltLambdaで分配。
-~option_is_some = \~o -> ((\ .Some _ -> ~true) | (\ .None -> ~false)) ~o;
-~option_map = \~f -> \~o -> ((\ .Some ~x -> .Some (~f ~x)) | (\ .None -> .None)) ~o;
-~option_is_none = \~o -> ((\ .Some _ -> ~false) | (\ .None -> ~true)) ~o;
-~option_bind = \~f -> \~o -> ((\ .Some ~x -> ~f ~x) | (\ .None -> .None)) ~o;
-~option_unwrap_or = \~d -> \~o -> ((\ .Some ~x -> ~x) | (\ .None -> ~d)) ~o;
-
-# List 長さ（簡易）: パターンラムダ + AltLambda
-~length = \~xs -> ((\[] -> 0) | (\( ~h : ~t ) -> 1 + (~length ~t))) ~xs;
-
-# List 補助（構築子は使わず、分解のみで定義できる範囲に限定）
-~head_opt = \~xs -> ((\[] -> .None) | (\( ~h : _ ) -> .Some ~h)) ~xs;
-~tail_opt = \~xs -> ((\[] -> .None) | (\( _ : ~t ) -> .Some ~t)) ~xs;
-~foldl = \~f -> \~init -> \~xs -> (
-	(\[] -> ~init) | (\( ~h : ~t ) -> ~foldl ~f (~f ~init ~h) ~t)
-) ~xs;
-
-# 右畳み込み（foldr）
-~foldr = \~f -> \~init -> \~xs -> (
-        (\[] -> ~init) | (\( ~h : ~t ) -> ~f ~h (~foldr ~f ~init ~t))
-) ~xs;
-
-# List 基本操作
-~map = \~f -> \~xs -> (
-        (\[] -> []) | (\( ~h : ~t ) -> (~cons (~f ~h) (~map ~f ~t)))
-) ~xs;
-
-~append = \~xs -> \~ys -> ~foldr (\~x -> \~acc -> (~cons ~x ~acc)) ~ys ~xs;
-~reverse = \~xs -> ~foldl (\~acc -> \~x -> (~cons ~x ~acc)) [] ~xs;
-
-# ブール集約（map不要・構築不要な形で定義）
-~any = \~p -> \~xs -> ~foldl (\~acc -> \~x -> ~bool_or ~acc (~p ~x)) ~false ~xs;
-~all = \~p -> \~xs -> ~foldl (\~acc -> \~x -> ~bool_and ~acc (~p ~x)) ~true ~xs;
-
-# 汎用関数操作
-~const = \~x -> \~_ -> ~x;
-~flip = \~f -> \~b -> \~a -> ~f ~b ~a;
-~compose2 = \~f -> \~g -> \~x -> \~y -> ~f (~g ~x ~y);
-~pipe = \~x -> \~f -> ~f ~x;  # x |> f の代替
-
-# String helpers (length and concatenation delegated to Builtins)
-
-# Builtins 経由の委譲（推奨: ユーザは Builtins を直接参照せず prelude を使う）
-~Str     = ~Builtins .string;
-~Math    = ~Builtins .math;
+# Namespaces (delegate to runtime Builtins)
+~Str = ~Builtins .string;
+~Math = ~Builtins .math;
+~Char = ~Builtins .char;
+~Scan = ~Builtins .scan;
 ~Unicode = ~Builtins .unicode;
-~Char    = ~Builtins .char;
-~Scan    = ~Builtins .scan;
 
-{
-        string: ~Str,
-        math: ~Math,
-        unicode: ~Unicode,
-        scan: ~Scan,
-        char: ~Char,
+# Core helpers
+~id ~x = ~x;
+~compose ~f ~g ~x = ~f (~g ~x);
 
-        str_len: ~Str .len,
-        str_concat: ~Str .concat,
-        str_slice: ~Str .slice,
-        str_char_at: ~Str .char_at,
+# Option (no match/with; lambda-alt chains)
+~is_some = \(.Some _) -> ~true | \.None -> ~false;
+~is_none = \(.Some _) -> ~false | \.None -> ~true;
+~map_option ~f = \(.Some ~x) -> .Some (~f ~x) | \.None -> .None;
+~unwrap_or ~def = \(.Some ~x) -> ~x | \.None -> ~def;
 
-        # bool
-        bool_and: ~bool_and,
-        bool_or: ~bool_or,
-        bool_not: ~bool_not,
+# Result (minimal)
+~map_result ~f = \(.Ok ~x) -> .Ok (~f ~x) | \(.Err ~e) -> .Err ~e;
+~map_err ~f = \(.Ok ~x) -> .Ok ~x | \(.Err ~e) -> .Err (~f ~e);
+~unwrap_or_else ~f = \(.Ok ~x) -> ~x | \(.Err ~e) -> (~f ~e);
 
-        # option
-        option_is_some: ~option_is_some,
-        option_is_none: ~option_is_none,
-        option_map: ~option_map,
-        option_bind: ~option_bind,
-        option_unwrap_or: ~option_unwrap_or,
+# List primitives (lambda-alt on the structural arg)
+~length ~xs = (\[] -> 0 | \[ _ : ~tail ] -> 1 + (~length ~tail)) ~xs;
 
-        # result
-        result_is_ok: ~result_is_ok,
-        result_is_err: ~result_is_err,
-        result_map: ~result_map,
-        result_map_err: ~result_map_err,
-        result_bind: ~result_bind,
-        result_unwrap_or: ~result_unwrap_or,
+~append ~xs ~ys = (\[] -> ~ys | \[ ~h : ~t ] -> (~cons ~h (~append ~t ~ys))) ~xs;
 
-        # list
-        length: ~length,
-        head_opt: ~head_opt,
-        tail_opt: ~tail_opt,
-        foldl: ~foldl,
-        foldr: ~foldr,
-        map: ~map,
-        append: ~append,
-        reverse: ~reverse,
-        any: ~any,
-        all: ~all,
+~reverse ~xs = (~foldl (\~acc ~x -> (~cons ~x ~acc)) [] ~xs);
 
-        # function helpers
-        id: ~id,
-        compose: ~compose,
-        compose2: ~compose2,
-        flip: ~flip,
-        const: ~const,
-        pipe: ~pipe,
+~foldl ~f ~acc ~xs = (\[] -> ~acc | \[ ~h : ~t ] -> ~foldl ~f (~f ~acc ~h) ~t) ~xs;
 
-        # unicode
-        cp_of_int: ~Unicode .of_int,
-        cp_to_int: ~Unicode .to_int,
+~foldr ~f ~acc ~xs = (\[] -> ~acc | \[ ~h : ~t ] -> ~f ~h (~foldr ~f ~acc ~t)) ~xs;
 
-        # char classification helpers
-        char_is_alpha: ~Char .is_alpha,
-        char_is_digit: ~Char .is_digit,
-        char_is_alnum: ~Char .is_alnum,
-        char_is_space: ~Char .is_space,
-        char_between: ~Char .between
-}
+~map ~f ~xs = (\[] -> [] | \[ ~h : ~t ] -> (~cons (~f ~h) (~map ~f ~t))) ~xs;
+
+~filter ~p ~xs = (\[] -> [] | \[ ~h : ~t ] -> (~if (~p ~h) (~cons ~h (~filter ~p ~t)) (~filter ~p ~t))) ~xs;
+
+~take ~n ~xs = (~if (~n <= 0) [] ((\[] -> [] | \[ ~h : ~t ] -> (~cons ~h (~take (~n - 1) ~t))) ~xs));
+
+~drop ~n ~xs = (~if (~n <= 0) ~xs ((\[] -> [] | \[ _ : ~t ] -> (~drop (~n - 1) ~t)) ~xs));
+
+# String wrappers
+~str_len ~s = (~Str .len ~s);
+~str_concat ~a ~b = (~Str .concat ~a ~b);
+~str_slice ~s ~start ~len = (~Str .slice ~s ~start ~len);
+~str_char_at ~s ~i = (~Str .char_at ~s ~i);
+
+# String: starts_with/ends_with
+~starts_with ~s ~pre = (
+  ~n = (~Str .len ~pre);
+  ~m = (~Str .len ~s);
+  ~if (~m >= ~n) (((~Str .slice ~s 0 ~n) == ~pre)) ~false
+);
+
+~ends_with ~s ~suf = (
+  ~n = (~Str .len ~suf);
+  ~m = (~Str .len ~s);
+  ~if (~m >= ~n) (
+    ~st = ~m - ~n;
+    ((~Str .slice ~s ~st ~n) == ~suf)
+  ) ~false
+);
+
+# String find: index of first occurrence of a character, else .None
+~find_char ~s ~ch = (
+  ~sc = (~Scan .new ~s);
+  ~loop ~st = (
+    ((\.True -> .None)
+     | (\.False -> (
+        ~i = (~Scan .pos ~st);
+        ~opt = (~Scan .peek ~st);
+  ((\(.Some ~c) -> (~if (~c == ~ch) (.Some ~i) (~loop (~Scan .set_pos ~st (~i + 1)))))
+         | (\.None -> .None))
+        ~opt
+      )))
+    ((~Scan .eof ~st))
+  );
+  ~loop ~sc
+);
+
+# Simple join: join sep xs (xs: [Str], sep: Str)
+~join ~sep ~xs = (
+  ~step = (\~acc ~s -> (~if (~acc == "") ~s (~Str .concat ~acc (~Str .concat ~sep ~s))));
+  ~foldl ~step "" ~xs
+);
+
+# Range: inclusive ascending [a..b]; [] if a>b
+~range ~a ~b = (~if (~a > ~b) [] (~cons ~a (~range (~a + 1) ~b)));
+
+# Find substring: .Some index | .None
+~find ~s ~pat = (
+  ~n = (~Str .len ~s);
+  ~m = (~Str .len ~pat);
+  ~lim = ~n - ~m;
+  ~loop ~i = (~if (~i > ~lim) .None (
+    ~if (((~Str .slice ~s ~i ~m) == ~pat)) (.Some ~i) (~loop (~i + 1))
+  ));
+  (~if (~m == 0) (.Some 0) (~loop 0))
+);
+
+# Split by single character separator into [Str]
+~split_char ~s ~ch = (
+  ~sc = (~Scan .new ~s);
+  ~loop ~st ~start ~acc = (
+    ((\.True -> (
+        ~end = (~Scan .pos ~st);
+        ~seg = (~Scan .slice_span ~st ~start ~end);
+        (~reverse (~cons ~seg ~acc))
+      ))
+     | (\.False -> (
+        ~i = (~Scan .pos ~st);
+        ((\(.Some ~c) -> (
+            ~if ((~c == ~ch)) (
+              ~seg = (~Scan .slice_span ~st ~start ~i);
+              ~loop (~Scan .set_pos ~st (~i + 1)) (~i + 1) (~cons ~seg ~acc)
+            ) (
+              ~loop (~Scan .set_pos ~st (~i + 1)) ~start ~acc
+            )
+          ))
+         | (\.None -> (
+            ~end = (~Scan .pos ~st);
+            ~seg = (~Scan .slice_span ~st ~start ~end);
+            (~reverse (~cons ~seg ~acc))
+          )))
+        ((~Scan .peek ~st))
+      )))
+    ((~Scan .eof ~st))
+  );
+  ~loop ~sc 0 []
+);
+
+# String <-> Int conversions (simple)
+~int_to_str ~n = (~to_str ~n);
+~str_to_int ~s = (
+  ~len = (~Str .len ~s);
+  ~if (~len == 0) .None (
+    ~neg = ((~Str .slice ~s 0 1) == "-");
+    ~start = (~if (~neg) 1 0);
+    ~if (~start >= ~len) .None (
+      ~loop ~i ~acc = (~if (~i >= ~len) .,( ~true , ~acc ) (
+        ((\(.Some ~c) -> (~if ((~Char .is_digit ~c)) (
+            ~d = ((~Unicode .to_int ~c) - (~Unicode .to_int '0'));
+            ~loop (~i + 1) ((~acc * 10) + ~d)
+          ) .,( ~false , ~acc )))
+         | (\.None -> .,( ~false , ~acc )))
+        ((~Str .char_at ~s ~i))
+      ));
+      ~res = (~loop ~start 0);
+      ((\(.,( ~ok , ~v )) -> (~if (~ok) (.Some (~if (~neg) (0 - ~v) ~v)) .None))) ~res
+    )
+  )
+);
+
+# Codepoint (Int) helpers via Char/Unicode
+~cp_is_alpha ~c = (~Char .is_alpha (~Unicode .of_int ~c));
+~cp_is_digit ~c = (~Char .is_digit (~Unicode .of_int ~c));
+~cp_is_alnum ~c = (~Char .is_alnum (~Unicode .of_int ~c));
+~cp_is_space ~c = (~Char .is_space (~Unicode .of_int ~c));

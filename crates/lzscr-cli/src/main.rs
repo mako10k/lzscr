@@ -225,16 +225,16 @@ struct Opt {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
     // Select input source: -e or --file
-    let (mut code, input_name) = if let Some(c) = opt.eval {
-        (c, "(eval)".to_string())
+    let (mut code, input_name, user_raw, user_wrapped_parens) = if let Some(c) = opt.eval {
+        (c.clone(), "(eval)".to_string(), c, false)
     } else if let Some(ref p) = opt.file {
         let raw = fs::read_to_string(p)?;
         if opt.format_code {
             // For formatting, keep raw; formatter has its own file-aware handling
-            (raw, p.display().to_string())
+            (raw.clone(), p.display().to_string(), raw, false)
         } else {
             // Wrap in parens so top-level becomes a let-block when it contains bindings
-            (format!("({})", raw), p.display().to_string())
+            (format!("({})", raw), p.display().to_string(), raw, true)
         }
     } else {
         eprintln!("no input; try -e '...' or --file path");
@@ -245,6 +245,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stdlib_enabled = !opt.no_stdlib && !opt.format_code;
     // Compute stdlib dir (may be used by ~require search paths)
     let resolved_stdlib_dir = opt.stdlib_dir.clone().unwrap_or_else(|| PathBuf::from("stdlib"));
+    // Preserve prelude text and path for diagnostics (span mapping before ~require expansion)
+    let mut prelude_for_diag: Option<(String, String)> = None;
     if stdlib_enabled {
         // Resolve stdlib dir
         let prelude_path = resolved_stdlib_dir.join("prelude.lzscr");
@@ -252,6 +254,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Combine as a let-group: ( prelude ; user )
             // ユーザコードが既に括弧で包まれている場合でも安全側でネスト
             code = format!("({}\n{} )", prelude_src, code);
+            prelude_for_diag = Some((prelude_src, prelude_path.display().to_string()));
         } else {
             eprintln!(
                 "warning: stdlib prelude not found at {} (use --stdlib-dir or --no-stdlib)",
@@ -296,10 +299,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match e {
                     ParseError::WithSpan { msg, span_offset, span_len } => {
                         eprintln!("parse error: {}", msg);
-                        eprintln!(
-                            "{}",
-                            format_span_caret(&code, &input_name, span_offset, span_len)
-                        );
+                        // Try to attribute the span to prelude or user input for a better filename
+                        if let Some((ref pre_src, ref pre_name)) = prelude_for_diag {
+                            let pre_start = 1; // after opening '('
+                            let pre_end = pre_start + pre_src.len(); // before inserted '\n'
+                            if span_offset >= pre_start && span_offset < pre_end {
+                                let rel = span_offset - pre_start;
+                                eprintln!("{}", format_span_caret(pre_src, pre_name, rel, span_len));
+                            } else {
+                                // Compute user segment start in the combined buffer
+                                let mut user_start = 0usize;
+                                // If prelude was inserted: '(' + prelude + '\n'
+                                user_start += 1 + pre_src.len() + 1;
+                                // If file input was wrapped earlier: additional '('
+                                if user_wrapped_parens {
+                                    user_start += 1;
+                                }
+                                let rel = span_offset.saturating_sub(user_start);
+                                eprintln!("{}", format_span_caret(&user_raw, &input_name, rel, span_len));
+                            }
+                        } else {
+                            // No prelude; show against the current input
+                            eprintln!(
+                                "{}",
+                                format_span_caret(&code, &input_name, span_offset, span_len)
+                            );
+                        }
                     }
                     other => {
                         eprintln!("parse error: {}", other);
@@ -556,7 +581,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     use lzscr_types::TypeError;
                     match e {
                         TypeError::Mismatch { span_offset, span_len, .. }
-                        | TypeError::EffectNotAllowed { span_offset, span_len } => {
+                        | TypeError::EffectNotAllowed { span_offset, span_len }
+                        | TypeError::UnboundRef { span_offset, span_len, .. } => {
                             eprintln!("type error: {}", e);
                             let block = src_reg.format_span_block(span_offset, span_len);
                             eprintln!("{}", block);
