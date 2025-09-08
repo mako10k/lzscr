@@ -580,7 +580,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         println!("{}", serde_json::to_string_pretty(&TypeOut { ty: t })?);
                     } else if opt.types == "pretty" {
-                        eprintln!("type: {t}");
+                        eprintln!("%{{{}}}", t);
                     }
                 }
                 Err(e) => {

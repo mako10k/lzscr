@@ -1032,8 +1032,7 @@ fn infer_expr(
                                 let s1 = merge_variants(ctx, &mut acc, &t1)?
                                     .compose(merge_variants(ctx, &mut acc, &t2)?);
                                 // Build union type from acc
-                                let variants: Vec<(String, Vec<Type>)> =
-                                    acc.into_iter().map(|(k, v)| (k, v)).collect();
+                                let variants: Vec<(String, Vec<Type>)> = acc.into_iter().collect();
                                 let ret = Type::SumCtor(variants);
                                 let s = s1.compose(se).compose(s_acc);
                                 return Ok((ret.apply(&s), s));
@@ -1613,8 +1612,8 @@ fn pp_type(t: &Type) -> String {
         Type::Bool => "Bool".into(),
         Type::Str => "Str".into(),
         Type::Char => "Char".into(),
-        Type::Var(TvId(i)) => format!("t{i}"),
-        Type::List(a) => format!("List {}", pp_atom(a)),
+        Type::Var(TvId(i)) => format!("%t{i}"),
+        Type::List(a) => format!("[{}]", pp_type(a)),
         Type::Tuple(xs) => format!("({})", xs.iter().map(pp_type).collect::<Vec<_>>().join(", ")),
         Type::Record(fs) => {
             let mut items: Vec<_> =
@@ -1627,14 +1626,14 @@ fn pp_type(t: &Type) -> String {
             if payload.is_empty() {
                 tag.clone()
             } else {
-                format!("{}({})", tag, payload.iter().map(pp_type).collect::<Vec<_>>().join(", "))
+                format!("{} {}", tag, payload.iter().map(pp_atom).collect::<Vec<_>>().join(" "))
             }
         }
         Type::Named { name, args } => {
             if args.is_empty() {
                 name.clone()
             } else {
-                format!("{}<{}>", name, args.iter().map(pp_type).collect::<Vec<_>>().join(", "))
+                format!("{} {}", name, args.iter().map(pp_atom).collect::<Vec<_>>().join(" "))
             }
         }
         Type::SumCtor(vs) => {
@@ -1644,7 +1643,7 @@ fn pp_type(t: &Type) -> String {
                     if ps.is_empty() {
                         t.clone()
                     } else {
-                        format!("{}({})", t, ps.iter().map(pp_type).collect::<Vec<_>>().join(", "))
+                        format!("{} {}", t, ps.iter().map(pp_atom).collect::<Vec<_>>().join(" "))
                     }
                 })
                 .collect::<Vec<_>>()

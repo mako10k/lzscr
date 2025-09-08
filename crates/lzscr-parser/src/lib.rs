@@ -1157,7 +1157,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             // Build arity-specific tuple tag: ".," for 2, ".,," for 3, ...
                             let tag = {
                                 let mut s = String::from(".");
-                                let n_commas = if items.len() > 0 { items.len() - 1 } else { 0 };
+                                let n_commas = if !items.is_empty() { items.len() - 1 } else { 0 };
                                 for _ in 0..n_commas { s.push(','); }
                                 s
                             };
@@ -1223,7 +1223,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             // (., (.KV "k" v) ...) with arity-specific tag
                             let tag = {
                                 let mut s = String::from(".");
-                                let n_commas = if pairs.len() > 0 { pairs.len() - 1 } else { 0 };
+                                let n_commas = if !pairs.is_empty() { pairs.len() - 1 } else { 0 };
                                 for _ in 0..n_commas { s.push(','); }
                                 s
                             };
