@@ -26,6 +26,27 @@ jobs:
       - name: Cargo test
         run: cargo test --all --locked
 
+  vsix:
+    name: Build VSIX (VS Code extension)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+        working-directory: extensions/lzscr-vscode
+      - name: Package VSIX
+        run: npm run package
+        working-directory: extensions/lzscr-vscode
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lzscr-vscode-vsix
+          path: extensions/lzscr-vscode/*.vsix
+
   audit:
     runs-on: ubuntu-latest
     continue-on-error: true

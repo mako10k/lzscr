@@ -2,7 +2,7 @@
   "name": "lzscr-vscode",
   "displayName": "lzscr Language Support",
   "description": "Syntax highlighting and formatting for lzscr (.lzscr).",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "mako10k",
   "license": "MIT",
   "engines": {
@@ -61,10 +61,9 @@
     "package": "vsce package"
   },
   "devDependencies": {
-  "@types/node": "^18.19.0",
-  "@types/vscode": "^1.85.0",
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.0.0",
-    "typescript": "^5.4.0",
-  "vsce": "^2.15.0"
+    "typescript": "^5.4.0"
   }
 }
