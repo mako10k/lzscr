@@ -50,6 +50,7 @@ The implementation uses a procedural parser with a PRE-AST front (chumsky as a h
   - Reference: `~ident` (statically bound name)
   - Symbol value: `.name` (tag/namespace key)
   - Lambda: `\pat -> expr`
+    - Multi-parameter sugar: `\Pat1 Pat2 ... PatN -> Expr` ≡ `\Pat1 -> (\Pat2 -> ... (\PatN -> Expr) ...)`
   - Application: `(f x)` (left-associative; usually prefix-application style without parens)
   - Block: `{ expr }`
   - List/tuple/record (syntactic sugar): implemented (see syntax.md)
@@ -57,6 +58,8 @@ The implementation uses a procedural parser with a PRE-AST front (chumsky as a h
     - Concrete source form: `( [Pat = Expr;]* Body [; [Pat = Expr;]*] )`
     - Parse rule: if there is at least one binding in total (leading + trailing ≥ 1), the whole becomes a LetGroup; otherwise it is parsed as a plain grouped expression `(Body)`.
     - Top-level convenience: the CLI wraps file input with parentheses. Therefore, “a sequence of top-level `~x = e;` followed by a final expression” becomes a LetGroup automatically.
+  - Let-binding parameter chain sugar (function definition): `~name Pat1 ... PatN = Expr` ≡ `~name = \Pat1 -> ( ... (\PatN -> Expr) ...)`
+    - Restriction: within this parameter chain (LambdaLHSParamChain), duplicate binder names across `Pat1..PatN` are forbidden. The explicit nested-lambda form does not have this restriction.
   - Effect sugar: `!name` → `(~effects .name)`, `!{ ... }` → `chain/bind` chaining (do-notation)
   - Exceptions: `^(expr)` (raise) and caret handler `expr ^| handler`
   - Alternative lambda composition: `lam1 | lam2` (try right when the left does not match)
@@ -68,6 +71,11 @@ The implementation uses a procedural parser with a PRE-AST front (chumsky as a h
   - Constructors: `Ctor p1 p2 ...` or `.Ctor p1 ...` (zero-arity must be `Ctor()` / `.Ctor()`)
   - Tuples/lists: `(p1, p2, ...)`, `[p1, p2, ...]`, cons `p : ps` (right-associative)
   - Records: `{ k: p, ... }` (keys are identifiers)
+  - Record field lambda sugar (definition): `field Pat1 ... PatN: Expr` ≡ `field: \Pat1 -> ( ... (\PatN -> Expr) ...)`
+
+Notes on precedence and patterns:
+- When a parameter chain may conflict with a pattern application, the parameter-chain (LambdaLHSParamChain) takes precedence. If you intend a pattern application at the outermost level of a parameter position, wrap it in parentheses like `(Func Arg1 Arg2)`.
+- The “duplicate-binder prohibition” applies only to LambdaLHSParamChain (let LHS and record field sugars). It does not apply to explicit nested lambdas.
   - As-pattern: `p1 @ p2`
   - Type bind: `%{ %a, ?x } p` (also accepts `'a` form; used by typechecker/validator)
 

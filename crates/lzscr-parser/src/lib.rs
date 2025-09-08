@@ -34,6 +34,67 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         t
     }
 
+    // Helper: collect variable binders from a pattern (Var nodes), ignoring '_'
+    fn collect_binders(p: &Pattern, out: &mut Vec<String>) {
+        match &p.kind {
+            PatternKind::Var(n) if n != "_" => out.push(n.clone()),
+            PatternKind::Tuple(xs) | PatternKind::List(xs) => {
+                for x in xs { collect_binders(x, out); }
+            }
+            PatternKind::Ctor { args, .. } => {
+                for x in args { collect_binders(x, out); }
+            }
+            PatternKind::Record(fs) => {
+                for (_k, v) in fs { collect_binders(v, out); }
+            }
+            PatternKind::As(a, b) => {
+                collect_binders(a, out);
+                collect_binders(b, out);
+            }
+            PatternKind::Cons(h, t) => {
+                collect_binders(h, out);
+                collect_binders(t, out);
+            }
+            PatternKind::TypeBind { pat, .. } => collect_binders(pat, out),
+            _ => {}
+        }
+    }
+
+    // Helper: wrap an expression with nested lambdas for params P1..Pn (left to right)
+    fn nest_lambdas(params: &[Pattern], body: Expr) -> Expr {
+        let mut acc = body;
+        for p in params.iter().rev() {
+            let span = Span::new(p.span.offset, acc.span.offset + acc.span.len - p.span.offset);
+            acc = Expr::new(ExprKind::Lambda { param: p.clone(), body: Box::new(acc) }, span);
+        }
+        acc
+    }
+
+    // Try to parse a let LHS parameter chain:  ~name Pat+   and ensure it's followed by '='
+    // Returns (name, params, new_index) on success without consuming '='.
+    fn try_parse_lhs_param_chain<'a>(
+        j: &mut usize,
+        toks: &'a [lzscr_lexer::Lexed<'a>],
+    ) -> Option<(String, Vec<Pattern>, usize)> {
+        let start = *j;
+        let t0 = toks.get(*j)?;
+        if !matches!(t0.tok, Tok::Tilde) { return None; }
+        *j += 1;
+        let id = toks.get(*j)?;
+        let name = if let Tok::Ident = id.tok { id.text.to_string() } else { return None };
+        *j += 1;
+        // At least one pattern
+        let mut params = Vec::new();
+        if let Ok(p) = parse_pattern(j, toks) { params.push(p); } else { *j = start; return None; }
+        loop {
+            // stop when we reach '='
+            if let Some(eq) = toks.get(*j) { if matches!(eq.tok, Tok::Eq) { break; } }
+            // try another pattern; if fails, abort
+            if let Ok(p) = parse_pattern(j, toks) { params.push(p); } else { *j = start; return None; }
+        }
+        Some((name, params, *j))
+    }
+
     // Shared pattern parser (used by lambda param and let-group bindings)
     fn parse_pattern<'a>(
         i: &mut usize,
@@ -697,12 +758,36 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 // bindings (leading + trailing) is at least 1 and a closing ')' follows, commit as
                 // a LetGroup; otherwise, treat the whole as a grouped expression or tuple.
                 let save_i = *i;
-                // Parse zero-or-more leading bindings: (Pat = Expr;)* using a lookahead index
+                // Parse zero-or-more leading bindings: either (~name Pat+ = Expr;) or (Pat = Expr;)
+                // using a lookahead index, preferring the parameter-chain form.
                 let mut it = *i;
                 let mut leading: Vec<(Pattern, Expr)> = Vec::new();
                 loop {
                     let before = it;
                     let mut j = it;
+                    // 1) Try LHS parameter-chain sugar first
+                    if let Some((fname, params, _)) = try_parse_lhs_param_chain(&mut j, toks) {
+                        // Enforce duplicate binders across params
+                        let mut names = Vec::new();
+                        for p in &params { collect_binders(p, &mut names); }
+                        names.sort();
+                        if names.windows(2).any(|w| w[0] == w[1]) {
+                            return Err(ParseError::Generic("duplicate binder in parameter chain on let LHS".into()));
+                        }
+                        // now j is at '=', consume '=' and parse expr and ';'
+                        let _eq = bump(&mut j, toks).unwrap();
+                        let ex = parse_expr_bp(&mut j, toks, 0)?;
+                        let semi = toks.get(j).ok_or_else(|| ParseError::Generic("; expected after let binding".into()))?;
+                        if !matches!(semi.tok, Tok::Semicolon) { return Err(ParseError::Generic("; expected after let binding".into())); }
+                        j += 1;
+                        // desugar: ~name = \params -> ex
+                        let body = nest_lambdas(&params, ex);
+                        let pat = Pattern::new(PatternKind::Var(fname), t.span);
+                        leading.push((pat, body));
+                        it = j;
+                        continue;
+                    }
+                    // 2) Fallback to plain pattern binding
                     if let Ok(p) = parse_pattern(&mut j, toks) {
                         if let Some(eq) = toks.get(j) {
                             if matches!(eq.tok, Tok::Eq) {
@@ -733,7 +818,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 // Parse candidate body expression
                 let mut j = it;
                 let body_expr = parse_expr_bp(&mut j, toks, 0)?;
-                // Optional ';' followed by trailing bindings
+                // Optional ';' followed by trailing bindings (same forms as leading)
                 let mut trailing: Vec<(Pattern, Expr)> = Vec::new();
                 if let Some(sep) = toks.get(j) {
                     if matches!(sep.tok, Tok::Semicolon) {
@@ -741,6 +826,31 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         loop {
                             let before = j;
                             let mut k = j;
+                            // Try param-chain form first
+                            if let Some((fname, params, _eq_pos)) = try_parse_lhs_param_chain(&mut k, toks) {
+                                let mut names = Vec::new();
+                                for p in &params { collect_binders(p, &mut names); }
+                                names.sort();
+                                if names.windows(2).any(|w| w[0] == w[1]) {
+                                    return Err(ParseError::Generic("duplicate binder in parameter chain on let LHS".into()));
+                                }
+                                let _eq = bump(&mut k, toks).unwrap();
+                                let ex2 = parse_expr_bp(&mut k, toks, 0)?;
+                                let semi2 = toks.get(k).ok_or_else(|| {
+                                    ParseError::Generic("; expected after let binding".into())
+                                })?;
+                                if !matches!(semi2.tok, Tok::Semicolon) {
+                                    return Err(ParseError::Generic(
+                                        "; expected after let binding".into(),
+                                    ));
+                                }
+                                k += 1; // ';'
+                                let body2 = nest_lambdas(&params, ex2);
+                                let pat2 = Pattern::new(PatternKind::Var(fname), t.span);
+                                trailing.push((pat2, body2));
+                                j = k;
+                                continue;
+                            }
                             if let Ok(p2) = parse_pattern(&mut k, toks) {
                                 if let Some(eq) = toks.get(k) {
                                     if matches!(eq.tok, Tok::Eq) {
@@ -852,11 +962,31 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     // key
                     let k = bump(i, toks).ok_or_else(|| ParseError::Generic("expected key".into()))?;
                     let key = match &k.tok { Tok::Ident => k.text.to_string(), _ => return Err(ParseError::Generic("expected ident key".into())) };
-                    // :
+                    // Optional parameter chain before ':' :  key Pat* : Expr  (Pat* may be empty)
+                    let mut params: Vec<Pattern> = Vec::new();
+                    // Greedily parse patterns until ':'
+                    loop {
+                        let save = *i;
+                        // Stop at ':'
+                        if let Some(nx) = peek(*i, toks) { if matches!(nx.tok, Tok::Colon) { break; } }
+                        // Try a pattern; if fails, stop (will error on ':' check below)
+                        if let Ok(p) = parse_pattern(i, toks) { params.push(p); } else { *i = save; break; }
+                    }
+                    // ':'
                     let col = bump(i, toks).ok_or_else(|| ParseError::Generic("expected :".into()))?;
                     if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected".into())); }
                     // value
-                    let val = parse_expr_bp(i, toks, 0)?;
+                    let mut val = parse_expr_bp(i, toks, 0)?;
+                    if !params.is_empty() {
+                        // enforce duplicate-binder prohibition in field param chain
+                        let mut names = Vec::new();
+                        for p in &params { collect_binders(p, &mut names); }
+                        names.sort();
+                        if names.windows(2).any(|w| w[0] == w[1]) {
+                            return Err(ParseError::Generic("duplicate binder in record field parameter chain".into()));
+                        }
+                        val = nest_lambdas(&params, val);
+                    }
                     pairs.push((key, val));
                     // , or }
                     let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("expected , or }".into()))?;
