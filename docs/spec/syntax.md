@@ -14,7 +14,7 @@
   - `!sym` → `(~effects .sym)`
 - Reserved/tokens: `~`, `!`, `.ident`, `(`, `)`, `{`, `}`, `,`, `->`, `\\`
 
-例:
+Examples:
 ## Syntax guide (2025-09-05)
 
 ### Literals/basics
@@ -59,16 +59,16 @@ Desugaring (to function application):
   - `a + b` → `(~add a) b`
   - `a - b` → `(~sub a) b`
   - `a * b` → `(~mul a) b`
-  - `a / b` → `(~div a) b`（0 でエラー）
+  - `a / b` → `(~div a) b` (error on 0)
 - Float ops (separate symbols; mixed types are errors)
   - `a .+ b` → `(~fadd a) b`
   - `a .- b` → `(~fsub a) b`
   - `a .* b` → `(~fmul a) b`
-  - `a ./ b` → `(~fdiv a) b`（0.0 でエラー）
+  - `a ./ b` → `(~fdiv a) b` (error on 0.0)
 - Comparisons/equality
-  - `a < b`  → `(~lt a) b`、`a <= b` → `(~le a) b`、`a > b` → `(~gt a) b`、`a >= b` → `(~ge a) b`
-  - `a .< b` → `(~flt a) b`、`a .<= b` → `(~fle a) b`、`a .> b` → `(~fgt a) b`、`a .>= b` → `(~fge a) b`
-  - `a == b` → `(~eq a) b`、`a != b` → `(~ne a) b`
+  - `a < b`  → `(~lt a) b`, `a <= b` → `(~le a) b`, `a > b` → `(~gt a) b`, `a >= b` → `(~ge a) b`
+  - `a .< b` → `(~flt a) b`, `a .<= b` → `(~fle a) b`, `a .> b` → `(~fgt a) b`, `a .>= b` → `(~fge a) b`
+  - `a == b` → `(~eq a) b`, `a != b` → `(~ne a) b`
 
 Return value is currently `Symbol("True"|"False")`.
 

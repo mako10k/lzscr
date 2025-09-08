@@ -172,4 +172,4 @@ cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
 ```
 
 ---
-このドラフトに沿ってまず M1（プリロード方式の最小 stdlib）から着手し、順次モジュールを拡充していきます。
+Following this draft, we'll start with M1 (minimal preloaded stdlib) and then expand modules step by step.

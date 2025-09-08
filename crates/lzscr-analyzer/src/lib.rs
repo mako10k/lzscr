@@ -1108,7 +1108,7 @@ mod tests {
 
     #[test]
     fn unused_param_with_typebind_pattern() {
-        // \%{ %a } ~x -> 1  => x は未使用
+        // \%{ %a } ~x -> 1  => x is unused
         let e = parse_expr("(\\%{ %a } ~x -> 1)").unwrap();
         let issues = analyze_unused_params(&e);
         assert!(issues.iter().any(|u| u.name == "x"));
@@ -1116,7 +1116,7 @@ mod tests {
 
     #[test]
     fn shadowing_with_typebind_param() {
-        // \\~x -> (\\%{ %a } ~x -> ~x) ~x  => 内側ラムダの x が外側をシャドー
+        // \\~x -> (\\%{ %a } ~x -> ~x) ~x  => inner lambda's x shadows the outer one
         let e = parse_expr("(\\~x -> (\\%{ %a } ~x -> ~x) ~x)").unwrap();
         let issues = analyze_shadowing(&e);
         assert!(issues.iter().any(|s| s.name == "x"));

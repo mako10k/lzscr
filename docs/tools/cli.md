@@ -1,44 +1,44 @@
 # lzscr CLI
 
-Rust製の PoC CLI。式の評価・静的解析・Core IR ダンプを提供。
+Rust-based PoC CLI. Provides expression evaluation, static analysis, and Core IR dumps.
 
-- バイナリ名: `lzscr-cli`
+- Binary name: `lzscr-cli`
 
-## 使い方
+## Usage
 
-- 評価
+- Evaluate
   - `lzscr-cli -e "(~add 1 2)"`
-  - 厳格効果モード: `-s` または `--strict-effects`
-- 静的解析
+  - Strict effects mode: `-s` or `--strict-effects`
+- Static analysis
   - `lzscr-cli -e "..." --analyze [--format json] [--dup-min-size N] [--dup-min-count M]`
-- Core IR ダンプ
-  - テキスト: `lzscr-cli -e "..." --dump-coreir`
+- Core IR dump
+  - Text: `lzscr-cli -e "..." --dump-coreir`
   - JSON: `lzscr-cli -e "..." --dump-coreir-json`
 
-優先順位: `--dump-coreir(-json)` > `--analyze` > 実行。
+Precedence: `--dump-coreir(-json)` > `--analyze` > evaluation.
 
-## 例
+## Examples
 
-- `(~seq () (!println "x"))` を IR テキストで出力:
+- Output IR text for `(~seq () (!println "x"))`:
   - `lzscr-cli -e "(~seq () (!println \"x\"))" --dump-coreir`
 
-- do 記法の評価例:
+- Evaluate do-notation example:
   - `lzscr-cli -e "!{ _ <- !println \"a\"; !println \"b\"; 1 + 2 }" -s`
 
-- chain/bind を直接使う例:
+- Use chain/bind directly:
   - `lzscr-cli -e "(~chain (!println \"a\") (~bind 1 (\\x -> x)))" -s`
-- 解析を JSON で:
+- Get analysis in JSON:
   - `lzscr-cli -e "(\\x -> x) 1" --analyze --format json`
 
-## モジュール解決（~require）
+## Module resolution (~require)
 
-- `(~require .seg1 .seg2 ... .segN)` は実行前に解決され、`seg1/seg2/.../segN.lzscr` を読み込んで式に展開されます。
-- 引数はすべて `.name` 形式の Ctor 記号のみ許可。ファイル未発見、パース/型検査失敗、循環参照は静的エラー。
-- 検索パスの優先順:
-  1. カレントディレクトリ
+- `(~require .seg1 .seg2 ... .segN)` is resolved before execution; it reads `seg1/seg2/.../segN.lzscr` and expands it into the expression.
+- All arguments must be constructor-like symbols in `.name` form. Missing files, parse/typecheck failures, and cyclic references are static errors.
+- Search path precedence:
+  1. Current directory
   2. `--stdlib-dir <PATH>`
-  3. `--module-path <P1:..:PN>`（コロン区切り）
+  3. `--module-path <P1:..:PN>` (colon-separated)
 
-### 関連オプション
-- `--stdlib-dir <PATH>`: 標準ライブラリ探索ディレクトリ。
-- `--module-path <P1:..:PN>`: 追加の探索パス。
+### Related options
+- `--stdlib-dir <PATH>`: directory to search for the standard library.
+- `--module-path <P1:..:PN>`: additional search paths.

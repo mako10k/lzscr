@@ -567,7 +567,7 @@ mod tests {
     #[test]
     fn lower_let_group_with_typedecls_ignored_in_coreir() {
         use lzscr_ast::span::Span;
-        // LetGroup に % 型宣言が含まれていても、Core IR へのロワリングでは無視される（LetRec のみ生成）
+        // Even if LetGroup contains % type declarations, lowering to Core IR ignores them (generates only LetRec)
         let opt_td = TypeDecl {
             name: "Option".into(),
             params: vec!["a".into()],

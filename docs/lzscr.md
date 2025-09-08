@@ -216,16 +216,18 @@ Tuples/records sugars:
 CLI example:
 
 ```
+# Analyze with an expected constructor arity map
 cargo run -p lzscr-cli -- -e '.Foo 1 2' --analyze --ctor-arity 'Foo=1'
-```
+
+# Same, JSON output
 cargo run -p lzscr-cli -- -e '.Foo 1 2' --analyze --format json --ctor-arity 'Foo=1'
 
-# 実行時エラー例（過剰適用）
+# Runtime error example (over-application)
 cargo run -p lzscr-cli -- -e '.Bar 1 2' --ctor-arity 'Bar=1'
 ```
 
-暫定実装の挙動:
-- パーサ: `Ident` は `Symbol`（コンストラクタ変数）として AST 化し、`~Ident` は `Ref`。
-- 評価器: `Symbol` は適用されたときに引数列を蓄積する未解決構成値として扱い、将来の型/解決段で具体化する。現段階では `S()`, `S a`, `S a b` などは値として構築途中の `<fun>` 表示になる（意味付けは型/IR 実装後に確定）。
-- ビルトイン: 参照によって解決されるため `~` が必要。例: `(~to_str (~add 1 2))`。
+Current provisional behavior:
+- Parser: `Ident` is ASTed as `Symbol` (constructor variable) while `~Ident` is a `Ref`.
+- Evaluator: a `Symbol` acts as an unresolved constructor value that accumulates arguments upon application and will be materialized at a future type/resolution pass. For now, `S()`, `S a`, `S a b`, etc. render as a partially constructed `<fun>` value (semantics will be finalized after type/IR work).
+- Builtins: resolved via references, so `~` is required. Example: `(~to_str (~add 1 2))`.
 

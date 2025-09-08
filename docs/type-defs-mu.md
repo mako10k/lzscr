@@ -58,74 +58,74 @@ Option doesn’t need μ:
 - Positivity: in `μ %T . Body`, `%T` must appear only in positive positions.
   - Allowed: element positions of sum/record/list/tuple (covariant).
   - Disallowed: negative positions such as function argument types.
-- 同形制約: 自己参照は“同形”でなければならない。
-- 展開停止性: μ 展開は on-demand で 1 段。Visited セット/燃料で発散防止。
+- Shape constraint: self-references must be shape-identical.
+- Unfold termination: μ-unfolding is on-demand and only one step. Use a visited set/fuel to avoid divergence.
 
-## ユニファイ戦略（isorecursive）
+## Unification strategy (isorecursive)
 - `unify(μ %T . A, B)`:
-  - 必要に応じて `A[%T := μ %T . A]` を 1 回だけ展開して B と比較（逆も同様）。
+  - When needed, unfold `A[%T := μ %T . A]` exactly once and compare with B (and vice versa).
 - occurs check:
-  - 通常の型変数に対して実施。`%T` は束縛子なので対象外。
-  - 変数 vs μ の場合は、μを 1 段剥がしてから判定する優先度を採用。
+  - Performed for regular type variables. `%T` is a binder and excluded.
+  - For var vs μ, peel μ by one step first, then decide.
 
-## 既存との整合（移行）
-- 既知ファミリの正規化:
-  - 表示/注釈では `%List %a` / `%Option %a` を優先表示。
-  - 内部は既存の構造（List 型/ SumCtor）と相互変換可能にする（移行期）。
-- Prelude/既存コードは互換維持。型注釈で型名を使えるようにして読みやすさ向上。
+## Compatibility with existing code (migration)
+- Normalization of known families:
+  - Prefer displaying/annotating as `%List %a` / `%Option %a`.
+  - Internally stay convertible to existing structures (List type / SumCtor) during migration.
+- Keep Prelude/existing code compatible. Allow type names in annotations to improve readability.
 
-## 実装スライス（段階導入）
-1. パーサ
-   - `%` 型宣言を追加（ヘッド名、型変数列、RHS 型式）。
-   - 型式に `Mu(T, Body)` と `Named(name, args)` を追加。
-2. 型定義環境
-   - `TypeDefEnv`: name → (params, body)。
-   - 2 パス登録＋“同形自己参照→μ” 変換。
-3. 型表現/ユニファイ
-   - μ の 1 段展開ユニファイ、positivity チェック、visited 管理。
-   - Named の on-demand 展開（完全展開せず比較必要箇所のみ）。
-4. 表示/エラー
-   - 既知ファミリは型名で表示。構造一致時に Named へ寄せる。
-   - occurs/positivity 失敗にはスパン付きの分かりやすい診断。
-5. 橋渡し
-   - 既存 List/Option/Bool と相互運用。最初は内部表現を併存、後に統一を検討。
+## Implementation slices (phased)
+1. Parser
+  - Add `%` type declarations (head name, type variable list, RHS type expr).
+  - Add `Mu(T, Body)` and `Named(name, args)` to type expressions.
+2. Type definition environment
+  - `TypeDefEnv`: name → (params, body).
+  - Two-pass registration + “shape self-ref → μ” transform.
+3. Type representation/unification
+  - One-step μ-unfold unification, positivity check, visited management.
+  - On-demand unfolding for Named (compare only required parts, avoid full expansion).
+4. Display/errors
+  - Show known families by name; if shapes match, bias to Named.
+  - Clear diagnostics with spans for occurs/positivity failures.
+5. Bridging
+  - Interoperate with existing List/Option/Bool. Initially keep internal reps side-by-side; consider unifying later.
 
-## オープン事項（要合意）
-- グルーピングの決め方（ファイル/空行/ブロック）
-- ラベル空間（.Tag）の共有方針（現状どおりでよい見込み）
-- Named の等価性：完全展開の構造同値ベースで運用（名義同値は導入しない）
-- positivity チェックの厳密度（関数型の負位置のみ禁止で開始）
+## Open items (to agree)
+- How to group (file/blank-lines/block)
+- Label space (.Tag) sharing policy (likely fine as-is)
+- Equality for Named: operate on structural equality after full expansion (no nominal equality)
+- Strictness of positivity check (start by forbidding negative positions in function types only)
 
-## 参考スニペット
+## Reference snippets
 - Option:
-  - ソース: `%Option %a = %{ .Some %a | .None }`
-  - 内部: `sum { .Some %a | .None }`
+  - Source: `%Option %a = %{ .Some %a | .None }`
+  - Internal: `sum { .Some %a | .None }`
 - List:
-  - ソース: `%List %a = %{ .Nil | .Cons %a (%List %a) }`
-  - 内部: `μ %T . sum { .Nil | .Cons %a %T }`
+  - Source: `%List %a = %{ .Nil | .Cons %a (%List %a) }`
+  - Internal: `μ %T . sum { .Nil | .Cons %a %T }`
 
 ---
-この仕様で進める場合、まずはパーサと型定義環境の導入（段階 1-2）から着手します。実装後は、`~map`, `~length` などの代表関数で型注釈とユニファイ挙動を検証します。
+If we proceed with this spec, first add the parser and typedef environment (phases 1-2). After implementation, verify annotations and unification using representative functions like `~map` and `~length`.
 
-  ## Let 式への統合（型宣言グルーピングとスコープ）
+  ## Integration into Let (type-decl grouping and scope)
 
-  Let 式に型宣言（%）を組み込む。構文は次のように拡張する。
+  Integrate type declarations (%) into let-expressions. Extend grammar as follows:
 
-  - 旧: `letExpr ::= bind* body bind*`（ただし前後の bind は 1 つ以上）
-  - 新: `letExpr ::= (bind | typedeclare)* body (bind | typedeclare)*`
+  - Old: `letExpr ::= bind* body bind*` (at least one bind before/after)
+  - New: `letExpr ::= (bind | typedeclare)* body (bind | typedeclare)*`
 
-  ここで `typedeclare` は本ドキュメントの `%TypeName %a ... = %{ ... }` を指す。
+  Here `typedeclare` refers to `%TypeName %a ... = %{ ... }` in this doc.
 
-  スコープ/解決規則:
-  - Let ブロック内の連続した `(bind | typedeclare)` 列を 1 グループとみなし、値名空間と型名空間をそれぞれ相互再帰として処理する。
-  - 2 パス処理（型名空間）:
-    1) パス1: `%TypeName` とアリティの登録（シャドウ可能）。
-    2) パス2: RHS を“同形自己参照→%T→μ”変換して `TypeDefEnv` に確定登録。
-  - 値の `bind` から `typedeclare` を参照可能（同一 Let グループ内であれば可）。
-  - `typedeclare` から外側の型名も参照可能（通常の静的スコープ）。
-  - LHS の型変数（%a 等）は宣言 RHS 内にだけ有効。自己束縛 `%T` は内部のみ。
+  Scope/resolution rules:
+  - Treat a consecutive sequence of `(bind | typedeclare)` inside a let block as one group, and process value and type namespaces as mutually recursive.
+  - Two-pass (type namespace):
+    1) Pass 1: register `%TypeName` and arity (shadowable).
+    2) Pass 2: transform RHS via “shape self-ref → %T → μ” and register into `TypeDefEnv`.
+  - Values (`bind`) can reference `typedeclare` within the same let-group.
+  - `typedeclare` can reference outer type names (static scope).
+  - LHS type variables (`%a`, etc.) are valid only within the decl RHS. The self binder `%T` is internal-only.
 
-  例（Let 内での相互参照）:
+  Example (mutual reference inside let):
   ```
   let
     %List %a = %{ .Nil | .Cons %a (%List %a) }
@@ -135,4 +135,4 @@ Option doesn’t need μ:
   in
     ~length [1,2,3]
   ```
-  この例では、`%List` は Let グループ内に束縛され、`~length` から参照できる。`%List` はグループの外へもエクスポートされる。
+  In this example, `%List` is bound within the let-group and can be referenced from `~length`. `%List` is exported outside the group as well.

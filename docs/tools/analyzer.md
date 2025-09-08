@@ -1,14 +1,14 @@
 # lzscr Analyzer
 
-AST ベースの簡易静的解析。重複検出・未束縛参照・シャドーイング・未使用パラメータ・未使用 let 束縛・let 内の重複束縛を報告します。
+A simple AST-based static analyzer. It reports duplicate code, unbound references, shadowing, unused parameters, unused let bindings, and duplicate bindings within a let group.
 
-- 実装: `crates/lzscr-analyzer`
+- Implementation: `crates/lzscr-analyzer`
 - CLI: `lzscr-cli -e "..." --analyze [--format json] [--dup-min-size N] [--dup-min-count M]`
 
-## 出力
+## Output
 
-- text: 各種 findings を1行ずつ
-- json: 以下のスキーマ（簡略）
+- text: one finding per line
+- json: schema (brief)
   - `duplicates: [{ size, count, span:{offset,len}, repr }]`
   - `unbound_refs: [{ name, span }]`
   - `shadowing: [{ name, lambda_span }]`
@@ -16,7 +16,7 @@ AST ベースの簡易静的解析。重複検出・未束縛参照・シャド�
   - `unused_let: [{ name, binding_span }]`
   - `let_collisions: [{ name, group_span }]`
 
-## 参考
+## Notes
 
-- 既定の許可リスト: `default_allowlist()`
-- 最小サイズや出現回数の閾値は PoC として簡易に設定可能。
+- Default allowlist: `default_allowlist()`
+- Minimum size and occurrence thresholds are configurable; current defaults are simple PoC values.

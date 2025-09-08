@@ -34,19 +34,19 @@ Interpretation rules (conv_typeexpr):
 - `?x` is a shared unification var within the same annotation, `?` is fresh each time.
 - `.Foo ...` converts to `Ctor<'Foo, Payload>`. When given 0 args, `Payload=Unit`.
 
-### 4) 型注釈と型値
+### 4) Type annotations and type values
 
-- 型注釈: `%{ Type } expr`
-  - 推論時: `expr` の型と `Type` を単一化。
-  - 実行時: 恒等（注釈は値に影響しない）。
-- 型値（TypeVal）: `%{ Type }`
-  - 現実装では値は `Str`（型の文字列表現）として扱う。将来は専用の型・値表現に拡張予定。
+- Annotation: `%{ Type } expr`
+  - During inference: unify the inferred type of `expr` with `Type`.
+  - At runtime: identity (annotation does not affect the value).
+- Type value (TypeVal): `%{ Type }`
+  - Currently represented as `Str` (string form of the type). Will be upgraded to a dedicated type/value later.
 
-例:
+Examples:
 ```
 %{ List Int } [1,2,3]          # OK
-%{ List ?a } [1,2]             # a は Int に決定
-%{ %a -> %a } (\~x -> ~x)      # id の注釈
+%{ List ?a } [1,2]             # a resolves to Int
+%{ %a -> %a } (\~x -> ~x)      # id annotation
 ```
 
 ### 5) Pattern-level type variable binder (TypeBind)
@@ -58,29 +58,29 @@ Interpretation rules (conv_typeexpr):
 
 Examples:
 ```
-(\%{ %a } ~x -> %{ %a } ~x)        # 同じ %a を共有（id）
+(\%{ %a } ~x -> %{ %a } ~x)        # share the same %a (id)
 let %{ %a, ?k } (~f, ~v) = (~id, 1) in ...
 ```
 
 ### 6) AltLambda (pattern-branching lambda)
 
-- 構文: `(\pat1 -> e1) | (\pat2 -> e2) | ...`
+- Syntax: `(\pat1 -> e1) | (\pat2 -> e2) | ...`
 - Rules:
   - Base: each branch has type `a -> r` and they unify to the same `a` and `r`.
   - If any branch uses constructor patterns, all branches must be constructor patterns (or a final wildcard/variable only).
   - The argument type is aggregated as `SumCtor` (finite sum). Duplicate tags or shape mismatches are errors.
   - The default branch (`_` etc.) does not add new cases (it accepts the existing sum).
 
-例:
+Example:
 ```
-(\(.Foo ~x) -> ~x) | (\(.Bar ~y ~z) -> ~z)   # a は SumCtor([.Foo(α), .Bar(β,γ)])
+(\(.Foo ~x) -> ~x) | (\(.Bar ~y ~z) -> ~z)   # a is SumCtor([.Foo(α), .Bar(β,γ)])
 ```
 
 ### 7) Exceptions/OrElse typing (excerpt)
 
-- `^(e)`: ペイロード `e: γ`。式の型は任意 `ρ` として扱う（ボトム到達）。
-- `x ^| h`: `x: ρ` と `h: γ -> ρ` を要求。
-- `e1 || e2`: 同型 `ρ` に単一化。
+- `^(e)`: payload `e: γ`. The expression type is treated as arbitrary `ρ` (bottom reached).
+- `x ^| h`: requires `x: ρ` and `h: γ -> ρ`.
+- `e1 || e2`: unify to the same type `ρ`.
 
 ### 8) Constructors and arity
 
@@ -100,28 +100,28 @@ let %{ %a, ?k } (~f, ~v) = (~id, 1) in ...
 
 ### 10) CLI integration
 
-- パイプライン: `parse → analyzer → typecheck → eval`
-- `--no-typecheck` で推論を無効化可能（現状の制約回避用）。
-- 将来の出力オプション（型の表示/JSON）は別途追加予定。
+- Pipeline: `parse → analyzer → typecheck → eval`
+- `--no-typecheck` can disable inference (workaround for current limits).
+- Future output options (type display/JSON) will be added separately.
 
 ### 11) Limitations and notes
 
-- LetRec の完全対応は未了。自己再帰や相互再帰で注釈が必要な場合がある。
-- List と AltLambda の複雑な合成で注釈が有用なケースがある。
-- 型値 `%{Type}` は現在 `Str` として扱う暫定仕様。
-- パターン型変数束縛は型スコープのみを拡張し、実行時意味は変化しない。
+- Full LetRec support is not complete; self/mutual recursion may require annotations.
+- Annotations can be useful when composing List and AltLambda in complex ways.
+- Type values `%{Type}` are currently treated as `Str` (provisional behavior).
+- Pattern type variable binders extend only the type scope; runtime semantics do not change.
 
 ### 12) Examples
 
 ```
-# 注釈とホール（共有/新鮮）
+# Annotations and holes (shared/fresh)
 %{ List ?a } [1,2]            # a=Int
-%{ List ? } []                # 新鮮変数（利用箇所で決定）
+%{ List ? } []                # fresh var (decided at use sites)
 
-# パターン型変数束縛（ラムダ）
-(\%{ %a } ~x -> %{ %a } ~x)   # 同じ %a を共有
+# Pattern type variable binder (lambda)
+(\%{ %a } ~x -> %{ %a } ~x)   # share the same %a
 
-# AltLambda（Ctor の有限和）
+# AltLambda (finite sum of ctor cases)
 let f = (\(A ~x) -> ~x) | (\(B ~y ~z) -> ~z) in ~f
 ```
 
