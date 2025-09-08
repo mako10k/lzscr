@@ -1,0 +1,6 @@
+# CODEOWNERS
+# Use GitHub handles or team slugs. Example:
+# @org/team-xyz has ownership over the entire repo
+*	@mako10k
+
+# Paths can be assigned to different owners if needed later.
