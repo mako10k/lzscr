@@ -26,6 +26,12 @@
         "path": "./syntaxes/lzscr.tmLanguage.json"
       }
     ],
+    "snippets": [
+      {
+        "language": "lzscr",
+        "path": "./snippets/lzscr.code-snippets"
+      }
+    ],
     "commands": [
       {
         "command": "lzscr.formatDocument",

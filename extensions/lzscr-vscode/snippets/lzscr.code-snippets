@@ -1,0 +1,62 @@
+{
+  "Lambda (\\pat -> body)": {
+    "prefix": [
+      "\\",
+      "lam"
+    ],
+    "body": [
+      "\\${1:pat} -> ${2:expr}"
+    ],
+    "description": "Lambda expression"
+  },
+  "Lambda (multi params)": {
+    "prefix": [
+      "lam*",
+      "lamn"
+    ],
+    "body": [
+      "\\${1:pat1} ${2:pat2} -> ${3:expr}"
+    ],
+    "description": "Lambda with multiple parameters (sugar)"
+  },
+  "Let binding param-chain (~name p1 ... = expr)": {
+    "prefix": [
+      "let~",
+      "chain~"
+    ],
+    "body": [
+      "~${1:name} ${2:pat} = ${3:expr};"
+    ],
+    "description": "Let LHS parameter-chain sugar"
+  },
+  "Record field param-chain (key p1 ... : expr)": {
+    "prefix": [
+      "rec:",
+      "field:"
+    ],
+    "body": [
+      "${1:key} ${2:pat} : ${3:expr}"
+    ],
+    "description": "Record field parameter-chain sugar"
+  },
+  "Try-catch caret (^|)": {
+    "prefix": [
+      "^|",
+      "caret|"
+    ],
+    "body": [
+      "${1:expr} ^| \\\\${2:pat} -> ${3:handler}"
+    ],
+    "description": "Caret catch operator"
+  },
+  "Alt lambda (|)": {
+    "prefix": [
+      "lam|",
+      "alt|"
+    ],
+    "body": [
+      "\\${1:pat1} -> ${2:e1} | \\${3:pat2} -> ${4:e2}"
+    ],
+    "description": "Alternative lambda composition"
+  }
+}

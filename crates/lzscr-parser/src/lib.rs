@@ -39,13 +39,19 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         match &p.kind {
             PatternKind::Var(n) if n != "_" => out.push(n.clone()),
             PatternKind::Tuple(xs) | PatternKind::List(xs) => {
-                for x in xs { collect_binders(x, out); }
+                for x in xs {
+                    collect_binders(x, out);
+                }
             }
             PatternKind::Ctor { args, .. } => {
-                for x in args { collect_binders(x, out); }
+                for x in args {
+                    collect_binders(x, out);
+                }
             }
             PatternKind::Record(fs) => {
-                for (_k, v) in fs { collect_binders(v, out); }
+                for (_k, v) in fs {
+                    collect_binders(v, out);
+                }
             }
             PatternKind::As(a, b) => {
                 collect_binders(a, out);
@@ -78,19 +84,35 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     ) -> Option<(String, Vec<Pattern>, usize)> {
         let start = *j;
         let t0 = toks.get(*j)?;
-        if !matches!(t0.tok, Tok::Tilde) { return None; }
+        if !matches!(t0.tok, Tok::Tilde) {
+            return None;
+        }
         *j += 1;
         let id = toks.get(*j)?;
         let name = if let Tok::Ident = id.tok { id.text.to_string() } else { return None };
         *j += 1;
         // At least one pattern
         let mut params = Vec::new();
-        if let Ok(p) = parse_pattern(j, toks) { params.push(p); } else { *j = start; return None; }
+        if let Ok(p) = parse_pattern(j, toks) {
+            params.push(p);
+        } else {
+            *j = start;
+            return None;
+        }
         loop {
             // stop when we reach '='
-            if let Some(eq) = toks.get(*j) { if matches!(eq.tok, Tok::Eq) { break; } }
+            if let Some(eq) = toks.get(*j) {
+                if matches!(eq.tok, Tok::Eq) {
+                    break;
+                }
+            }
             // try another pattern; if fails, abort
-            if let Ok(p) = parse_pattern(j, toks) { params.push(p); } else { *j = start; return None; }
+            if let Ok(p) = parse_pattern(j, toks) {
+                params.push(p);
+            } else {
+                *j = start;
+                return None;
+            }
         }
         Some((name, params, *j))
     }
