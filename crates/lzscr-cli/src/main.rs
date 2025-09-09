@@ -770,7 +770,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Value::Unit => "()".into(),
                 Value::Int(n) => n.to_string(),
                 Value::Float(f) => f.to_string(),
-                Value::Bool(b) => b.to_string(),
                 Value::Str(s) => s.to_string(),
                 Value::Char(c) => char_literal_string(*c),
                 Value::Symbol(id) => env.symbol_name(*id),

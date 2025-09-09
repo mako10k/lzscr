@@ -61,7 +61,6 @@ pub mod ast {
         Float(f64),
         Str(String),
         Char(i32),
-        Bool(bool),
         Record(Vec<(String, Pattern)>), // { k: p, ... }
         As(Box<Pattern>, Box<Pattern>), // p1 @ p2
         // List patterns
@@ -158,7 +157,6 @@ pub mod pretty {
                 tmp.push(ch);
                 format!("'{}'", tmp.escape_default())
             }
-            PatternKind::Bool(b) => format!("{}", b),
             PatternKind::Record(fields) => {
                 let inner = fields
                     .iter()

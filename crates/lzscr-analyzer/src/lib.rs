@@ -474,8 +474,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                         | PatternKind::Int(_)
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
-                        | PatternKind::Char(_)
-                        | PatternKind::Bool(_) => {}
+                        | PatternKind::Char(_) => {}
                         PatternKind::TypeBind { pat, .. } => {
                             binds(pat, acc);
                         }
@@ -555,8 +554,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                         | PatternKind::Int(_)
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
-                        | PatternKind::Char(_)
-                        | PatternKind::Bool(_) => {}
+                        | PatternKind::Char(_) => {}
                         PatternKind::TypeBind { pat, .. } => {
                             binds(pat, acc);
                         }
@@ -624,8 +622,7 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                         | PatternKind::Int(_)
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
-                        | PatternKind::Char(_)
-                        | PatternKind::Bool(_) => {}
+                        | PatternKind::Char(_) => {}
                         PatternKind::TypeBind { pat, .. } => {
                             pat_idents(pat, out);
                         }
@@ -690,8 +687,7 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                         | PatternKind::Int(_)
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
-                        | PatternKind::Char(_)
-                        | PatternKind::Bool(_) => {}
+                        | PatternKind::Char(_) => {}
                         PatternKind::TypeBind { pat, .. } => {
                             pat_idents(pat, outn);
                         }
@@ -797,8 +793,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             | PatternKind::Int(_)
             | PatternKind::Float(_)
             | PatternKind::Str(_)
-            | PatternKind::Char(_)
-            | PatternKind::Bool(_) => false,
+            | PatternKind::Char(_) => false,
             PatternKind::TypeBind { pat, .. } => binds_param(pat, name),
             PatternKind::Var(n) => n == name,
             PatternKind::Tuple(xs) => xs.iter().any(|x| binds_param(x, name)),
@@ -821,8 +816,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
                         | PatternKind::Int(_)
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
-                        | PatternKind::Char(_)
-                        | PatternKind::Bool(_) => {}
+                        | PatternKind::Char(_) => {}
                         PatternKind::TypeBind { pat, .. } => {
                             collect(pat, outn);
                         }

@@ -98,7 +98,6 @@ pub enum Value {
     Unit,
     Int(i64),
     Float(f64),
-    Bool(bool),
     // Sliceable runtime string (UTF-8 bytes; may contain NUL). Semantics: list of Char(codepoint).
     Str(RtStr),
     // Codepoint character (integer). Conversions with Int via builtins.
@@ -218,8 +217,8 @@ impl Env {
                 arity: 1,
                 args: vec![],
                 f: |env, args| match &args[0] {
-                    Value::Symbol(id) if env.symbol_name(*id) == ".True" => Ok(Value::Bool(true)),
-                    Value::Symbol(id) if env.symbol_name(*id) == ".False" => Ok(Value::Bool(false)),
+                    Value::Symbol(id) if env.symbol_name(*id) == ".True" => Ok(Value::Ctor { name: ".True".into(), args: vec![] }),
+                    Value::Symbol(id) if env.symbol_name(*id) == ".False" => Ok(Value::Ctor { name: ".False".into(), args: vec![] }),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -395,7 +394,7 @@ impl Env {
                 args: vec![],
                 f: |env, args| {
                     let res = v_equal(env, &args[0], &args[1]);
-                    Ok(Value::Bool(res))
+                    Ok(if res { Value::Ctor { name: ".True".into(), args: vec![] } } else { Value::Ctor { name: ".False".into(), args: vec![] } })
                 },
             },
         );
@@ -407,8 +406,8 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a < b)),
-                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
+                    (Value::Int(a), Value::Int(b)) => Ok(bool_ctor(a < b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a < b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -421,8 +420,8 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a <= b)),
-                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
+                    (Value::Int(a), Value::Int(b)) => Ok(bool_ctor(a <= b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a <= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -435,8 +434,8 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a > b)),
-                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
+                    (Value::Int(a), Value::Int(b)) => Ok(bool_ctor(a > b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a > b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -449,8 +448,8 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a >= b)),
-                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
+                    (Value::Int(a), Value::Int(b)) => Ok(bool_ctor(a >= b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a >= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -464,7 +463,7 @@ impl Env {
                 args: vec![],
                 f: |env, args| {
                     let res = !v_equal(env, &args[0], &args[1]);
-                    Ok(Value::Bool(res))
+                    Ok(bool_ctor(res))
                 },
             },
         );
@@ -476,7 +475,7 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a < b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -487,7 +486,7 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a <= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -498,7 +497,7 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a > b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -509,7 +508,7 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a >= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -642,9 +641,7 @@ impl Env {
 
         // char classification namespace
         let mut char_ns: BTreeMap<String, Value> = BTreeMap::new();
-        fn bool_val(b: bool) -> Value {
-            Value::Bool(b)
-        }
+    fn bool_val(b: bool) -> Value { bool_ctor(b) }
         char_ns.insert(
             "is_alpha".into(),
             Value::Native {
@@ -767,7 +764,7 @@ impl Env {
                     v if get_scan(v).is_some() => {
                         let (s, i) = get_scan(v).unwrap();
                         let at_end = i >= s.char_count();
-                        Ok(Value::Bool(at_end))
+                        Ok(bool_ctor(at_end))
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -1089,8 +1086,8 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |env, args| match (as_bool(env, &args[0])?, as_bool(env, &args[1])?) {
-                    (true, true) => Ok(Value::Bool(true)),
-                    _ => Ok(Value::Bool(false)),
+                    (true, true) => Ok(bool_ctor(true)),
+                    _ => Ok(bool_ctor(false)),
                 },
             },
         );
@@ -1100,8 +1097,8 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |env, args| match (as_bool(env, &args[0])?, as_bool(env, &args[1])?) {
-                    (false, false) => Ok(Value::Bool(false)),
-                    _ => Ok(Value::Bool(true)),
+                    (false, false) => Ok(bool_ctor(false)),
+                    _ => Ok(bool_ctor(true)),
                 },
             },
         );
@@ -1110,7 +1107,7 @@ impl Env {
             Value::Native {
                 arity: 1,
                 args: vec![],
-                f: |env, args| Ok(Value::Bool(!as_bool(env, &args[0])?)),
+                f: |env, args| Ok(bool_ctor(!as_bool(env, &args[0])?)),
             },
         );
 
@@ -1160,8 +1157,7 @@ fn to_str_like(env: &Env, v: &Value) -> String {
     match &vv {
         Value::Unit => "()".into(),
         Value::Int(n) => n.to_string(),
-        Value::Float(f) => f.to_string(),
-        Value::Bool(b) => b.to_string(),
+    Value::Float(f) => f.to_string(),
         Value::Str(s) => s.to_string(),
         Value::Char(c) => char_literal_string(*c),
         Value::Symbol(id) => env.symbol_name(*id),
@@ -1210,10 +1206,17 @@ fn char_literal_string(c: i32) -> String {
     format!("'{}'", tmp.escape_default())
 }
 
+fn bool_ctor(b: bool) -> Value { if b { Value::Ctor { name: ".True".into(), args: vec![] } } else { Value::Ctor { name: ".False".into(), args: vec![] } } }
+
 fn as_bool(env: &Env, v: &Value) -> Result<bool, EvalError> {
     let v = force_value(env, v)?;
     match &v {
-        Value::Bool(b) => Ok(*b),
+        Value::Ctor { name, args } if args.is_empty() && name == ".True" => Ok(true),
+        Value::Ctor { name, args } if args.is_empty() && name == ".False" => Ok(false),
+        Value::Symbol(id) => {
+            let s = env.symbol_name(*id);
+            if s == ".True" { Ok(true) } else if s == ".False" { Ok(false) } else { Err(EvalError::TypeError) }
+        }
         _ => Err(EvalError::TypeError),
     }
 }
@@ -1243,14 +1246,7 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 print!("{}", n);
                 Ok(Value::Unit)
             }
-            Value::Float(f) => {
-                print!("{}", f);
-                Ok(Value::Unit)
-            }
-            Value::Bool(b) => {
-                print!("{}", b);
-                Ok(Value::Unit)
-            }
+            Value::Float(f) => { print!("{}", f); Ok(Value::Unit) }
             Value::Char(c) => {
                 print!("{}", char_literal_string(c));
                 Ok(Value::Unit)
@@ -1330,14 +1326,7 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 println!("{}", n);
                 Ok(Value::Unit)
             }
-            Value::Float(f) => {
-                println!("{}", f);
-                Ok(Value::Unit)
-            }
-            Value::Bool(b) => {
-                println!("{}", b);
-                Ok(Value::Unit)
-            }
+            Value::Float(f) => { println!("{}", f); Ok(Value::Unit) }
             Value::Char(c) => {
                 println!("{}", char_literal_string(c));
                 Ok(Value::Unit)
@@ -1405,8 +1394,7 @@ fn v_equal(_env: &Env, a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Unit, Value::Unit) => true,
         (Value::Int(x), Value::Int(y)) => x == y,
-        (Value::Float(x), Value::Float(y)) => x == y,
-        (Value::Bool(x), Value::Bool(y)) => x == y,
+    (Value::Float(x), Value::Float(y)) => x == y,
         (Value::Str(x), Value::Str(y)) => x == y,
         (Value::Char(x), Value::Char(y)) => x == y,
         (Value::Symbol(x), Value::Symbol(y)) => x == y,
@@ -1505,10 +1493,6 @@ fn match_pattern(
         },
         PatternKind::Char(cc) => match &v {
             Value::Char(c2) if *c2 == *cc => Some(HashMap::new()),
-            _ => None,
-        },
-        PatternKind::Bool(b) => match &v {
-            Value::Bool(c) if *c == *b => Some(HashMap::new()),
             _ => None,
         },
         PatternKind::Record(fields) => match &v {
@@ -1778,8 +1762,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     | PatternKind::Int(_)
                     | PatternKind::Float(_)
                     | PatternKind::Str(_)
-                    | PatternKind::Char(_)
-                    | PatternKind::Bool(_) => {}
+                    | PatternKind::Char(_) => {}
                     PatternKind::TypeBind { pat, .. } => {
                         collect_vars(pat, out);
                     }
@@ -2199,7 +2182,7 @@ mod tests {
         let env = Env::with_builtins();
         let v = eval(&env, &whole).unwrap();
         match v {
-            Value::Bool(b) => assert!(b, "expected Bool true"),
+            Value::Ctor { name, .. } if name == ".True" => {},
             _ => panic!("expected Bool true"),
         }
 
@@ -2220,7 +2203,7 @@ mod tests {
         let env2 = Env::with_builtins();
         let v = eval(&env2, &whole).unwrap();
         match v {
-            Value::Bool(b) => assert!(!b, "expected Bool false"),
+            Value::Ctor { name, .. } if name == ".False" => {},
             _ => panic!("expected Bool false"),
         }
     }

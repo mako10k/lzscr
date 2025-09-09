@@ -18,7 +18,6 @@ pub enum Type {
     Unit,
     Int,
     Float,
-    Bool,
     Str,
     Char,
     Var(TvId),
@@ -41,6 +40,11 @@ impl Type {
     fn fun(a: Type, b: Type) -> Type {
         Type::Fun(Box::new(a), Box::new(b))
     }
+}
+
+// Canonical Bool representation as a sum of two zero-arity constructors.
+fn bool_sum_type() -> Type {
+    Type::SumCtor(vec![(".False".into(), vec![]), (".True".into(), vec![])])
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -176,7 +180,7 @@ impl TypesApply for Type {
                     .map(|(n, ps)| (n.clone(), ps.iter().map(|t| t.apply(s)).collect()))
                     .collect(),
             ),
-            t @ (Type::Unit | Type::Int | Type::Float | Type::Bool | Type::Str | Type::Char) => {
+            t @ (Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char) => {
                 t.clone()
             }
         }
@@ -221,7 +225,7 @@ impl TypesApply for Type {
                     }
                 }
             }
-            Type::Unit | Type::Int | Type::Float | Type::Bool | Type::Str | Type::Char => {}
+            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char => {}
         }
         s
     }
@@ -376,12 +380,11 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
     match (a, b) {
         (Type::Var(x), t) => bind(*x, t.clone()),
         (t, Type::Var(x)) => bind(*x, t.clone()),
-        (Type::Unit, Type::Unit)
-        | (Type::Int, Type::Int)
-        | (Type::Float, Type::Float)
-        | (Type::Bool, Type::Bool)
-        | (Type::Str, Type::Str)
-        | (Type::Char, Type::Char) => Ok(Subst::new()),
+    (Type::Unit, Type::Unit)
+    | (Type::Int, Type::Int)
+    | (Type::Float, Type::Float)
+    | (Type::Str, Type::Str)
+    | (Type::Char, Type::Char) => Ok(Subst::new()),
         (Type::Fun(a1, b1), Type::Fun(a2, b2)) => {
             let s1 = unify(a1, a2)?;
             let s2 = unify(&b1.apply(&s1), &b2.apply(&s1))?;
@@ -551,7 +554,7 @@ fn conv_typeexpr_with_subst(
         TypeExpr::Unit => Type::Unit,
         TypeExpr::Int => Type::Int,
         TypeExpr::Float => Type::Float,
-        TypeExpr::Bool => Type::Bool,
+    TypeExpr::Bool => bool_sum_type(),
         TypeExpr::Str => Type::Str,
         TypeExpr::Char => Type::Char,
         TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr_with_subst(ctx, t, subst)?)),
@@ -773,9 +776,6 @@ fn infer_pattern(
         PatternKind::Char(_) => {
             ctx_unify(ctx, scrutinee, &Type::Char).map(|s| PatInfo { bindings: vec![], subst: s })
         }
-        PatternKind::Bool(_) => {
-            ctx_unify(ctx, scrutinee, &Type::Bool).map(|s| PatInfo { bindings: vec![], subst: s })
-        }
         PatternKind::Tuple(xs) => {
             let mut s = Subst::new();
             let mut tys = Vec::with_capacity(xs.len());
@@ -983,7 +983,7 @@ fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
         TypeExpr::Unit => Type::Unit,
         TypeExpr::Int => Type::Int,
         TypeExpr::Float => Type::Float,
-        TypeExpr::Bool => Type::Bool,
+    TypeExpr::Bool => bool_sum_type(),
         TypeExpr::Str => Type::Str,
         TypeExpr::Char => Type::Char,
         TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr_fresh(tv, t))),
@@ -1022,7 +1022,7 @@ fn infer_expr(
             TypeExpr::Unit => Type::Unit,
             TypeExpr::Int => Type::Int,
             TypeExpr::Float => Type::Float,
-            TypeExpr::Bool => Type::Bool,
+            TypeExpr::Bool => bool_sum_type(),
             TypeExpr::Str => Type::Str,
             TypeExpr::Char => Type::Char,
             TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr(ctx, t, holes))),
@@ -1106,7 +1106,7 @@ fn infer_expr(
         }
         ExprKind::Symbol(name) => {
             if name == ".True" || name == ".False" {
-                Ok((Type::Bool, Subst::new()))
+                Ok((Type::Ctor { tag: name.clone(), payload: vec![] }, Subst::new()))
             } else {
                 // Treat other bare symbol as 0-arity ctor
                 Ok((Type::Ctor { tag: name.clone(), payload: vec![] }, Subst::new()))
@@ -1139,8 +1139,8 @@ fn infer_expr(
                             let (tc, sc) = infer_expr(ctx, cond, allow_effects)?;
                             let (tt, st) = infer_expr(ctx, then_branch, allow_effects)?;
                             let (te, se) = infer_expr(ctx, arg, allow_effects)?;
-                            // cond : Bool
-                            let s0 = ctx_unify(ctx, &tc.apply(&st).apply(&sc), &Type::Bool)?;
+                            // cond : Bool (union form)
+                            let s0 = ctx_unify(ctx, &tc.apply(&st).apply(&sc), &bool_sum_type())?;
                             let s_acc = s0.compose(st).compose(sc);
                             // helper to merge ctor-like types into a finite union
                             fn is_ctor_like(t: &Type) -> bool {
@@ -1798,11 +1798,10 @@ fn pp_type(t: &Type) -> String {
         format!("%t{id}")
     }
     match t {
-        Type::Unit => "Unit".into(),
-        Type::Int => "Int".into(),
-        Type::Float => "Float".into(),
-        Type::Bool => "Bool".into(),
-        Type::Str => "Str".into(),
+    Type::Unit => "Unit".into(),
+    Type::Int => "Int".into(),
+    Type::Float => "Float".into(),
+    Type::Str => "Str".into(),
         Type::Char => "Char".into(),
         Type::Var(TvId(i)) => rename_var(*i as i64),
         Type::List(a) => format!("[{}]", pp_type(a)),
@@ -1899,7 +1898,7 @@ fn user_pretty_type(t: &Type) -> String {
                     }
                 }
             }
-            Type::Unit | Type::Int | Type::Float | Type::Bool | Type::Str | Type::Char => {}
+            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char => {}
         }
     }
     let mut order = Vec::new();
@@ -1933,7 +1932,6 @@ fn user_pretty_type(t: &Type) -> String {
             Type::Unit => "Unit".into(),
             Type::Int => "Int".into(),
             Type::Float => "Float".into(),
-            Type::Bool => "Bool".into(),
             Type::Str => "Str".into(),
             Type::Char => "Char".into(),
             Type::List(x) => format!("[{}]", go(x, m, seen, _out_defs)),
@@ -2189,15 +2187,16 @@ pub mod api {
         env.insert("add".into(), Scheme { vars: vec![], ty: add_ty });
         // Boolean ops (approximate): and/or : Bool -> Bool -> Bool ; not : Bool -> Bool
         // and/or : Bool -> Bool -> Bool
+        let bool_t = bool_sum_type();
         env.insert(
             "and".into(),
-            Scheme { vars: vec![], ty: Type::fun(Type::Bool, Type::fun(Type::Bool, Type::Bool)) },
+            Scheme { vars: vec![], ty: Type::fun(bool_t.clone(), Type::fun(bool_t.clone(), bool_t.clone())) },
         );
         env.insert(
             "or".into(),
-            Scheme { vars: vec![], ty: Type::fun(Type::Bool, Type::fun(Type::Bool, Type::Bool)) },
+            Scheme { vars: vec![], ty: Type::fun(bool_t.clone(), Type::fun(bool_t.clone(), bool_t.clone())) },
         );
-        env.insert("not".into(), Scheme { vars: vec![], ty: Type::fun(Type::Bool, Type::Bool) });
+        env.insert("not".into(), Scheme { vars: vec![], ty: Type::fun(bool_t.clone(), bool_t.clone()) });
         // boolean values
         // seq : forall a b. a -> b -> b
         let a2 = TvId(1002);
@@ -2240,24 +2239,24 @@ pub mod api {
             let a = TvId(1010);
             Scheme {
                 vars: vec![a],
-                ty: Type::fun(Type::Var(a), Type::fun(Type::Var(a), Type::Bool)),
+                ty: Type::fun(Type::Var(a), Type::fun(Type::Var(a), bool_t.clone())),
             }
         });
         env.insert(
             "lt".into(),
-            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) },
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, bool_t.clone())) },
         );
         env.insert(
             "le".into(),
-            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) },
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, bool_t.clone())) },
         );
         env.insert(
             "gt".into(),
-            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) },
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, bool_t.clone())) },
         );
         env.insert(
             "ge".into(),
-            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool)) },
+            Scheme { vars: vec![], ty: Type::fun(Type::Int, Type::fun(Type::Int, bool_t.clone())) },
         );
 
         // cons : forall a. a -> List a -> List a
@@ -2318,10 +2317,10 @@ pub mod api {
         let to_str_ty = Type::fun(Type::Var(a_ts), Type::Str);
         env.insert("to_str".into(), Scheme { vars: vec![a_ts], ty: to_str_ty });
 
-        // if : forall a. Bool -> a -> a -> a
+        // if : forall a. Bool -> a -> a -> a   (Bool in union form)
         let a_if = TvId(1011);
         let if_ty = Type::fun(
-            Type::Bool,
+            bool_t.clone(),
             Type::fun(Type::Var(a_if), Type::fun(Type::Var(a_if), Type::Var(a_if))),
         );
         env.insert("if".into(), Scheme { vars: vec![a_if], ty: if_ty });
@@ -2358,10 +2357,10 @@ pub mod api {
         let math_ns = record(vec![("abs", Type::fun(Type::Int, Type::Int))]);
         // Char namespace
         let char_ns = record(vec![
-            ("is_digit", Type::fun(Type::Char, Type::Bool)),
-            ("is_alpha", Type::fun(Type::Char, Type::Bool)),
-            ("is_alnum", Type::fun(Type::Char, Type::Bool)),
-            ("is_space", Type::fun(Type::Char, Type::Bool)),
+            ("is_digit", Type::fun(Type::Char, bool_t.clone())),
+            ("is_alpha", Type::fun(Type::Char, bool_t.clone())),
+            ("is_alnum", Type::fun(Type::Char, bool_t.clone())),
+            ("is_space", Type::fun(Type::Char, bool_t.clone())),
         ]);
         // Unicode namespace
         let unicode_ns = record(vec![

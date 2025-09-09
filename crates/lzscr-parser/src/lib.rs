@@ -348,20 +348,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         _ => break,
                     }
                 }
-                if args.is_empty() && (m == ".True" || m == ".False") {
-                    Pattern::new(PatternKind::Bool(m == ".True"), h.span)
+                let end = if args.is_empty() {
+                    h.span.offset + h.span.len
                 } else {
-                    let end = if args.is_empty() {
-                        h.span.offset + h.span.len
-                    } else {
-                        let last = args.last().unwrap();
-                        last.span.offset + last.span.len
-                    };
-                    Pattern::new(
-                        PatternKind::Ctor { name: m.clone(), args },
-                        Span::new(h.span.offset, end - h.span.offset),
-                    )
-                }
+                    let last = args.last().unwrap();
+                    last.span.offset + last.span.len
+                };
+                Pattern::new(
+                    PatternKind::Ctor { name: m.clone(), args },
+                    Span::new(h.span.offset, end - h.span.offset),
+                )
             }
             _ => {
                 return Err(ParseError::WithSpan {

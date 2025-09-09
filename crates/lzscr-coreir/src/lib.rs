@@ -130,7 +130,6 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                 tmp.push(ch);
                 format!("'{}'", tmp.escape_default())
             }
-            PatternKind::Bool(b) => format!("{}", b),
             PatternKind::Record(fields) => {
                 let inner = fields
                     .iter()
@@ -307,7 +306,6 @@ pub enum IrValue {
     Unit,
     Int(i64),
     Float(f64),
-    Bool(bool),
     Str(String),
     Char(i32),
     Fun { param: String, body: Term, env: HashMap<String, IrValue> },
@@ -345,11 +343,10 @@ fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
             Err(IrEvalError::Arity("div by zero".into()))
         }
         ("div", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a / b)),
-        ("to_str", [v]) => Ok(IrValue::Str(match v {
+    ("to_str", [v]) => Ok(IrValue::Str(match v {
             IrValue::Unit => "()".into(),
             IrValue::Int(n) => n.to_string(),
             IrValue::Float(f) => f.to_string(),
-            IrValue::Bool(b) => b.to_string(),
             IrValue::Str(s) => s.clone(),
             IrValue::Char(c) => {
                 let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
@@ -410,7 +407,7 @@ fn eval_term_with_env(
         Op::Unit => Ok(IrValue::Unit),
         Op::Int(n) => Ok(IrValue::Int(*n)),
         Op::Float(f) => Ok(IrValue::Float(*f)),
-        Op::Bool(b) => Ok(IrValue::Bool(*b)),
+    Op::Bool(b) => Ok(IrValue::Str(if *b { ".True".into() } else { ".False".into() })),
         Op::Str(s) => Ok(IrValue::Str(s.clone())),
         Op::Char(c) => Ok(IrValue::Char(*c)),
         Op::Ref(n) => {
@@ -460,8 +457,7 @@ pub fn print_ir_value(v: &IrValue) -> String {
     match v {
         IrValue::Unit => "()".into(),
         IrValue::Int(n) => n.to_string(),
-        IrValue::Float(f) => f.to_string(),
-        IrValue::Bool(b) => b.to_string(),
+    IrValue::Float(f) => f.to_string(),
         IrValue::Str(s) => s.clone(),
         IrValue::Char(c) => {
             let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
