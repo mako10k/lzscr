@@ -130,7 +130,6 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                 tmp.push(ch);
                 format!("'{}'", tmp.escape_default())
             }
-            PatternKind::Bool(b) => format!("{}", b),
             PatternKind::Record(fields) => {
                 let inner = fields
                     .iter()
@@ -152,6 +151,22 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Char(c) => Term::new(Op::Char(*c)),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
+        ExprKind::Record(fields) => {
+            // Lower structurally to a synthetic Op::Record (if exists) else build associative nest.
+            // Since no dedicated Op currently, reuse a tagged symbol chain: start with Symbol("RECORD") then fold KV.
+            let mut acc = Term::new(Op::Symbol("RECORD".into()));
+            for (k, v) in fields {
+                let kv_sym = Term::new(Op::Symbol("KV".into()));
+                let key = Term::new(Op::Str(k.clone()));
+                let kv1 = Term::new(Op::App { func: Box::new(kv_sym), arg: Box::new(key) });
+                let kv2 = Term::new(Op::App {
+                    func: Box::new(kv1),
+                    arg: Box::new(lower_expr_to_core(v)),
+                });
+                acc = Term::new(Op::App { func: Box::new(acc), arg: Box::new(kv2) });
+            }
+            acc
+        }
         ExprKind::LetGroup { bindings, body, .. } => {
             let bs: Vec<(String, Term)> =
                 bindings.iter().map(|(p, ex)| (print_pattern(p), lower_expr_to_core(ex))).collect();
@@ -291,7 +306,6 @@ pub enum IrValue {
     Unit,
     Int(i64),
     Float(f64),
-    Bool(bool),
     Str(String),
     Char(i32),
     Fun { param: String, body: Term, env: HashMap<String, IrValue> },
@@ -333,7 +347,6 @@ fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
             IrValue::Unit => "()".into(),
             IrValue::Int(n) => n.to_string(),
             IrValue::Float(f) => f.to_string(),
-            IrValue::Bool(b) => b.to_string(),
             IrValue::Str(s) => s.clone(),
             IrValue::Char(c) => {
                 let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
@@ -394,7 +407,7 @@ fn eval_term_with_env(
         Op::Unit => Ok(IrValue::Unit),
         Op::Int(n) => Ok(IrValue::Int(*n)),
         Op::Float(f) => Ok(IrValue::Float(*f)),
-        Op::Bool(b) => Ok(IrValue::Bool(*b)),
+        Op::Bool(b) => Ok(IrValue::Str(if *b { ".True".into() } else { ".False".into() })),
         Op::Str(s) => Ok(IrValue::Str(s.clone())),
         Op::Char(c) => Ok(IrValue::Char(*c)),
         Op::Ref(n) => {
@@ -445,7 +458,6 @@ pub fn print_ir_value(v: &IrValue) -> String {
         IrValue::Unit => "()".into(),
         IrValue::Int(n) => n.to_string(),
         IrValue::Float(f) => f.to_string(),
-        IrValue::Bool(b) => b.to_string(),
         IrValue::Str(s) => s.clone(),
         IrValue::Char(c) => {
             let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');

@@ -23,7 +23,7 @@ Examples:
 - Int: `42`
 - Float: `1.0`, `.5`, `3.`
 - Str: `"hi"` (supports escapes)
-- Ref: `~name` (e.g., `~add`, `~true`)
+- Ref: `~name` (e.g., `~add`)
 - Symbol value: `.name` (e.g., `.println`, `.Foo`) — constructors are .Member-only
 - Lambda: `\x -> expr`
 - Block: `{ expr }`
@@ -42,7 +42,7 @@ Examples:
     - Final `E` becomes `(~bind E (\x -> x))` (return value)
     - `expr; ACC` becomes `(~chain expr ACC)`
     - `pat <- expr; ACC` becomes `(~bind expr (\pat -> ACC))`
-- Booleans: `true()` → `~true`, `false()` → `~false`
+- Booleans: `.True`, `.False` constructors (no `~true` / `~false` aliases)
 - Constructor value: `.Foo 1 2` → `Ctor(".Foo", [1,2])`
 
 ### Infix operators (left-assoc; Pratt precedence)
@@ -70,7 +70,7 @@ Desugaring (to function application):
   - `a .< b` → `(~flt a) b`, `a .<= b` → `(~fle a) b`, `a .> b` → `(~fgt a) b`, `a .>= b` → `(~fge a) b`
   - `a == b` → `(~eq a) b`, `a != b` → `(~ne a) b`
 
-Return value is currently `Symbol("True"|"False")`.
+Return value is a Bool (`.True` | `.False`).
 
 ### Examples
 

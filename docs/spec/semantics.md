@@ -18,12 +18,12 @@ Disclaimer: This document describes the current PoC behavior. Items labeled as p
 - Builtins (examples):
   - `to_str : a -> Str`
   - `add, sub : Int -> Int -> Int`
-  - `eq : a -> a -> Symbol("True"|"False")` (supports Int/Float/Bool/Str/Unit/Symbol)
-  - `lt : Int|Float -> Int|Float -> Symbol("True"|"False")`
+  - `eq : a -> a -> Bool` (supports Int/Float/Bool/Str/Unit/Symbol)
+  - `lt : Int|Float -> Int|Float -> Bool`
   - `seq : a -> b -> b` (implemented via ref + special form)
   - `effects .println : Str -> Unit` (only in effect-context)
 Notes:
-- Bool currently injects `~true`/`~false` into the environment (literals planned)
+- Bool represented by constructors `.True` / `.False` (no implicit variable aliases)
 - Float supports literals (e.g., 1.0, .5, 10.)
 - Char is currently treated as Int (intended 0..=0x10FFFF); dedicated literal not implemented
 - List/Tuple/Record are immutable values with runtime display and to_str support

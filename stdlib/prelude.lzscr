@@ -8,19 +8,39 @@
 ~Unicode = ~Builtins .unicode;
 
 # Core helpers
+%Bool = %{ .True | .False };
+
 ~id ~x = ~x;
 ~compose ~f ~g ~x = ~f (~g ~x);
 
-# Option (no match/with; lambda-alt chains)
-~is_some = \(.Some _) -> ~true | \.None -> ~false;
-~is_none = \(.Some _) -> ~false | \.None -> ~true;
-~map_option ~f = \(.Some ~x) -> .Some (~f ~x) | \.None -> .None;
-~unwrap_or ~def = \(.Some ~x) -> ~x | \.None -> ~def;
 
-# Result (minimal)
-~map_result ~f = \(.Ok ~x) -> .Ok (~f ~x) | \(.Err ~e) -> .Err ~e;
-~map_err ~f = \(.Ok ~x) -> .Ok ~x | \(.Err ~e) -> .Err (~f ~e);
-~unwrap_or_else ~f = \(.Ok ~x) -> ~x | \(.Err ~e) -> (~f ~e);
+# ---------------------------------------------------------------------------
+# Modular stdlib (deduplicated): load extended helpers from separate modules.
+# We keep backward-compatible aliases for existing prelude function names.
+# Future: introduce type declarations (e.g. %Option, %Result) here or in a
+# dedicated types file once the syntax is stabilized.
+
+# Load modules (records) via ~require expansion
+~Option = (~require .option);
+~Result = (~require .result);
+~ListExtra = (~require .list);
+
+# Back-compat Option helper aliases (deprecated: prefer (~Option .map) etc.)
+~is_some = (~Option .is_some);          # DEPRECATED (use (~Option .is_some))
+~is_none = (~Option .is_none);          # DEPRECATED
+~map_option = (~Option .map);           # DEPRECATED (name kept to avoid clash with list ~map)
+~unwrap_or = (~Option .unwrap_or);      # DEPRECATED (Option version)
+# Note: Option also has unwrap_or_else; expose ONLY Result variant under the
+# legacy prelude name to avoid silent behavior change. Access Option's version
+# explicitly via (~Option .unwrap_or_else).
+
+# Back-compat Result helper aliases
+~map_result = (~Result .map);           # DEPRECATED (use (~Result .map))
+~map_err = (~Result .map_err);          # DEPRECATED
+~unwrap_or_else = (~Result .unwrap_or_else);  # DEPRECATED
+
+# (Optional future) Re-export selected list extras if desired:
+# e.g. ~list_any = (~ListExtra .any);
 
 # List primitives (lambda-alt on the structural arg)
 ~length ~xs = (\[] -> 0 | \( _ : ~tail ) -> 1 + (~length ~tail)) ~xs;
@@ -51,7 +71,7 @@
 ~starts_with ~s ~pre = (
   ~n = (~Str .len ~pre);
   ~m = (~Str .len ~s);
-  ~if (~m >= ~n) (((~Str .slice ~s 0 ~n) == ~pre)) ~false
+  ~if (~m >= ~n) (((~Str .slice ~s 0 ~n) == ~pre)) .False
 );
 
 ~ends_with ~s ~suf = (
@@ -60,7 +80,7 @@
   ~if (~m >= ~n) (
     ~st = ~m - ~n;
     ((~Str .slice ~s ~st ~n) == ~suf)
-  ) ~false
+  ) .False
 );
 
 # String find: index of first occurrence of a character, else .None
@@ -139,12 +159,12 @@
     ~neg = ((~Str .slice ~s 0 1) == "-");
     ~start = (~if (~neg) 1 0);
     ~if (~start >= ~len) .None (
-  ~loop ~i ~acc = (~if (~i >= ~len) ( ~true , ~acc ) (
+  ~loop ~i ~acc = (~if (~i >= ~len) ( .True , ~acc ) (
         ((\(.Some ~c) -> (~if ((~Char .is_digit ~c)) (
             ~d = ((~Unicode .to_int ~c) - (~Unicode .to_int '0'));
             ~loop (~i + 1) ((~acc * 10) + ~d)
-          ) ( ~false , ~acc )))
-         | (\.None -> ( ~false , ~acc )))
+          ) ( .False , ~acc )))
+         | (\.None -> ( .False , ~acc )))
         ((~Str .char_at ~s ~i))
       ));
       ~res = (~loop ~start 0);

@@ -20,12 +20,8 @@ version = 2
 allow = [
   "Apache-2.0",
   "MIT",
-  "BSD-3-Clause",
   "BSD-2-Clause",
-  "Unicode-DFS-2016",
   "Unicode-3.0",   # required by unicode-ident via chumsky
-  "ISC",
-  "Zlib",
 ]
 confidence-threshold = 0.8   # still supported
 

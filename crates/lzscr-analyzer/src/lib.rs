@@ -42,33 +42,29 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                 h.write_u8(7);
                 h.write_i32(*c);
             }
-            Bool(b) => {
-                h.write_u8(8);
-                h.write_u8(*b as u8);
-            }
             TypeBind { pat, .. } => {
-                h.write_u8(9);
+                h.write_u8(8);
                 hash_pattern_shape(pat, h);
             }
             Var(_) => {
-                h.write_u8(10);
+                h.write_u8(9);
             }
             Tuple(xs) => {
-                h.write_u8(11);
+                h.write_u8(10);
                 h.write_usize(xs.len());
                 for x in xs {
                     hash_pattern_shape(x, h);
                 }
             }
             List(xs) => {
-                h.write_u8(12);
+                h.write_u8(11);
                 h.write_usize(xs.len());
                 for x in xs {
                     hash_pattern_shape(x, h);
                 }
             }
             Record(fs) => {
-                h.write_u8(13);
+                h.write_u8(12);
                 h.write_usize(fs.len());
                 for (k, v) in fs {
                     h.write(k.as_bytes());
@@ -76,7 +72,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                 }
             }
             Ctor { name, args } => {
-                h.write_u8(14);
+                h.write_u8(13);
                 h.write(name.as_bytes());
                 h.write_usize(args.len());
                 for a in args {
@@ -84,12 +80,12 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                 }
             }
             Cons(hd, tl) => {
-                h.write_u8(15);
+                h.write_u8(14);
                 hash_pattern_shape(hd, h);
                 hash_pattern_shape(tl, h);
             }
             As(a, b) => {
-                h.write_u8(16);
+                h.write_u8(15);
                 hash_pattern_shape(a, h);
                 hash_pattern_shape(b, h);
             }
@@ -184,6 +180,14 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                     }
                     go(body, h, sz);
                 }
+                Record(fs) => {
+                    h.write_u8(19);
+                    h.write_usize(fs.len());
+                    for (k, v) in fs {
+                        h.write(k.as_bytes());
+                        go(v, h, sz);
+                    }
+                }
             }
         }
         go(e, &mut hasher, size_out);
@@ -212,6 +216,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                 format!("letg[{};{}]", bindings.len(), body.span.len)
             }
             List(xs) => format!("list({})", xs.len()),
+            Record(fs) => format!("rec({})", fs.len()),
         }
     }
 
@@ -270,6 +275,11 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             ExprKind::List(xs) => {
                 for x in xs {
                     collect(x, opt, map);
+                }
+            }
+            ExprKind::Record(fs) => {
+                for (_k, v) in fs {
+                    collect(v, opt, map);
                 }
             }
             ExprKind::LetGroup { bindings, body, .. } => {
@@ -445,6 +455,11 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                     walk(x, scopes, allow, out);
                 }
             }
+            ExprKind::Record(fs) => {
+                for (_k, v) in fs {
+                    walk(v, scopes, allow, out);
+                }
+            }
             ExprKind::LetGroup { bindings, body, .. } => {
                 // Create one scope for the whole let-group (all binding names visible)
                 fn binds(p: &Pattern, acc: &mut HashSet<String>) {
@@ -455,8 +470,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                         | PatternKind::Int(_)
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
-                        | PatternKind::Char(_)
-                        | PatternKind::Bool(_) => {}
+                        | PatternKind::Char(_) => {}
                         PatternKind::TypeBind { pat, .. } => {
                             binds(pat, acc);
                         }
@@ -536,8 +550,7 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                         | PatternKind::Int(_)
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
-                        | PatternKind::Char(_)
-                        | PatternKind::Bool(_) => {}
+                        | PatternKind::Char(_) => {}
                         PatternKind::TypeBind { pat, .. } => {
                             binds(pat, acc);
                         }
@@ -605,8 +618,7 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                         | PatternKind::Int(_)
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
-                        | PatternKind::Char(_)
-                        | PatternKind::Bool(_) => {}
+                        | PatternKind::Char(_) => {}
                         PatternKind::TypeBind { pat, .. } => {
                             pat_idents(pat, out);
                         }
@@ -671,8 +683,7 @@ pub fn analyze_shadowing(expr: &Expr) -> Vec<Shadowing> {
                         | PatternKind::Int(_)
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
-                        | PatternKind::Char(_)
-                        | PatternKind::Bool(_) => {}
+                        | PatternKind::Char(_) => {}
                         PatternKind::TypeBind { pat, .. } => {
                             pat_idents(pat, outn);
                         }
@@ -759,6 +770,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             }
             ExprKind::Apply { func, arg } => used_in(func, target) || used_in(arg, target),
             ExprKind::List(xs) => xs.iter().any(|x| used_in(x, target)),
+            ExprKind::Record(fs) => fs.iter().any(|(_k, v)| used_in(v, target)),
             ExprKind::Raise(inner) => used_in(inner, target),
             ExprKind::OrElse { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::AltLambda { left, right } => used_in(left, target) || used_in(right, target),
@@ -777,8 +789,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             | PatternKind::Int(_)
             | PatternKind::Float(_)
             | PatternKind::Str(_)
-            | PatternKind::Char(_)
-            | PatternKind::Bool(_) => false,
+            | PatternKind::Char(_) => false,
             PatternKind::TypeBind { pat, .. } => binds_param(pat, name),
             PatternKind::Var(n) => n == name,
             PatternKind::Tuple(xs) => xs.iter().any(|x| binds_param(x, name)),
@@ -801,8 +812,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
                         | PatternKind::Int(_)
                         | PatternKind::Float(_)
                         | PatternKind::Str(_)
-                        | PatternKind::Char(_)
-                        | PatternKind::Bool(_) => {}
+                        | PatternKind::Char(_) => {}
                         PatternKind::TypeBind { pat, .. } => {
                             collect(pat, outn);
                         }
@@ -854,6 +864,11 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             ExprKind::List(xs) => {
                 for x in xs {
                     walk(x, out);
+                }
+            }
+            ExprKind::Record(fs) => {
+                for (_k, v) in fs {
+                    walk(v, out);
                 }
             }
             ExprKind::Raise(inner) => walk(inner, out),
@@ -911,6 +926,7 @@ pub fn analyze_unused_let_bindings(expr: &Expr) -> Vec<UnusedLet> {
             | ExprKind::Catch { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::Block(inner) => used_in(inner, target),
             ExprKind::List(xs) => xs.iter().any(|x| used_in(x, target)),
+            ExprKind::Record(fs) => fs.iter().any(|(_k, v)| used_in(v, target)),
             ExprKind::LetGroup { bindings, body, .. } => {
                 let in_body = used_in(body, target);
                 let in_bindings = bindings.iter().any(|(_p, ex)| used_in(ex, target));
@@ -990,6 +1006,11 @@ pub fn analyze_unused_let_bindings(expr: &Expr) -> Vec<UnusedLet> {
             ExprKind::List(xs) => {
                 for x in xs {
                     walk(x, out);
+                }
+            }
+            ExprKind::Record(fs) => {
+                for (_k, v) in fs {
+                    walk(v, out);
                 }
             }
             ExprKind::Raise(inner) => walk(inner, out),
@@ -1075,6 +1096,11 @@ pub fn analyze_let_collisions(expr: &Expr) -> Vec<LetCollision> {
             ExprKind::List(xs) => {
                 for x in xs {
                     walk(x, out);
+                }
+            }
+            ExprKind::Record(fs) => {
+                for (_k, v) in fs {
+                    walk(v, out);
                 }
             }
             ExprKind::Raise(inner) => walk(inner, out),

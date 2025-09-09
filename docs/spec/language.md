@@ -143,7 +143,7 @@ Note: Always use `~` on pattern variables (write `~x`, not `x`).
 - Pattern binding:
   - On success, binds into pre-allocated slots; on failure, produces a caret-style error that propagates.
 
-- Representative builtins (Bool-like results are represented as `Symbol("True"|"False")`):
+- Representative builtins (Bool results are `Bool` values `.True` / `.False`):
   - `to_str : a -> Str` (rendering)
   - `add/sub/mul/div : Int -> Int -> Int` (divide by zero is an error)
   - `fadd/fsub/fmul/fdiv : Float -> Float -> Float`
@@ -178,7 +178,7 @@ Type hints below are informal (to be aligned with the HM type inference). Bool n
   - `to_str : a -> Str`
   - `add, sub, mul, div : Int -> Int -> Int`
   - `fadd, fsub, fmul, fdiv : Float -> Float -> Float`
-  - `eq, ne, lt, le, gt, ge : t -> t -> Bool-like` (returns `Symbol("True"|"False")`)
+  - `eq, ne, lt, le, gt, ge : t -> t -> Bool`
   - `and, or : Bool-like -> Bool-like -> Bool-like`, `not : Bool-like -> Bool-like`
   - `if : Bool-like -> a -> a -> a`
   - `seq : a -> b -> b`, `chain : m -> (Unit -> k) -> k`, `bind : m -> (x -> k) -> k`
@@ -220,7 +220,7 @@ Type hints below are informal (to be aligned with the HM type inference). Bool n
 
 Notes:
 - Zero-arity constructors must be written as `.Ctor()` (bare `Ctor` is parsed as a variable name; Member-only policy).
-- Provide sugar where `true()` / `false()` expand to `~true` / `~false`.
+// Booleans use `.True` / `.False` constructors directly (legacy sugar removed).
 
 ---
 
@@ -351,8 +351,8 @@ Example:
 6.9 Main builtin types
 
 - `add/sub/mul/div : Int -> Int -> Int`
-- `eq/ne : ∀a. a -> a -> Bool-like` (Symbol("True"|"False"))
-- `lt/le/gt/ge : Int|Float -> Int|Float -> Bool-like` (Symbol("True"|"False"))
+- `eq/ne : ∀a. a -> a -> Bool`
+- `lt/le/gt/ge : Int|Float -> Int|Float -> Bool`
 - `flt/fle/fgt/fge : Float -> Float -> Bool-like`
 - `cons : ∀a. a -> List a -> List a`
 - `to_str : ∀a. a -> Str`

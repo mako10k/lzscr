@@ -379,6 +379,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Apply { func, arg } => 1 + count(func) + count(arg),
                     Block(inner) => 1 + count(inner),
                     List(xs) => 1 + xs.iter().map(count).sum::<usize>(),
+                    Record(fs) => 1 + fs.iter().map(|(_, v)| count(v)).sum::<usize>(),
                     LetGroup { bindings, body, .. } => {
                         1 + count(body) + bindings.iter().map(|(_, ex)| count(ex)).sum::<usize>()
                     }
@@ -644,7 +645,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match e {
                             TypeError::Mismatch { span_offset, span_len, .. }
                             | TypeError::EffectNotAllowed { span_offset, span_len }
-                            | TypeError::UnboundRef { span_offset, span_len, .. } => {
+                            | TypeError::UnboundRef { span_offset, span_len, .. }
+                            | TypeError::MixedAltBranches { span_offset, span_len } => {
                                 eprintln!("type error: {}", e);
                                 let block = src_reg.format_span_block(span_offset, span_len);
                                 eprintln!("{}", block);
@@ -669,7 +671,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             match e {
                                 TypeError::Mismatch { span_offset, span_len, .. }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
-                                | TypeError::UnboundRef { span_offset, span_len, .. } => {
+                                | TypeError::UnboundRef { span_offset, span_len, .. }
+                                | TypeError::MixedAltBranches { span_offset, span_len } => {
                                     eprintln!("type error: {}", e);
                                     let block = src_reg.format_span_block(span_offset, span_len);
                                     eprintln!("{}", block);
@@ -702,7 +705,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             match e {
                                 TypeError::Mismatch { span_offset, span_len, .. }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
-                                | TypeError::UnboundRef { span_offset, span_len, .. } => {
+                                | TypeError::UnboundRef { span_offset, span_len, .. }
+                                | TypeError::MixedAltBranches { span_offset, span_len } => {
                                     eprintln!("type error: {}", e);
                                     let block = src_reg.format_span_block(span_offset, span_len);
                                     eprintln!("{}", block);
@@ -766,7 +770,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Value::Unit => "()".into(),
                 Value::Int(n) => n.to_string(),
                 Value::Float(f) => f.to_string(),
-                Value::Bool(b) => b.to_string(),
                 Value::Str(s) => s.to_string(),
                 Value::Char(c) => char_literal_string(*c),
                 Value::Symbol(id) => env.symbol_name(*id),
@@ -922,6 +925,13 @@ fn expand_requires_in_expr(
                 .map(|x| expand_requires_in_expr(x, search_paths, stack, src_reg))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
+        Record(fs) => Record(
+            fs.iter()
+                .map(|(k, v)| {
+                    Ok((k.clone(), expand_requires_in_expr(v, search_paths, stack, src_reg)?))
+                })
+                .collect::<Result<Vec<_>, String>>()?,
+        ),
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
@@ -979,6 +989,13 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
         Apply { func, arg } => Apply { func: map_box(func), arg: map_box(arg) },
         Block(b) => Block(map_box(b)),
         List(xs) => List(map_list(xs)),
+        Record(fields) => {
+            let mut new = Vec::with_capacity(fields.len());
+            for (k, v) in fields.iter() {
+                new.push((k.clone(), map_expr(v)));
+            }
+            Record(new)
+        }
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
@@ -1018,7 +1035,6 @@ fn rebase_pattern_with_minus(p: &Pattern, add: usize, minus: usize) -> Pattern {
         Float(f) => Float(*f),
         Str(s) => Str(s.clone()),
         Char(c) => Char(*c),
-        Bool(b) => Bool(*b),
         Record(fields) => {
             let mut new = Vec::with_capacity(fields.len());
             for (k, v) in fields.iter() {
@@ -1138,6 +1154,7 @@ fn node_kind_name(k: &ExprKind) -> &'static str {
         ExprKind::Apply { .. } => "Apply",
         ExprKind::Block(_) => "Block",
         ExprKind::List(_) => "List",
+        ExprKind::Record(_) => "Record",
         ExprKind::LetGroup { .. } => "LetGroup",
         ExprKind::Raise(_) => "Raise",
         ExprKind::AltLambda { .. } => "AltLambda",

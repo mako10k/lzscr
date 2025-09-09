@@ -61,7 +61,6 @@ pub mod ast {
         Float(f64),
         Str(String),
         Char(i32),
-        Bool(bool),
         Record(Vec<(String, Pattern)>), // { k: p, ... }
         As(Box<Pattern>, Box<Pattern>), // p1 @ p2
         // List patterns
@@ -91,6 +90,8 @@ pub mod ast {
         Char(i32),
         Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
+        // Record literal: { k1: e1, k2: e2, ... }
+        Record(Vec<(String, Expr)>),
         // Type annotation: %{T} e (identity)
         Annot { ty: TypeExpr, expr: Box<Expr> },
         // First-class type value: %{T}
@@ -156,7 +157,6 @@ pub mod pretty {
                 tmp.push(ch);
                 format!("'{}'", tmp.escape_default())
             }
-            PatternKind::Bool(b) => format!("{}", b),
             PatternKind::Record(fields) => {
                 let inner = fields
                     .iter()
@@ -190,6 +190,14 @@ pub mod pretty {
             }
             ExprKind::Ref(n) => format!("~{n}"),
             ExprKind::Symbol(s) => s.clone(),
+            ExprKind::Record(fields) => {
+                let inner = fields
+                    .iter()
+                    .map(|(k, v)| format!("{k}: {}", print_expr(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{ {inner} }}")
+            }
             ExprKind::Annot { ty, expr } => {
                 format!("%{{{}}} {}", print_type(ty), print_expr(expr))
             }

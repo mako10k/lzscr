@@ -1,10 +1,10 @@
 # stdlib: List extra utilities built atop core prelude (~cons, ~foldl, etc.)
 
 # any : (a -> Bool) -> [a] -> Bool
-~any ~p ~xs = (\[] -> ~false | \( ~h : ~t ) -> (~if (~p ~h) ~true (~any ~p ~t))) ~xs;
+~any ~p ~xs = (\[] -> .False | \( ~h : ~t ) -> (~if (~p ~h) .True (~any ~p ~t))) ~xs;
 
 # all : (a -> Bool) -> [a] -> Bool
-~all ~p ~xs = (\[] -> ~true | \( ~h : ~t ) -> (~if (~p ~h) (~all ~p ~t) ~false)) ~xs;
+~all ~p ~xs = (\[] -> .True | \( ~h : ~t ) -> (~if (~p ~h) (~all ~p ~t) .False)) ~xs;
 
 # sum : [Int] -> Int
 ~sum ~xs = (~foldl (\~acc ~x -> (~acc + ~x)) 0 ~xs);
@@ -39,7 +39,7 @@
 );
 
 # zip : [a] -> [b] -> [(a,b)]
-~zip ~xs ~ys = (~zip_with (\~a ~b -> (. , ~a ~b)) ~xs ~ys);
+~zip ~xs ~ys = (~zip_with (\~a ~b -> (~a, ~b)) ~xs ~ys);
 
 # intersperse : a -> [a] -> [a]
 ~intersperse ~sep ~xs = (

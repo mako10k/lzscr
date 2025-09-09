@@ -98,7 +98,6 @@ pub enum Value {
     Unit,
     Int(i64),
     Float(f64),
-    Bool(bool),
     // Sliceable runtime string (UTF-8 bytes; may contain NUL). Semantics: list of Char(codepoint).
     Str(RtStr),
     // Codepoint character (integer). Conversions with Int via builtins.
@@ -201,14 +200,12 @@ impl Env {
     pub fn with_builtins() -> Self {
         let mut e = Env::new();
 
-        // Inject ~true / ~false as references
-        e.vars.insert("true".into(), Value::Bool(true));
-        e.vars.insert("false".into(), Value::Bool(false));
-        e.declare_ctor_arity(".true", 0);
-        e.declare_ctor_arity(".false", 0);
+        // Bool via constructors .True / .False (no legacy ~true/~false refs)
+        e.declare_ctor_arity(".True", 0);
+        e.declare_ctor_arity(".False", 0);
         // Pre-intern commonly used symbols
-        let _ = e.intern_symbol("True");
-        let _ = e.intern_symbol("False");
+        let _ = e.intern_symbol(".True");
+        let _ = e.intern_symbol(".False");
         let _ = e.intern_symbol(".print");
         let _ = e.intern_symbol(".println");
         let _ = e.intern_symbol(".,");
@@ -220,8 +217,12 @@ impl Env {
                 arity: 1,
                 args: vec![],
                 f: |env, args| match &args[0] {
-                    Value::Symbol(id) if env.symbol_name(*id) == ".true" => Ok(Value::Bool(true)),
-                    Value::Symbol(id) if env.symbol_name(*id) == ".false" => Ok(Value::Bool(false)),
+                    Value::Symbol(id) if env.symbol_name(*id) == ".True" => {
+                        Ok(Value::Ctor { name: ".True".into(), args: vec![] })
+                    }
+                    Value::Symbol(id) if env.symbol_name(*id) == ".False" => {
+                        Ok(Value::Ctor { name: ".False".into(), args: vec![] })
+                    }
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -389,7 +390,7 @@ impl Env {
             },
         );
 
-        // eq : Int|Float|Bool|Str|Unit|Symbol -> same -> Symbol("True"|"False")
+        // eq : Int|Float|Bool|Str|Unit|Symbol -> same -> Bool
         e.vars.insert(
             "eq".into(),
             Value::Native {
@@ -397,78 +398,66 @@ impl Env {
                 args: vec![],
                 f: |env, args| {
                     let res = v_equal(env, &args[0], &args[1]);
-                    Ok(if res { sym_true(env) } else { sym_false(env) })
+                    Ok(if res {
+                        Value::Ctor { name: ".True".into(), args: vec![] }
+                    } else {
+                        Value::Ctor { name: ".False".into(), args: vec![] }
+                    })
                 },
             },
         );
 
-        // lt : Int|Float -> Int|Float -> Symbol("True"|"False")
+        // lt : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "lt".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => {
-                        Ok(if a < b { sym_true(env) } else { sym_false(env) })
-                    }
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(if a < b { sym_true(env) } else { sym_false(env) })
-                    }
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Int(a), Value::Int(b)) => Ok(bool_ctor(a < b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a < b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
         );
 
-        // le : Int|Float -> Int|Float -> Symbol("True"|"False")
+        // le : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "le".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => {
-                        Ok(if a <= b { sym_true(env) } else { sym_false(env) })
-                    }
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(if a <= b { sym_true(env) } else { sym_false(env) })
-                    }
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Int(a), Value::Int(b)) => Ok(bool_ctor(a <= b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a <= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
         );
 
-        // gt : Int|Float -> Int|Float -> Symbol("True"|"False")
+        // gt : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "gt".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => {
-                        Ok(if a > b { sym_true(env) } else { sym_false(env) })
-                    }
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(if a > b { sym_true(env) } else { sym_false(env) })
-                    }
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Int(a), Value::Int(b)) => Ok(bool_ctor(a > b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a > b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
         );
 
-        // ge : Int|Float -> Int|Float -> Symbol("True"|"False")
+        // ge : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "ge".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => {
-                        Ok(if a >= b { sym_true(env) } else { sym_false(env) })
-                    }
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(if a >= b { sym_true(env) } else { sym_false(env) })
-                    }
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Int(a), Value::Int(b)) => Ok(bool_ctor(a >= b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a >= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -482,7 +471,7 @@ impl Env {
                 args: vec![],
                 f: |env, args| {
                     let res = !v_equal(env, &args[0], &args[1]);
-                    Ok(if res { sym_true(env) } else { sym_false(env) })
+                    Ok(bool_ctor(res))
                 },
             },
         );
@@ -493,10 +482,8 @@ impl Env {
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(if a < b { sym_true(env) } else { sym_false(env) })
-                    }
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a < b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -506,10 +493,8 @@ impl Env {
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(if a <= b { sym_true(env) } else { sym_false(env) })
-                    }
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a <= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -519,10 +504,8 @@ impl Env {
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(if a > b { sym_true(env) } else { sym_false(env) })
-                    }
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a > b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -532,10 +515,8 @@ impl Env {
             Value::Native {
                 arity: 2,
                 args: vec![],
-                f: |env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(if a >= b { sym_true(env) } else { sym_false(env) })
-                    }
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (Value::Float(a), Value::Float(b)) => Ok(bool_ctor(a >= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -668,23 +649,18 @@ impl Env {
 
         // char classification namespace
         let mut char_ns: BTreeMap<String, Value> = BTreeMap::new();
-        // helpers to convert bool -> Symbol("True"|"False")
-        fn to_sym_bool(env: &Env, b: bool) -> Value {
-            if b {
-                sym_true(env)
-            } else {
-                sym_false(env)
-            }
+        fn bool_val(b: bool) -> Value {
+            bool_ctor(b)
         }
         char_ns.insert(
             "is_alpha".into(),
             Value::Native {
                 arity: 1,
                 args: vec![],
-                f: |env, args| match &args[0] {
+                f: |_env, args| match &args[0] {
                     Value::Char(c) => {
                         let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
-                        Ok(to_sym_bool(env, ch.is_alphabetic()))
+                        Ok(bool_val(ch.is_alphabetic()))
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -695,10 +671,10 @@ impl Env {
             Value::Native {
                 arity: 1,
                 args: vec![],
-                f: |env, args| match &args[0] {
+                f: |_env, args| match &args[0] {
                     Value::Char(c) => {
                         let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
-                        Ok(to_sym_bool(env, ch.is_ascii_digit()))
+                        Ok(bool_val(ch.is_ascii_digit()))
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -709,10 +685,10 @@ impl Env {
             Value::Native {
                 arity: 1,
                 args: vec![],
-                f: |env, args| match &args[0] {
+                f: |_env, args| match &args[0] {
                     Value::Char(c) => {
                         let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
-                        Ok(to_sym_bool(env, ch.is_ascii_alphanumeric()))
+                        Ok(bool_val(ch.is_ascii_alphanumeric()))
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -723,10 +699,10 @@ impl Env {
             Value::Native {
                 arity: 1,
                 args: vec![],
-                f: |env, args| match &args[0] {
+                f: |_env, args| match &args[0] {
                     Value::Char(c) => {
                         let ch = char::from_u32(*c as u32).unwrap_or('\u{0}');
-                        Ok(to_sym_bool(env, ch.is_whitespace()))
+                        Ok(bool_val(ch.is_whitespace()))
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -737,10 +713,10 @@ impl Env {
             Value::Native {
                 arity: 3,
                 args: vec![],
-                f: |env, args| match (&args[0], &args[1], &args[2]) {
+                f: |_env, args| match (&args[0], &args[1], &args[2]) {
                     (Value::Char(c), Value::Int(lo), Value::Int(hi)) => {
                         let code = *c as i64;
-                        Ok(to_sym_bool(env, code >= *lo && code <= *hi))
+                        Ok(bool_val(code >= *lo && code <= *hi))
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -788,17 +764,17 @@ impl Env {
                 },
             },
         );
-        // eof : Scan -> Symbol("True"|"False")
+        // eof : Scan -> Bool
         scan_ns.insert(
             "eof".into(),
             Value::Native {
                 arity: 1,
                 args: vec![],
-                f: |env, args| match &args[0] {
+                f: |_env, args| match &args[0] {
                     v if get_scan(v).is_some() => {
                         let (s, i) = get_scan(v).unwrap();
                         let at_end = i >= s.char_count();
-                        Ok(if at_end { sym_true(env) } else { sym_false(env) })
+                        Ok(bool_ctor(at_end))
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -1113,15 +1089,15 @@ impl Env {
         );
         e.declare_ctor_arity("KV", 2);
 
-        // logical ops: and/or/not. Accept Bool or Symbol("True"|"False"). Return Symbol("True"|"False").
+        // logical ops: and/or/not. Accept Bool (or legacy Symbol True/False) and return Bool.
         e.vars.insert(
             "and".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
                 f: |env, args| match (as_bool(env, &args[0])?, as_bool(env, &args[1])?) {
-                    (true, true) => Ok(sym_true(env)),
-                    _ => Ok(sym_false(env)),
+                    (true, true) => Ok(bool_ctor(true)),
+                    _ => Ok(bool_ctor(false)),
                 },
             },
         );
@@ -1131,8 +1107,8 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |env, args| match (as_bool(env, &args[0])?, as_bool(env, &args[1])?) {
-                    (false, false) => Ok(sym_false(env)),
-                    _ => Ok(sym_true(env)),
+                    (false, false) => Ok(bool_ctor(false)),
+                    _ => Ok(bool_ctor(true)),
                 },
             },
         );
@@ -1141,14 +1117,12 @@ impl Env {
             Value::Native {
                 arity: 1,
                 args: vec![],
-                f: |env, args| {
-                    Ok(if as_bool(env, &args[0])? { sym_false(env) } else { sym_true(env) })
-                },
+                f: |env, args| Ok(bool_ctor(!as_bool(env, &args[0])?)),
             },
         );
 
         // if : cond then else
-        // cond: Bool or Symbol("True"|"False")
+        // cond: Bool
         // then/else: either a raw value, a Closure, or a Native with arity=0. Call closures with Unit; return others as-is.
         e.vars.insert(
             "if".into(),
@@ -1194,7 +1168,6 @@ fn to_str_like(env: &Env, v: &Value) -> String {
         Value::Unit => "()".into(),
         Value::Int(n) => n.to_string(),
         Value::Float(f) => f.to_string(),
-        Value::Bool(b) => b.to_string(),
         Value::Str(s) => s.to_string(),
         Value::Char(c) => char_literal_string(*c),
         Value::Symbol(id) => env.symbol_name(*id),
@@ -1243,22 +1216,24 @@ fn char_literal_string(c: i32) -> String {
     format!("'{}'", tmp.escape_default())
 }
 
-fn sym_true(env: &Env) -> Value {
-    Value::Symbol(env.intern_symbol("True"))
-}
-fn sym_false(env: &Env) -> Value {
-    Value::Symbol(env.intern_symbol("False"))
+fn bool_ctor(b: bool) -> Value {
+    if b {
+        Value::Ctor { name: ".True".into(), args: vec![] }
+    } else {
+        Value::Ctor { name: ".False".into(), args: vec![] }
+    }
 }
 
 fn as_bool(env: &Env, v: &Value) -> Result<bool, EvalError> {
     let v = force_value(env, v)?;
     match &v {
-        Value::Bool(b) => Ok(*b),
+        Value::Ctor { name, args } if args.is_empty() && name == ".True" => Ok(true),
+        Value::Ctor { name, args } if args.is_empty() && name == ".False" => Ok(false),
         Value::Symbol(id) => {
             let s = env.symbol_name(*id);
-            if s == "True" {
+            if s == ".True" {
                 Ok(true)
-            } else if s == "False" {
+            } else if s == ".False" {
                 Ok(false)
             } else {
                 Err(EvalError::TypeError)
@@ -1295,10 +1270,6 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
             }
             Value::Float(f) => {
                 print!("{}", f);
-                Ok(Value::Unit)
-            }
-            Value::Bool(b) => {
-                print!("{}", b);
                 Ok(Value::Unit)
             }
             Value::Char(c) => {
@@ -1384,10 +1355,6 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 println!("{}", f);
                 Ok(Value::Unit)
             }
-            Value::Bool(b) => {
-                println!("{}", b);
-                Ok(Value::Unit)
-            }
             Value::Char(c) => {
                 println!("{}", char_literal_string(c));
                 Ok(Value::Unit)
@@ -1456,7 +1423,6 @@ fn v_equal(_env: &Env, a: &Value, b: &Value) -> bool {
         (Value::Unit, Value::Unit) => true,
         (Value::Int(x), Value::Int(y)) => x == y,
         (Value::Float(x), Value::Float(y)) => x == y,
-        (Value::Bool(x), Value::Bool(y)) => x == y,
         (Value::Str(x), Value::Str(y)) => x == y,
         (Value::Char(x), Value::Char(y)) => x == y,
         (Value::Symbol(x), Value::Symbol(y)) => x == y,
@@ -1555,10 +1521,6 @@ fn match_pattern(
         },
         PatternKind::Char(cc) => match &v {
             Value::Char(c2) if *c2 == *cc => Some(HashMap::new()),
-            _ => None,
-        },
-        PatternKind::Bool(b) => match &v {
-            Value::Bool(c) if *c == *b => Some(HashMap::new()),
             _ => None,
         },
         PatternKind::Record(fields) => match &v {
@@ -1796,6 +1758,15 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Str(s) => Ok(Value::Str(env.intern_string(s))),
         ExprKind::Float(f) => Ok(Value::Float(*f)),
         ExprKind::Char(c) => Ok(Value::Char(*c)),
+        ExprKind::Record(fields) => {
+            // Eagerly evaluate field expressions (could later be lazy if desired)
+            let mut map = std::collections::BTreeMap::new();
+            for (k, v) in fields {
+                let val = eval(env, v)?;
+                map.insert(k.clone(), val);
+            }
+            Ok(Value::Record(map))
+        }
         ExprKind::LetGroup { bindings, body, .. } => {
             // Support recursion for non-functions via lazy bindings
             // Use a shared environment so RHS thunks see recursive names.
@@ -1819,8 +1790,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     | PatternKind::Int(_)
                     | PatternKind::Float(_)
                     | PatternKind::Str(_)
-                    | PatternKind::Char(_)
-                    | PatternKind::Bool(_) => {}
+                    | PatternKind::Char(_) => {}
                     PatternKind::TypeBind { pat, .. } => {
                         collect_vars(pat, out);
                     }
@@ -2240,8 +2210,8 @@ mod tests {
         let env = Env::with_builtins();
         let v = eval(&env, &whole).unwrap();
         match v {
-            Value::Symbol(id) => assert_eq!(env.symbol_name(id), "True"),
-            _ => panic!("expected Symbol True"),
+            Value::Ctor { name, .. } if name == ".True" => {}
+            _ => panic!("expected Bool true"),
         }
 
         // Different tag
@@ -2261,8 +2231,8 @@ mod tests {
         let env2 = Env::with_builtins();
         let v = eval(&env2, &whole).unwrap();
         match v {
-            Value::Symbol(id) => assert_eq!(env2.symbol_name(id), "False"),
-            _ => panic!("expected Symbol False"),
+            Value::Ctor { name, .. } if name == ".False" => {}
+            _ => panic!("expected Bool false"),
         }
     }
 
