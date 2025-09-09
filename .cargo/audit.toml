@@ -1,4 +1,6 @@
 # cargo-audit configuration (optional overrides)
 [advisories]
-denylists = []
 ignore = []
+# Optional examples:
+# informational_warnings = ["unmaintained", "yanked"]
+# severity_threshold = "medium"  # low|medium|high|critical
