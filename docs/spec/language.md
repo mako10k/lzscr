@@ -260,20 +260,43 @@ Interpretation rules (conv_typeexpr):
 - `?x` is a shared type variable within the same annotation; `?` introduces a fresh variable each occurrence.
 - `Foo ...` converts to `Ctor<'Foo, Payload>`. With zero args, `Payload = Unit`.
 
-6.4 Type annotations and type values
+6.4 Type annotations and type values (semantics + formatting)
 
 - Type annotation: `%{ Type } expr`
-  - During inference, unify the inferred type of `expr` with `Type`.
-  - At runtime, this is a no-op (annotations don’t affect values).
-- Type value (TypeVal): `%{ Type }`
-  - For now, this is represented as `Str` (human-readable type string). A dedicated type/value is planned in the future.
+  - Parsing: produces `ExprKind::Annot { ty, expr }` (see parser rule: `%{ TypeExpr } [Expr?]`).
+  - Inference: unify(`Type`, inferred(expr)). On failure a type mismatch error is reported at the span of the annotation opening (precise caret block emitted).
+  - Runtime: erased (no change to value) after successful typecheck.
+  - Holes `?x` inside `Type` share a variable within that annotation; anonymous `?` holes are fresh each occurrence.
+  - Pattern binders `%{ %a, ?k } pat` extend the environment so `%a`/`?k` can appear inside nested annotations (see 6.5).
+- Type value (first‑class type literal): `%{ Type }` with no following expression atom.
+  - Parsed as `ExprKind::TypeVal(TypeExpr)`.
+  - Currently evaluates to a printable string representation (pretty mode wrapper `%{...}`), subject to change when a proper “Type” value kind is introduced.
+  - Typical use: debugging, reflective tooling stubs.
+- Disambiguation: lookahead decides whether an expression follows; if the next token begins an expression atom (number, string, list/record/paren, lambda, ref, member, another `%{`) it becomes an annotation; otherwise a type value.
 
-Examples:
+Examples (annotation succeeds / fails):
 
 ```
 %{ List Int } [1,2,3]          # OK
 %{ List ?a } [1,2]             # a resolves to Int
 %{ %a -> %a } (\~x -> ~x)      # annotation for id
+%{ Int } 1                     # OK, annotation then value 1 (prints just 1)
+%{ Int } "s"                  # type mismatch (expected Int vs Str)
+%{ Int }                       # first-class type value (prints %{Int})
+
+List syntax note: both `List Int` (prefix form) and `[Int]` (bracket sugar) are supported in type expressions; docs prefer bracket form in concise examples.
+
+Pretty vs legacy formatting:
+- Internally types are zonked then rendered.
+- Legacy printer (`pp_type`) shows raw `%t0`, `%t1` variable IDs.
+- Pretty printer (`user_pretty_type`) deterministically renames variables to `%a`, `%b`, … and wraps the whole output in `%{ ... }` for visual distinction.
+- CLI flag `--types` selects `pretty|legacy|json` (json wraps the string in `{ "ty": "..." }`).
+  - Debug path: pretty inference + logs; if `legacy` requested, a second inference with `pretty=false` is performed for simplicity.
+  - Non-debug path: single inference; if legacy requested it uses `InferOptions { pretty=false }`.
+
+Error reporting nuances:
+- Annotation failures on `%{Type}` show the caret at the open `%{` (spans originate prelude+user concatenation with offset rebasing; see source registry section in CLI code).
+- SumCtor mismatches (AltLambda unions) produce either constructor arity/tag errors or general mismatch; duplicate tags in an AltLambda chain raise a specific error.
 ```
 
 6.5 Pattern-level type variable binding (TypeBind)
@@ -293,11 +316,20 @@ let %{ %a, ?k } (~f, ~v) = (~id, 1) in ...
 6.6 AltLambda typing (pattern-branching lambdas)
 
 - Syntax: `(\pat1 -> e1) | (\pat2 -> e2) | ...`
-- Rules:
-  - Basic: each branch types as `a -> r` and must unify to the same `a` and `r`.
-  - If any branch uses a constructor pattern, all branches must be constructor patterns (or a final `_`/variable-only catch-all).
-  - The argument type is aggregated as a finite sum `SumCtor([.Foo(α), .Bar(β,γ), ...])`. Duplicate tags or mismatched arities/types are errors.
-  - A default branch (`_`, etc.) does not extend the sum; it accepts the existing sum.
+-- Rules (implemented):
+  - Each branch infers a function type; argument parts unify pairwise, return parts unify pairwise after zonk.
+  - Constructor-only branch sets: if both (or all, right-associative chain) branches use constructor patterns, the argument pattern space is collapsed into a union `SumCtor([.Foo(args...), .Bar(args...), ...])`:
+    * Variants sorted lexicographically.
+    * Single variant collapses back to plain `Ctor`.
+    * Duplicate tag (even with differing arity) → `DuplicateCtorTag` error.
+  - Mixed constructor + non-constructor patterns (excluding a trailing wildcard) → `MixedAltBranches` error (MVP restriction).
+  - Return type union forms only if every branch returns a constructor (or nested union) and no non-constructor type appears; otherwise non-constructor types unify ignoring constructor-only variants (see detailed union spec in `altlambda_union_spec.md`).
+  - Pretty/legacy display of unions: legacy prints `(.A | .B Int | .C(Int, Int))`; pretty wraps and variable-renames `%{ (.A | .B Int | .C(Int, Int)) }`.
+
+Display invariants for `SumCtor`:
+  - Created only with ≥2 variants (defensive collapse on pretty print if a later pass leaves 1).
+  - Variant ordering preserved/sorted; printer re-sorts defensively.
+  - Payload formatting follows constructor arity: `.Tag`, `.Tag T`, `.Tag(T1, T2, ...)`.
 
 Example:
 
