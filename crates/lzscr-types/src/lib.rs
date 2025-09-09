@@ -28,7 +28,11 @@ pub enum Type {
     Ctor { tag: String, payload: Vec<Type> },
     // Named ADT (from % type declarations), e.g., Option a
     Named { name: String, args: Vec<Type> },
-    // Limited union for constructor tags used by AltLambda chains
+    // Limited union for constructor tags used by AltLambda chains.
+    // Invariants (after construction):
+    //  * Variants sorted lexicographically by tag
+    //  * No duplicate tags
+    //  * Only used when there are >= 2 variants (single variant collapses to Ctor form)
     SumCtor(Vec<(String, Vec<Type>)>),
 }
 
@@ -1759,12 +1763,23 @@ fn infer_expr(
             pop_tyvars(ctx, l_pushed);
 
             if !variants.is_empty() {
-                param_ty = Type::SumCtor(variants);
+                if variants.len() == 1 {
+                    let (tag, payload) = variants.pop().unwrap();
+                    param_ty = Type::Ctor { tag, payload };
+                } else {
+                    variants.sort_by(|a, b| a.0.cmp(&b.0));
+                    param_ty = Type::SumCtor(variants);
+                }
             }
             // Determine/Refine return type
             let ret_ty = if !ret_variants.is_empty() && ret_other.is_none() {
-                // All branches returned ctor-like values; build their union
-                Type::SumCtor(ret_variants)
+                if ret_variants.len() == 1 {
+                    let (tag, payload) = ret_variants.pop().unwrap();
+                    Type::Ctor { tag, payload }
+                } else {
+                    ret_variants.sort_by(|a, b| a.0.cmp(&b.0));
+                    Type::SumCtor(ret_variants)
+                }
             } else if let Some(t) = ret_other {
                 // Non-ctor returns unified into t
                 t
@@ -1852,14 +1867,17 @@ fn pp_type(t: &Type) -> String {
             }
         }
         Type::SumCtor(vs) => {
-            let inner = vs
-                .iter()
-                .map(|(t, ps)| {
-                    if ps.is_empty() {
-                        t.clone()
-                    } else {
-                        format!("{} {}", t, ps.iter().map(pp_atom).collect::<Vec<_>>().join(" "))
-                    }
+            let mut vs2 = vs.clone();
+            vs2.sort_by(|a, b| a.0.cmp(&b.0));
+            let inner = vs2
+                .into_iter()
+                .map(|(tag, ps)| match ps.len() {
+                    0 => tag,
+                    1 => format!("{} {}", tag, pp_atom(&ps[0])),
+                    _ => {
+                        let parts: Vec<String> = ps.into_iter().map(|ty| pp_type(&ty)).collect();
+                        format!("{}({})", tag, parts.join(", "))
+                    },
                 })
                 .collect::<Vec<_>>()
                 .join(" | ");
