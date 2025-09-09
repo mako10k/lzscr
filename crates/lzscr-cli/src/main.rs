@@ -645,7 +645,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match e {
                             TypeError::Mismatch { span_offset, span_len, .. }
                             | TypeError::EffectNotAllowed { span_offset, span_len }
-                                | TypeError::UnboundRef { span_offset, span_len, .. }
+                            | TypeError::UnboundRef { span_offset, span_len, .. }
                             | TypeError::MixedAltBranches { span_offset, span_len } => {
                                 eprintln!("type error: {}", e);
                                 let block = src_reg.format_span_block(span_offset, span_len);
@@ -1156,7 +1156,7 @@ fn node_kind_name(k: &ExprKind) -> &'static str {
         ExprKind::Apply { .. } => "Apply",
         ExprKind::Block(_) => "Block",
         ExprKind::List(_) => "List",
-    ExprKind::Record(_) => "Record",
+        ExprKind::Record(_) => "Record",
         ExprKind::LetGroup { .. } => "LetGroup",
         ExprKind::Raise(_) => "Raise",
         ExprKind::AltLambda { .. } => "AltLambda",

@@ -1481,21 +1481,40 @@ fn infer_expr(
             collect(left, &mut branches);
             collect(right, &mut branches);
             if branches.len() < 2 {
-                return Err(TypeError::MixedAltBranches { span_offset: left.span.offset, span_len: right.span.offset + right.span.len - left.span.offset });
+                return Err(TypeError::MixedAltBranches {
+                    span_offset: left.span.offset,
+                    span_len: right.span.offset + right.span.len - left.span.offset,
+                });
             }
 
             // Extract (pattern, body) per branch ensuring each is a Lambda
-            struct Br<'a> { pat: &'a Pattern, body: &'a Expr, span: Span }
+            struct Br<'a> {
+                pat: &'a Pattern,
+                body: &'a Expr,
+                span: Span,
+            }
             let mut raw: Vec<Br> = vec![];
             for b in &branches {
                 match &b.kind {
-                    ExprKind::Lambda { param, body } => raw.push(Br { pat: param, body, span: b.span }),
-                    _ => return Err(TypeError::MixedAltBranches { span_offset: b.span.offset, span_len: b.span.len }),
+                    ExprKind::Lambda { param, body } => {
+                        raw.push(Br { pat: param, body, span: b.span })
+                    }
+                    _ => {
+                        return Err(TypeError::MixedAltBranches {
+                            span_offset: b.span.offset,
+                            span_len: b.span.len,
+                        })
+                    }
                 }
             }
 
             // Peel type binders per branch (store pushed count to pop later)
-            struct Peeled<'a> { core: &'a Pattern, pushed: usize, body: &'a Expr, span: Span }
+            struct Peeled<'a> {
+                core: &'a Pattern,
+                pushed: usize,
+                body: &'a Expr,
+                span: Span,
+            }
             let mut branches_p: Vec<Peeled> = vec![];
             for br in raw {
                 let (core, pushed) = push_tyvars_from_pattern(ctx, br.pat);
@@ -1521,14 +1540,18 @@ fn infer_expr(
                 let last = branches_p.last().unwrap();
                 let span_len = (last.span.offset + last.span.len).saturating_sub(span_offset);
                 // Pop pushed tyvars before returning
-                for br in branches_p.into_iter().rev() { pop_tyvars(ctx, br.pushed); }
+                for br in branches_p.into_iter().rev() {
+                    pop_tyvars(ctx, br.pushed);
+                }
                 return Err(TypeError::MixedAltBranches { span_offset, span_len });
             }
             if let Some(wpos) = wildcard_pos {
                 if wpos != branches_p.len() - 1 {
                     let span_offset = branches_p[wpos].span.offset;
                     let span_len = branches_p[wpos].span.len;
-                    for br in branches_p.into_iter().rev() { pop_tyvars(ctx, br.pushed); }
+                    for br in branches_p.into_iter().rev() {
+                        pop_tyvars(ctx, br.pushed);
+                    }
                     return Err(TypeError::MixedAltBranches { span_offset, span_len });
                 }
             }
@@ -1545,14 +1568,24 @@ fn infer_expr(
             let mut ret_variants: Vec<(String, Vec<Type>)> = vec![];
             let mut ret_seen = HashSet::<String>::new();
             let mut ret_other: Option<Type> = None;
-            fn merge_ret(acc: &mut Vec<(String, Vec<Type>)>, seen: &mut HashSet<String>, t: &Type) -> bool {
+            fn merge_ret(
+                acc: &mut Vec<(String, Vec<Type>)>,
+                seen: &mut HashSet<String>,
+                t: &Type,
+            ) -> bool {
                 match t {
                     Type::Ctor { tag, payload } => {
-                        if seen.insert(tag.clone()) { acc.push((tag.clone(), payload.clone())); }
+                        if seen.insert(tag.clone()) {
+                            acc.push((tag.clone(), payload.clone()));
+                        }
                         true
                     }
                     Type::SumCtor(vs) => {
-                        for (tg, ps) in vs { if seen.insert(tg.clone()) { acc.push((tg.clone(), ps.clone())); } }
+                        for (tg, ps) in vs {
+                            if seen.insert(tg.clone()) {
+                                acc.push((tg.clone(), ps.clone()));
+                            }
+                        }
                         true
                     }
                     _ => false,
@@ -1567,7 +1600,9 @@ fn infer_expr(
                     PatternKind::Wildcard => {
                         let pi = infer_pattern(ctx, core, &param_ty.apply(&s_all))?;
                         let mut env2 = ctx.env.clone();
-                        for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
+                        for (n, t) in &pi.bindings {
+                            env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
+                        }
                         let prev = std::mem::replace(&mut ctx.env, env2);
                         let (tb, sb) = infer_expr(ctx, body, allow_effects)?;
                         ctx.env = prev;
@@ -1576,53 +1611,81 @@ fn infer_expr(
                         if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
                             match &mut ret_other {
                                 None => ret_other = Some(tbf_applied),
-                                Some(existing) => { let s1 = unify(&existing.clone(), &tbf_applied)?; *existing = existing.apply(&s1); s_all = s1.compose(s_all); }
+                                Some(existing) => {
+                                    let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                    *existing = existing.apply(&s1);
+                                    s_all = s1.compose(s_all);
+                                }
                             }
                         }
                         s_all = sb.compose(pi.subst).compose(s_all);
                         param_ty = param_ty.apply(&s_all);
                         // Wildcard must be last (already checked); remaining branches won't exist
-                        if idx != branches_p.len() - 1 { unreachable!(); }
+                        if idx != branches_p.len() - 1 {
+                            unreachable!();
+                        }
                     }
                     PatternKind::Ctor { name, args } => {
                         // Reuse or create payload vector
-                        let payload = if let Some(v) = ctor_payloads.get(name) { v.clone() } else {
+                        let payload = if let Some(v) = ctor_payloads.get(name) {
+                            v.clone()
+                        } else {
                             let v: Vec<Type> = (0..args.len()).map(|_| ctx.tv.fresh()).collect();
                             ctor_payloads.insert(name.clone(), v.clone());
                             v
                         };
                         if payload.len() != args.len() {
-                            // Arity mismatch: treat as MixedAltBranches (no dedicated variant yet)
-                            return Err(TypeError::MixedAltBranches { span_offset: core.span.offset, span_len: core.span.len });
+                            // Same tag seen before with different arity -> treat as duplicate tag error
+                            return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
                         }
                         let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
                         let pi = infer_pattern(ctx, core, &scr.apply(&s_all))?;
                         let mut env2 = ctx.env.clone();
-                        for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
+                        for (n, t) in &pi.bindings {
+                            env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
+                        }
                         let prev = std::mem::replace(&mut ctx.env, env2);
                         let (tb, sb) = infer_expr(ctx, body, allow_effects)?;
                         ctx.env = prev;
                         let tb_final = tb.apply(&sb).apply(&pi.subst);
                         let tbf_applied = tb_final.clone();
                         if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                            match &mut ret_other { None => ret_other = Some(tbf_applied), Some(existing) => { let s1 = unify(&existing.clone(), &tbf_applied)?; *existing = existing.apply(&s1); s_all = s1.compose(s_all); } }
+                            match &mut ret_other {
+                                None => ret_other = Some(tbf_applied),
+                                Some(existing) => {
+                                    let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                    *existing = existing.apply(&s1);
+                                    s_all = s1.compose(s_all);
+                                }
+                            }
                         }
                         s_all = sb.compose(pi.subst).compose(s_all);
                     }
                     PatternKind::Symbol(name) => {
-                        let payload = ctor_payloads.entry(name.clone()).or_insert_with(|| vec![]).clone();
-                        if !payload.is_empty() { return Err(TypeError::DuplicateCtorTag { tag: name.clone() }); }
+                        let payload = ctor_payloads.entry(name.clone()).or_default().clone();
+                        if !payload.is_empty() {
+                            return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
+                        }
                         let scr = Type::Ctor { tag: name.clone(), payload }; // zero-arg
                         let pi = infer_pattern(ctx, core, &scr.apply(&s_all))?;
                         let mut env2 = ctx.env.clone();
-                        for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
+                        for (n, t) in &pi.bindings {
+                            env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
+                        }
                         let prev = std::mem::replace(&mut ctx.env, env2);
                         let (tb, sb) = infer_expr(ctx, body, allow_effects)?;
                         ctx.env = prev;
                         let tb_final = tb.apply(&sb).apply(&pi.subst);
                         let tbf_applied = tb_final.clone();
                         if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                            match &mut ret_other { None => ret_other = Some(tbf_applied), Some(existing) => { let s1 = unify(&existing.clone(), &tbf_applied)?; *existing = existing.apply(&s1); s_all = s1.compose(s_all); } }
+                            match &mut ret_other {
+                                None => ret_other = Some(tbf_applied),
+                                Some(existing) => {
+                                    let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                    *existing = existing.apply(&s1);
+                                    s_all = s1.compose(s_all);
+                                }
+                            }
                         }
                         s_all = sb.compose(pi.subst).compose(s_all);
                     }
@@ -1630,14 +1693,23 @@ fn infer_expr(
                     _ => {
                         let pi = infer_pattern(ctx, core, &param_ty.apply(&s_all))?;
                         let mut env2 = ctx.env.clone();
-                        for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
+                        for (n, t) in &pi.bindings {
+                            env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
+                        }
                         let prev = std::mem::replace(&mut ctx.env, env2);
                         let (tb, sb) = infer_expr(ctx, body, allow_effects)?;
                         ctx.env = prev;
                         let tb_final = tb.apply(&sb).apply(&pi.subst);
                         let tbf_applied = tb_final.clone();
                         if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                            match &mut ret_other { None => ret_other = Some(tbf_applied), Some(existing) => { let s1 = unify(&existing.clone(), &tbf_applied)?; *existing = existing.apply(&s1); s_all = s1.compose(s_all); } }
+                            match &mut ret_other {
+                                None => ret_other = Some(tbf_applied),
+                                Some(existing) => {
+                                    let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                    *existing = existing.apply(&s1);
+                                    s_all = s1.compose(s_all);
+                                }
+                            }
                         }
                         s_all = sb.compose(pi.subst).compose(s_all);
                         param_ty = param_ty.apply(&s_all);
@@ -1646,7 +1718,9 @@ fn infer_expr(
             }
 
             // Pop type variable frames pushed per branch (reverse order)
-            for br in branches_p.iter().rev() { pop_tyvars(ctx, br.pushed); }
+            for br in branches_p.iter().rev() {
+                pop_tyvars(ctx, br.pushed);
+            }
 
             // Finalize parameter type if ctor branches present
             if !ctor_payloads.is_empty() {
@@ -1661,8 +1735,18 @@ fn infer_expr(
 
             // Finalize return type
             let ret_ty = if !ret_variants.is_empty() && ret_other.is_none() {
-                if ret_variants.len() == 1 { let (tag, payload) = ret_variants.pop().unwrap(); Type::Ctor { tag, payload } } else { ret_variants.sort_by(|a,b| a.0.cmp(&b.0)); Type::SumCtor(ret_variants) }
-            } else if let Some(t) = ret_other { t } else { ctx.tv.fresh() };
+                if ret_variants.len() == 1 {
+                    let (tag, payload) = ret_variants.pop().unwrap();
+                    Type::Ctor { tag, payload }
+                } else {
+                    ret_variants.sort_by(|a, b| a.0.cmp(&b.0));
+                    Type::SumCtor(ret_variants)
+                }
+            } else if let Some(t) = ret_other {
+                t
+            } else {
+                ctx.tv.fresh()
+            };
 
             Ok((Type::fun(param_ty.apply(&s_all), ret_ty.apply(&s_all)), s_all))
         }

@@ -201,12 +201,12 @@ impl Env {
     pub fn with_builtins() -> Self {
         let mut e = Env::new();
 
-    // Bool via constructors .True / .False (no legacy ~true/~false refs)
-    e.declare_ctor_arity(".True", 0);
-    e.declare_ctor_arity(".False", 0);
-    // Pre-intern commonly used symbols
-    let _ = e.intern_symbol(".True");
-    let _ = e.intern_symbol(".False");
+        // Bool via constructors .True / .False (no legacy ~true/~false refs)
+        e.declare_ctor_arity(".True", 0);
+        e.declare_ctor_arity(".False", 0);
+        // Pre-intern commonly used symbols
+        let _ = e.intern_symbol(".True");
+        let _ = e.intern_symbol(".False");
         let _ = e.intern_symbol(".print");
         let _ = e.intern_symbol(".println");
         let _ = e.intern_symbol(".,");
@@ -387,7 +387,7 @@ impl Env {
             },
         );
 
-    // eq : Int|Float|Bool|Str|Unit|Symbol -> same -> Bool
+        // eq : Int|Float|Bool|Str|Unit|Symbol -> same -> Bool
         e.vars.insert(
             "eq".into(),
             Value::Native {
@@ -400,73 +400,57 @@ impl Env {
             },
         );
 
-    // lt : Int|Float -> Int|Float -> Bool
+        // lt : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "lt".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => {
-                        Ok(Value::Bool(a < b))
-                    }
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(Value::Bool(a < b))
-                    }
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a < b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
         );
 
-    // le : Int|Float -> Int|Float -> Bool
+        // le : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "le".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => {
-                        Ok(Value::Bool(a <= b))
-                    }
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(Value::Bool(a <= b))
-                    }
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a <= b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
         );
 
-    // gt : Int|Float -> Int|Float -> Bool
+        // gt : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "gt".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => {
-                        Ok(Value::Bool(a > b))
-                    }
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(Value::Bool(a > b))
-                    }
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a > b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
         );
 
-    // ge : Int|Float -> Int|Float -> Bool
+        // ge : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "ge".into(),
             Value::Native {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Int(a), Value::Int(b)) => {
-                        Ok(Value::Bool(a >= b))
-                    }
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(Value::Bool(a >= b))
-                    }
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a >= b)),
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -492,9 +476,7 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(Value::Bool(a < b))
-                    }
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -505,9 +487,7 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(Value::Bool(a <= b))
-                    }
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -518,9 +498,7 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(Value::Bool(a > b))
-                    }
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -531,9 +509,7 @@ impl Env {
                 arity: 2,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1]) {
-                    (Value::Float(a), Value::Float(b)) => {
-                        Ok(Value::Bool(a >= b))
-                    }
+                    (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -664,9 +640,11 @@ impl Env {
             }
         }
 
-    // char classification namespace
-    let mut char_ns: BTreeMap<String, Value> = BTreeMap::new();
-    fn bool_val(b: bool) -> Value { Value::Bool(b) }
+        // char classification namespace
+        let mut char_ns: BTreeMap<String, Value> = BTreeMap::new();
+        fn bool_val(b: bool) -> Value {
+            Value::Bool(b)
+        }
         char_ns.insert(
             "is_alpha".into(),
             Value::Native {
@@ -779,17 +757,17 @@ impl Env {
                 },
             },
         );
-    // eof : Scan -> Bool
+        // eof : Scan -> Bool
         scan_ns.insert(
             "eof".into(),
             Value::Native {
                 arity: 1,
                 args: vec![],
-        f: |_env, args| match &args[0] {
+                f: |_env, args| match &args[0] {
                     v if get_scan(v).is_some() => {
                         let (s, i) = get_scan(v).unwrap();
                         let at_end = i >= s.char_count();
-            Ok(Value::Bool(at_end))
+                        Ok(Value::Bool(at_end))
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -1104,7 +1082,7 @@ impl Env {
         );
         e.declare_ctor_arity("KV", 2);
 
-    // logical ops: and/or/not. Accept Bool (or legacy Symbol True/False) and return Bool.
+        // logical ops: and/or/not. Accept Bool (or legacy Symbol True/False) and return Bool.
         e.vars.insert(
             "and".into(),
             Value::Native {
@@ -1137,7 +1115,7 @@ impl Env {
         );
 
         // if : cond then else
-    // cond: Bool
+        // cond: Bool
         // then/else: either a raw value, a Closure, or a Native with arity=0. Call closures with Unit; return others as-is.
         e.vars.insert(
             "if".into(),

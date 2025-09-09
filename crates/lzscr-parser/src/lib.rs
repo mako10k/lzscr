@@ -37,9 +37,12 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     }
 
     // Pattern parsing -----------------------------------------------------
-    fn parse_pat_atom<'a>(i: &mut usize, toks: &'a [lzscr_lexer::Lexed<'a>]) -> Result<Pattern, ParseError> {
-        let t = bump(i, toks)
-            .ok_or_else(|| ParseError::Generic("unexpected EOF in pattern".into()))?;
+    fn parse_pat_atom<'a>(
+        i: &mut usize,
+        toks: &'a [lzscr_lexer::Lexed<'a>],
+    ) -> Result<Pattern, ParseError> {
+        let t =
+            bump(i, toks).ok_or_else(|| ParseError::Generic("unexpected EOF in pattern".into()))?;
         let pat = match &t.tok {
             Tok::TypeOpen => {
                 let start_off = t.span.offset;
@@ -51,21 +54,41 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             break;
                         }
                     } else {
-                        return Err(ParseError::WithSpan { msg: "} expected to close %{ in pattern".into(), span_offset: t.span.offset, span_len: t.span.len });
+                        return Err(ParseError::WithSpan {
+                            msg: "} expected to close %{ in pattern".into(),
+                            span_offset: t.span.offset,
+                            span_len: t.span.len,
+                        });
                     }
-                    let tv = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: "expected %a in %{ ... } pattern binder".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                    let tv = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
+                        msg: "expected %a in %{ ... } pattern binder".into(),
+                        span_offset: t.span.offset,
+                        span_len: t.span.len,
+                    })?;
                     match &tv.tok {
                         Tok::TyVar(name) => tvars.push(name.clone()),
                         _ => {
-                            return Err(ParseError::WithSpan { msg: "expected %a in %{ ... } pattern binder".into(), span_offset: tv.span.offset, span_len: tv.span.len });
+                            return Err(ParseError::WithSpan {
+                                msg: "expected %a in %{ ... } pattern binder".into(),
+                                span_offset: tv.span.offset,
+                                span_len: tv.span.len,
+                            });
                         }
                     }
-                    let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: ", or } expected in %{ ... } pattern binder".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                    let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
+                        msg: ", or } expected in %{ ... } pattern binder".into(),
+                        span_offset: t.span.offset,
+                        span_len: t.span.len,
+                    })?;
                     match sep.tok {
                         Tok::Comma => continue,
                         Tok::RBrace => break,
                         _ => {
-                            return Err(ParseError::WithSpan { msg: ", or } expected in %{ ... } pattern binder".into(), span_offset: sep.span.offset, span_len: sep.span.len });
+                            return Err(ParseError::WithSpan {
+                                msg: ", or } expected in %{ ... } pattern binder".into(),
+                                span_offset: sep.span.offset,
+                                span_len: sep.span.len,
+                            });
                         }
                     }
                 }
@@ -77,23 +100,40 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 )
             }
             Tok::Tilde => {
-                let id = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: "expected ident after ~ in pattern".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                let id = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
+                    msg: "expected ident after ~ in pattern".into(),
+                    span_offset: t.span.offset,
+                    span_len: t.span.len,
+                })?;
                 match id.tok {
                     Tok::Ident => Pattern::new(
                         PatternKind::Var(id.text.to_string()),
                         Span::new(t.span.offset, id.span.offset + id.span.len - t.span.offset),
                     ),
-                    _ => return Err(ParseError::WithSpan { msg: "expected ident after ~ in pattern".into(), span_offset: id.span.offset, span_len: id.span.len }),
+                    _ => {
+                        return Err(ParseError::WithSpan {
+                            msg: "expected ident after ~ in pattern".into(),
+                            span_offset: id.span.offset,
+                            span_len: id.span.len,
+                        })
+                    }
                 }
             }
             Tok::LParen => {
                 if let Some(nxt) = peek(*i, toks) {
                     if matches!(nxt.tok, Tok::RParen) {
                         let r = bump(i, toks).unwrap();
-                        return Ok(Pattern::new(PatternKind::Unit, Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset)));
+                        return Ok(Pattern::new(
+                            PatternKind::Unit,
+                            Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset),
+                        ));
                     }
                 } else {
-                    return Err(ParseError::WithSpan { msg: ") expected".into(), span_offset: t.span.offset, span_len: t.span.len });
+                    return Err(ParseError::WithSpan {
+                        msg: ") expected".into(),
+                        span_offset: t.span.offset,
+                        span_len: t.span.len,
+                    });
                 }
                 let first = parse_pattern(i, toks)?;
                 if let Some(n2) = peek(*i, toks) {
@@ -103,82 +143,171 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         loop {
                             let p2 = parse_pattern(i, toks)?;
                             items.push(p2);
-                            let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: ") expected in tuple pattern".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                            let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
+                                msg: ") expected in tuple pattern".into(),
+                                span_offset: t.span.offset,
+                                span_len: t.span.len,
+                            })?;
                             match sep.tok {
                                 Tok::Comma => continue,
                                 Tok::RParen => break,
-                                _ => return Err(ParseError::WithSpan { msg: "expected , or ) in tuple pattern".into(), span_offset: sep.span.offset, span_len: sep.span.len }),
+                                _ => {
+                                    return Err(ParseError::WithSpan {
+                                        msg: "expected , or ) in tuple pattern".into(),
+                                        span_offset: sep.span.offset,
+                                        span_len: sep.span.len,
+                                    })
+                                }
                             }
                         }
-                        let end = toks.get(*i - 1).map(|r| r.span.offset + r.span.len).unwrap_or(t.span.offset + t.span.len);
-                        Pattern::new(PatternKind::Tuple(items), Span::new(t.span.offset, end - t.span.offset))
+                        let end = toks
+                            .get(*i - 1)
+                            .map(|r| r.span.offset + r.span.len)
+                            .unwrap_or(t.span.offset + t.span.len);
+                        Pattern::new(
+                            PatternKind::Tuple(items),
+                            Span::new(t.span.offset, end - t.span.offset),
+                        )
                     } else if matches!(n2.tok, Tok::RParen) {
                         let rp = bump(i, toks).unwrap();
                         let mut p = first;
-                        p.span = Span::new(t.span.offset, rp.span.offset + rp.span.len - t.span.offset);
+                        p.span =
+                            Span::new(t.span.offset, rp.span.offset + rp.span.len - t.span.offset);
                         p
                     } else {
-                        return Err(ParseError::WithSpan { msg: "expected , or ) in tuple/group pattern".into(), span_offset: n2.span.offset, span_len: n2.span.len });
+                        return Err(ParseError::WithSpan {
+                            msg: "expected , or ) in tuple/group pattern".into(),
+                            span_offset: n2.span.offset,
+                            span_len: n2.span.len,
+                        });
                     }
                 } else {
-                    return Err(ParseError::WithSpan { msg: ") expected".into(), span_offset: t.span.offset, span_len: t.span.len });
+                    return Err(ParseError::WithSpan {
+                        msg: ") expected".into(),
+                        span_offset: t.span.offset,
+                        span_len: t.span.len,
+                    });
                 }
             }
             Tok::LBracket => {
                 if let Some(nxt) = peek(*i, toks) {
                     if matches!(nxt.tok, Tok::RBracket) {
                         let r = bump(i, toks).unwrap();
-                        Pattern::new(PatternKind::List(vec![]), Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset))
+                        Pattern::new(
+                            PatternKind::List(vec![]),
+                            Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset),
+                        )
                     } else {
                         let mut items = Vec::new();
                         loop {
                             let p = parse_pattern(i, toks)?;
                             items.push(p);
-                            let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: "] or , expected in list pattern".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                            let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
+                                msg: "] or , expected in list pattern".into(),
+                                span_offset: t.span.offset,
+                                span_len: t.span.len,
+                            })?;
                             match sep.tok {
                                 Tok::Comma => continue,
                                 Tok::RBracket => break,
-                                _ => return Err(ParseError::WithSpan { msg: "expected , or ] in list pattern".into(), span_offset: sep.span.offset, span_len: sep.span.len }),
+                                _ => {
+                                    return Err(ParseError::WithSpan {
+                                        msg: "expected , or ] in list pattern".into(),
+                                        span_offset: sep.span.offset,
+                                        span_len: sep.span.len,
+                                    })
+                                }
                             }
                         }
-                        let end = toks.get(*i - 1).map(|r| r.span.offset + r.span.len).unwrap_or(t.span.offset + t.span.len);
-                        Pattern::new(PatternKind::List(items), Span::new(t.span.offset, end - t.span.offset))
+                        let end = toks
+                            .get(*i - 1)
+                            .map(|r| r.span.offset + r.span.len)
+                            .unwrap_or(t.span.offset + t.span.len);
+                        Pattern::new(
+                            PatternKind::List(items),
+                            Span::new(t.span.offset, end - t.span.offset),
+                        )
                     }
                 } else {
-                    return Err(ParseError::WithSpan { msg: "] expected".into(), span_offset: t.span.offset, span_len: t.span.len });
+                    return Err(ParseError::WithSpan {
+                        msg: "] expected".into(),
+                        span_offset: t.span.offset,
+                        span_len: t.span.len,
+                    });
                 }
             }
             Tok::LBrace => {
                 if let Some(nxt) = peek(*i, toks) {
                     if matches!(nxt.tok, Tok::RBrace) {
                         let r = bump(i, toks).unwrap();
-                        Pattern::new(PatternKind::Record(vec![]), Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset))
+                        Pattern::new(
+                            PatternKind::Record(vec![]),
+                            Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset),
+                        )
                     } else {
                         let mut fields: Vec<(String, Pattern)> = Vec::new();
                         loop {
-                            let k = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: "expected key in record pattern".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                            let k = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
+                                msg: "expected key in record pattern".into(),
+                                span_offset: t.span.offset,
+                                span_len: t.span.len,
+                            })?;
                             let key = match &k.tok {
                                 Tok::Ident => k.text.to_string(),
-                                _ => return Err(ParseError::WithSpan { msg: "expected ident key in record pattern".into(), span_offset: k.span.offset, span_len: k.span.len }),
+                                _ => {
+                                    return Err(ParseError::WithSpan {
+                                        msg: "expected ident key in record pattern".into(),
+                                        span_offset: k.span.offset,
+                                        span_len: k.span.len,
+                                    })
+                                }
                             };
-                            let col = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: ": expected after key in record pattern".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                            let col = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
+                                msg: ": expected after key in record pattern".into(),
+                                span_offset: t.span.offset,
+                                span_len: t.span.len,
+                            })?;
                             if !matches!(col.tok, Tok::Colon) {
-                                return Err(ParseError::WithSpan { msg: ": expected after key in record pattern".into(), span_offset: col.span.offset, span_len: col.span.len });
+                                return Err(ParseError::WithSpan {
+                                    msg: ": expected after key in record pattern".into(),
+                                    span_offset: col.span.offset,
+                                    span_len: col.span.len,
+                                });
                             }
                             let p = parse_pattern(i, toks)?;
                             fields.push((key, p));
-                            let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: ", or } expected in record pattern".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                            let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
+                                msg: ", or } expected in record pattern".into(),
+                                span_offset: t.span.offset,
+                                span_len: t.span.len,
+                            })?;
                             match sep.tok {
                                 Tok::Comma => continue,
                                 Tok::RBrace => break,
-                                _ => return Err(ParseError::WithSpan { msg: "expected , or } in record pattern".into(), span_offset: sep.span.offset, span_len: sep.span.len }),
+                                _ => {
+                                    return Err(ParseError::WithSpan {
+                                        msg: "expected , or } in record pattern".into(),
+                                        span_offset: sep.span.offset,
+                                        span_len: sep.span.len,
+                                    })
+                                }
                             }
                         }
-                        let end = toks.get(*i - 1).map(|r| r.span.offset + r.span.len).unwrap_or(t.span.offset + t.span.len);
-                        Pattern::new(PatternKind::Record(fields), Span::new(t.span.offset, end - t.span.offset))
+                        let end = toks
+                            .get(*i - 1)
+                            .map(|r| r.span.offset + r.span.len)
+                            .unwrap_or(t.span.offset + t.span.len);
+                        Pattern::new(
+                            PatternKind::Record(fields),
+                            Span::new(t.span.offset, end - t.span.offset),
+                        )
                     }
                 } else {
-                    return Err(ParseError::WithSpan { msg: "} expected".into(), span_offset: t.span.offset, span_len: t.span.len });
+                    return Err(ParseError::WithSpan {
+                        msg: "} expected".into(),
+                        span_offset: t.span.offset,
+                        span_len: t.span.len,
+                    });
                 }
             }
             Tok::Int(n) => Pattern::new(PatternKind::Int(*n), t.span),
@@ -189,7 +318,11 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 if t.text == "_" {
                     Pattern::new(PatternKind::Wildcard, t.span)
                 } else {
-                    return Err(ParseError::WithSpan { msg: "invalid bare identifier in pattern".into(), span_offset: t.span.offset, span_len: t.span.len });
+                    return Err(ParseError::WithSpan {
+                        msg: "invalid bare identifier in pattern".into(),
+                        span_offset: t.span.offset,
+                        span_len: t.span.len,
+                    });
                 }
             }
             Tok::Member(m) => {
@@ -199,7 +332,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     let Some(nxt) = toks.get(*i) else { break };
                     match nxt.tok {
                         Tok::Arrow | Tok::RParen | Tok::Comma | Tok::Eq | Tok::Semicolon => break,
-                        Tok::Tilde | Tok::Ident | Tok::Member(_) | Tok::LBracket | Tok::LBrace | Tok::LParen | Tok::Int(_) | Tok::Float(_) | Tok::Str(_) | Tok::Char(_) => {
+                        Tok::Tilde
+                        | Tok::Ident
+                        | Tok::Member(_)
+                        | Tok::LBracket
+                        | Tok::LBrace
+                        | Tok::LParen
+                        | Tok::Int(_)
+                        | Tok::Float(_)
+                        | Tok::Str(_)
+                        | Tok::Char(_) => {
                             let a = parse_pat_atom(i, toks)?;
                             args.push(a);
                         }
@@ -209,11 +351,25 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 if args.is_empty() && (m == ".True" || m == ".False") {
                     Pattern::new(PatternKind::Bool(m == ".True"), h.span)
                 } else {
-                    let end = if args.is_empty() { h.span.offset + h.span.len } else { let last = args.last().unwrap(); last.span.offset + last.span.len };
-                    Pattern::new(PatternKind::Ctor { name: m.clone(), args }, Span::new(h.span.offset, end - h.span.offset))
+                    let end = if args.is_empty() {
+                        h.span.offset + h.span.len
+                    } else {
+                        let last = args.last().unwrap();
+                        last.span.offset + last.span.len
+                    };
+                    Pattern::new(
+                        PatternKind::Ctor { name: m.clone(), args },
+                        Span::new(h.span.offset, end - h.span.offset),
+                    )
                 }
             }
-            _ => return Err(ParseError::WithSpan { msg: "unexpected token in pattern".into(), span_offset: t.span.offset, span_len: t.span.len }),
+            _ => {
+                return Err(ParseError::WithSpan {
+                    msg: "unexpected token in pattern".into(),
+                    span_offset: t.span.offset,
+                    span_len: t.span.len,
+                })
+            }
         };
         Ok(pat)
     }
@@ -1312,7 +1468,7 @@ mod tests {
         let src = "\\{ \"a\": ~x } -> ~x";
         let r = parse_expr(src);
         match r {
-            Err(ParseError::Generic(msg)) => assert!(
+            Err(ParseError::Generic(msg)) | Err(ParseError::WithSpan { msg, .. }) => assert!(
                 msg.contains("expected ident key in record pattern"),
                 "unexpected msg: {}",
                 msg
@@ -1405,7 +1561,7 @@ mod tests {
         let src = "\\[ x ] -> ~x";
         let r = parse_expr(src);
         match r {
-            Err(ParseError::Generic(msg)) => assert!(
+            Err(ParseError::Generic(msg)) | Err(ParseError::WithSpan { msg, .. }) => assert!(
                 msg.contains("invalid bare identifier in pattern")
                     || msg.contains("expected ident after ~ in pattern"),
                 "unexpected msg: {}",
