@@ -65,7 +65,7 @@ impl SourceRegistry {
             len,
         )
     }
-}
+} // end impl SourceRegistry
 
 fn format_span_caret(src: &str, name: &str, offset: usize, len: usize) -> String {
     // Build line starts
@@ -621,8 +621,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
                             );
                         } else if opt.types == "pretty" {
-                            // t は既に %{...} 形式
-                            println!("{}", t);
+                            println!("{}", t); // 既に %{...}
+                        } else if opt.types == "legacy" {
+                            // 再推論 (pretty=false) — オーバーヘッドは小さいので許容
+                            match lzscr_types::api::infer_ast_with_opts(
+                                &ast,
+                                lzscr_types::api::InferOptions { pretty: false },
+                            ) {
+                                Ok(raw) => println!("{}", raw),
+                                Err(e) => {
+                                    eprintln!("type error: {}", e);
+                                    std::process::exit(2);
+                                }
+                            }
                         }
                         for line in logs {
                             eprintln!("[type-debug] {}", line);
@@ -646,38 +657,67 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             } else {
-                match lzscr_types::api::infer_ast(&ast) {
-                    Ok(t) => {
-                        if opt.types == "json" {
-                            #[derive(Serialize)]
-                            struct TypeOut {
-                                ty: String,
+                // 非デバッグ: 選択された表示モードで推論
+                if opt.types == "legacy" {
+                    match lzscr_types::api::infer_ast_with_opts(
+                        &ast,
+                        lzscr_types::api::InferOptions { pretty: false },
+                    ) {
+                        Ok(t) => println!("{}", t),
+                        Err(e) => {
+                            use lzscr_types::TypeError;
+                            match e {
+                                TypeError::Mismatch { span_offset, span_len, .. }
+                                | TypeError::EffectNotAllowed { span_offset, span_len }
+                                | TypeError::UnboundRef { span_offset, span_len, .. } => {
+                                    eprintln!("type error: {}", e);
+                                    let block = src_reg.format_span_block(span_offset, span_len);
+                                    eprintln!("{}", block);
+                                }
+                                other => {
+                                    eprintln!("type error: {}", other);
+                                }
                             }
-                            println!("{}", serde_json::to_string_pretty(&TypeOut { ty: t })?);
-                        } else if opt.types == "pretty" {
-                            // t は既に %{...} 形式
-                            println!("{}", t);
+                            std::process::exit(2);
                         }
                     }
-                    Err(e) => {
-                        use lzscr_types::TypeError;
-                        match e {
-                            TypeError::Mismatch { span_offset, span_len, .. }
-                            | TypeError::EffectNotAllowed { span_offset, span_len }
-                            | TypeError::UnboundRef { span_offset, span_len, .. } => {
-                                eprintln!("type error: {}", e);
-                                let block = src_reg.format_span_block(span_offset, span_len);
-                                eprintln!("{}", block);
-                            }
-                            other => {
-                                eprintln!("type error: {}", other);
+                } else {
+                    match lzscr_types::api::infer_ast(&ast) {
+                        Ok(t) => {
+                            if opt.types == "json" {
+                                #[derive(Serialize)]
+                                struct TypeOut {
+                                    ty: String,
+                                }
+                                println!(
+                                    "{}",
+                                    serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
+                                );
+                            } else if opt.types == "pretty" {
+                                println!("{}", t); // 既に %{...}
                             }
                         }
-                        std::process::exit(2);
+                        Err(e) => {
+                            use lzscr_types::TypeError;
+                            match e {
+                                TypeError::Mismatch { span_offset, span_len, .. }
+                                | TypeError::EffectNotAllowed { span_offset, span_len }
+                                | TypeError::UnboundRef { span_offset, span_len, .. } => {
+                                    eprintln!("type error: {}", e);
+                                    let block = src_reg.format_span_block(span_offset, span_len);
+                                    eprintln!("{}", block);
+                                }
+                                other => {
+                                    eprintln!("type error: {}", other);
+                                }
+                            }
+                            std::process::exit(2);
+                        }
                     }
-                }
-            }
-        }
+                    // end non-debug type inference output handling
+                } // end else (non-debug type inference branch)
+            } // end if opt.type_debug > 0
+        } // end if !opt.no_typecheck
         let mut env = Env::with_builtins();
         if let Some(spec) = &opt.ctor_arity {
             let (parsed, warns) = parse_ctor_arity_spec(spec);
@@ -777,7 +817,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{out}");
         Ok(())
     }
-}
+} // end of main()
 
 // ---------- ~require expansion ----------
 
@@ -1122,3 +1162,5 @@ fn resolve_module_content(
         search_paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(":")
     ))
 }
+
+// EOF

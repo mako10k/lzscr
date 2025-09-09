@@ -2122,6 +2122,12 @@ pub mod api {
     // Prefer this from tools that already have an AST with precise spans (e.g., CLI after ~require expansion).
     #[allow(clippy::result_large_err)]
     pub fn infer_ast(ast: &Expr) -> Result<String, super::TypeError> {
+        infer_ast_with_opts(ast, InferOptions { pretty: true })
+    }
+
+    /// オプション付き AST 推論。`infer_ast` は pretty=true の糖衣。
+    #[allow(clippy::result_large_err)]
+    pub fn infer_ast_with_opts(ast: &Expr, opts: InferOptions) -> Result<String, super::TypeError> {
         let mut ctx = InferCtx {
             tv: TvGen { next: 0 },
             env: prelude_env(),
@@ -2131,9 +2137,12 @@ pub mod api {
             debug: None,
             depth: 0,
         };
-        match infer_expr(&mut ctx, ast, false) {
-            Ok((t, s)) => Ok(user_pretty_type(&t.apply(&s))),
-            Err(e) => Err(e),
+        let (t, s) = infer_expr(&mut ctx, ast, false)?;
+        let zonked = zonk_type(&t.apply(&s), &s);
+        if opts.pretty {
+            Ok(user_pretty_type(&zonked))
+        } else {
+            Ok(pp_type(&zonked))
         }
     }
 
