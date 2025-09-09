@@ -23,7 +23,7 @@ Goal: prepare a standard foundation for string scanning and character classifica
   - `take_while : (Char -> Bool) -> Scan -> (Str, Scan)`
   - `take_while1 : (Char -> Bool) -> Scan -> Option((Str, Scan))`
 
-Returned `Bool` internally uses `Symbol("True"|"False")`, compatible with `Builtins.and/or/not`.
+Returned `Bool` values are the native `.True` / `.False` constructors (no Symbol wrapper).
 
 ## stdlib: `stdlib/lex.lzscr`
 

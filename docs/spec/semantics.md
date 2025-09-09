@@ -18,8 +18,8 @@ Disclaimer: This document describes the current PoC behavior. Items labeled as p
 - Builtins (examples):
   - `to_str : a -> Str`
   - `add, sub : Int -> Int -> Int`
-  - `eq : a -> a -> Symbol("True"|"False")` (supports Int/Float/Bool/Str/Unit/Symbol)
-  - `lt : Int|Float -> Int|Float -> Symbol("True"|"False")`
+  - `eq : a -> a -> Bool` (supports Int/Float/Bool/Str/Unit/Symbol)
+  - `lt : Int|Float -> Int|Float -> Bool`
   - `seq : a -> b -> b` (implemented via ref + special form)
   - `effects .println : Str -> Unit` (only in effect-context)
 Notes:

@@ -70,7 +70,7 @@ Desugaring (to function application):
   - `a .< b` → `(~flt a) b`, `a .<= b` → `(~fle a) b`, `a .> b` → `(~fgt a) b`, `a .>= b` → `(~fge a) b`
   - `a == b` → `(~eq a) b`, `a != b` → `(~ne a) b`
 
-Return value is currently `Symbol("True"|"False")`.
+Return value is a Bool (`.True` | `.False`).
 
 ### Examples
 

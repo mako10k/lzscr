@@ -387,7 +387,7 @@ impl Env {
             },
         );
 
-        // eq : Int|Float|Bool|Str|Unit|Symbol -> same -> Symbol("True"|"False")
+    // eq : Int|Float|Bool|Str|Unit|Symbol -> same -> Bool
         e.vars.insert(
             "eq".into(),
             Value::Native {
@@ -400,7 +400,7 @@ impl Env {
             },
         );
 
-        // lt : Int|Float -> Int|Float -> Symbol("True"|"False")
+    // lt : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "lt".into(),
             Value::Native {
@@ -418,7 +418,7 @@ impl Env {
             },
         );
 
-        // le : Int|Float -> Int|Float -> Symbol("True"|"False")
+    // le : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "le".into(),
             Value::Native {
@@ -436,7 +436,7 @@ impl Env {
             },
         );
 
-        // gt : Int|Float -> Int|Float -> Symbol("True"|"False")
+    // gt : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "gt".into(),
             Value::Native {
@@ -454,7 +454,7 @@ impl Env {
             },
         );
 
-        // ge : Int|Float -> Int|Float -> Symbol("True"|"False")
+    // ge : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "ge".into(),
             Value::Native {
@@ -1137,7 +1137,7 @@ impl Env {
         );
 
         // if : cond then else
-        // cond: Bool or Symbol("True"|"False")
+    // cond: Bool
         // then/else: either a raw value, a Closure, or a Native with arity=0. Call closures with Unit; return others as-is.
         e.vars.insert(
             "if".into(),
@@ -2221,8 +2221,8 @@ mod tests {
         let env = Env::with_builtins();
         let v = eval(&env, &whole).unwrap();
         match v {
-            Value::Symbol(id) => assert_eq!(env.symbol_name(id), "True"),
-            _ => panic!("expected Symbol True"),
+            Value::Bool(b) => assert!(b, "expected Bool true"),
+            _ => panic!("expected Bool true"),
         }
 
         // Different tag
@@ -2242,8 +2242,8 @@ mod tests {
         let env2 = Env::with_builtins();
         let v = eval(&env2, &whole).unwrap();
         match v {
-            Value::Symbol(id) => assert_eq!(env2.symbol_name(id), "False"),
-            _ => panic!("expected Symbol False"),
+            Value::Bool(b) => assert!(!b, "expected Bool false"),
+            _ => panic!("expected Bool false"),
         }
     }
 
