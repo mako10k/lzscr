@@ -1035,7 +1035,6 @@ fn rebase_pattern_with_minus(p: &Pattern, add: usize, minus: usize) -> Pattern {
         Float(f) => Float(*f),
         Str(s) => Str(s.clone()),
         Char(c) => Char(*c),
-        Bool(b) => Bool(*b),
         Record(fields) => {
             let mut new = Vec::with_capacity(fields.len());
             for (k, v) in fields.iter() {

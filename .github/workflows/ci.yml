@@ -128,12 +128,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-      - name: Install cargo-udeps
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-udeps
+      - name: Install cargo-udeps (nightly)
+        run: cargo +nightly install cargo-udeps --locked
       - name: Run cargo udeps
-        run: cargo udeps --all-targets
+        run: cargo +nightly udeps --all-targets --all-features

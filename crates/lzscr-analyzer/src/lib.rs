@@ -42,33 +42,29 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                 h.write_u8(7);
                 h.write_i32(*c);
             }
-            Bool(b) => {
-                h.write_u8(8);
-                h.write_u8(*b as u8);
-            }
             TypeBind { pat, .. } => {
-                h.write_u8(9);
+                h.write_u8(8);
                 hash_pattern_shape(pat, h);
             }
             Var(_) => {
-                h.write_u8(10);
+                h.write_u8(9);
             }
             Tuple(xs) => {
-                h.write_u8(11);
+                h.write_u8(10);
                 h.write_usize(xs.len());
                 for x in xs {
                     hash_pattern_shape(x, h);
                 }
             }
             List(xs) => {
-                h.write_u8(12);
+                h.write_u8(11);
                 h.write_usize(xs.len());
                 for x in xs {
                     hash_pattern_shape(x, h);
                 }
             }
             Record(fs) => {
-                h.write_u8(13);
+                h.write_u8(12);
                 h.write_usize(fs.len());
                 for (k, v) in fs {
                     h.write(k.as_bytes());
@@ -76,7 +72,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                 }
             }
             Ctor { name, args } => {
-                h.write_u8(14);
+                h.write_u8(13);
                 h.write(name.as_bytes());
                 h.write_usize(args.len());
                 for a in args {
@@ -84,12 +80,12 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                 }
             }
             Cons(hd, tl) => {
-                h.write_u8(15);
+                h.write_u8(14);
                 hash_pattern_shape(hd, h);
                 hash_pattern_shape(tl, h);
             }
             As(a, b) => {
-                h.write_u8(16);
+                h.write_u8(15);
                 hash_pattern_shape(a, h);
                 hash_pattern_shape(b, h);
             }
