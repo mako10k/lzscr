@@ -217,8 +217,12 @@ impl Env {
                 arity: 1,
                 args: vec![],
                 f: |env, args| match &args[0] {
-                    Value::Symbol(id) if env.symbol_name(*id) == ".True" => Ok(Value::Ctor { name: ".True".into(), args: vec![] }),
-                    Value::Symbol(id) if env.symbol_name(*id) == ".False" => Ok(Value::Ctor { name: ".False".into(), args: vec![] }),
+                    Value::Symbol(id) if env.symbol_name(*id) == ".True" => {
+                        Ok(Value::Ctor { name: ".True".into(), args: vec![] })
+                    }
+                    Value::Symbol(id) if env.symbol_name(*id) == ".False" => {
+                        Ok(Value::Ctor { name: ".False".into(), args: vec![] })
+                    }
                     _ => Err(EvalError::TypeError),
                 },
             },
@@ -394,7 +398,11 @@ impl Env {
                 args: vec![],
                 f: |env, args| {
                     let res = v_equal(env, &args[0], &args[1]);
-                    Ok(if res { Value::Ctor { name: ".True".into(), args: vec![] } } else { Value::Ctor { name: ".False".into(), args: vec![] } })
+                    Ok(if res {
+                        Value::Ctor { name: ".True".into(), args: vec![] }
+                    } else {
+                        Value::Ctor { name: ".False".into(), args: vec![] }
+                    })
                 },
             },
         );
@@ -641,7 +649,9 @@ impl Env {
 
         // char classification namespace
         let mut char_ns: BTreeMap<String, Value> = BTreeMap::new();
-    fn bool_val(b: bool) -> Value { bool_ctor(b) }
+        fn bool_val(b: bool) -> Value {
+            bool_ctor(b)
+        }
         char_ns.insert(
             "is_alpha".into(),
             Value::Native {
@@ -1157,7 +1167,7 @@ fn to_str_like(env: &Env, v: &Value) -> String {
     match &vv {
         Value::Unit => "()".into(),
         Value::Int(n) => n.to_string(),
-    Value::Float(f) => f.to_string(),
+        Value::Float(f) => f.to_string(),
         Value::Str(s) => s.to_string(),
         Value::Char(c) => char_literal_string(*c),
         Value::Symbol(id) => env.symbol_name(*id),
@@ -1206,7 +1216,13 @@ fn char_literal_string(c: i32) -> String {
     format!("'{}'", tmp.escape_default())
 }
 
-fn bool_ctor(b: bool) -> Value { if b { Value::Ctor { name: ".True".into(), args: vec![] } } else { Value::Ctor { name: ".False".into(), args: vec![] } } }
+fn bool_ctor(b: bool) -> Value {
+    if b {
+        Value::Ctor { name: ".True".into(), args: vec![] }
+    } else {
+        Value::Ctor { name: ".False".into(), args: vec![] }
+    }
+}
 
 fn as_bool(env: &Env, v: &Value) -> Result<bool, EvalError> {
     let v = force_value(env, v)?;
@@ -1215,7 +1231,13 @@ fn as_bool(env: &Env, v: &Value) -> Result<bool, EvalError> {
         Value::Ctor { name, args } if args.is_empty() && name == ".False" => Ok(false),
         Value::Symbol(id) => {
             let s = env.symbol_name(*id);
-            if s == ".True" { Ok(true) } else if s == ".False" { Ok(false) } else { Err(EvalError::TypeError) }
+            if s == ".True" {
+                Ok(true)
+            } else if s == ".False" {
+                Ok(false)
+            } else {
+                Err(EvalError::TypeError)
+            }
         }
         _ => Err(EvalError::TypeError),
     }
@@ -1246,7 +1268,10 @@ fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 print!("{}", n);
                 Ok(Value::Unit)
             }
-            Value::Float(f) => { print!("{}", f); Ok(Value::Unit) }
+            Value::Float(f) => {
+                print!("{}", f);
+                Ok(Value::Unit)
+            }
             Value::Char(c) => {
                 print!("{}", char_literal_string(c));
                 Ok(Value::Unit)
@@ -1326,7 +1351,10 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 println!("{}", n);
                 Ok(Value::Unit)
             }
-            Value::Float(f) => { println!("{}", f); Ok(Value::Unit) }
+            Value::Float(f) => {
+                println!("{}", f);
+                Ok(Value::Unit)
+            }
             Value::Char(c) => {
                 println!("{}", char_literal_string(c));
                 Ok(Value::Unit)
@@ -1394,7 +1422,7 @@ fn v_equal(_env: &Env, a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Unit, Value::Unit) => true,
         (Value::Int(x), Value::Int(y)) => x == y,
-    (Value::Float(x), Value::Float(y)) => x == y,
+        (Value::Float(x), Value::Float(y)) => x == y,
         (Value::Str(x), Value::Str(y)) => x == y,
         (Value::Char(x), Value::Char(y)) => x == y,
         (Value::Symbol(x), Value::Symbol(y)) => x == y,
@@ -2182,7 +2210,7 @@ mod tests {
         let env = Env::with_builtins();
         let v = eval(&env, &whole).unwrap();
         match v {
-            Value::Ctor { name, .. } if name == ".True" => {},
+            Value::Ctor { name, .. } if name == ".True" => {}
             _ => panic!("expected Bool true"),
         }
 
@@ -2203,7 +2231,7 @@ mod tests {
         let env2 = Env::with_builtins();
         let v = eval(&env2, &whole).unwrap();
         match v {
-            Value::Ctor { name, .. } if name == ".False" => {},
+            Value::Ctor { name, .. } if name == ".False" => {}
             _ => panic!("expected Bool false"),
         }
     }

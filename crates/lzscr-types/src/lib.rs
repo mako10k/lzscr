@@ -180,9 +180,7 @@ impl TypesApply for Type {
                     .map(|(n, ps)| (n.clone(), ps.iter().map(|t| t.apply(s)).collect()))
                     .collect(),
             ),
-            t @ (Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char) => {
-                t.clone()
-            }
+            t @ (Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char) => t.clone(),
         }
     }
     fn ftv(&self) -> HashSet<TvId> {
@@ -380,11 +378,11 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
     match (a, b) {
         (Type::Var(x), t) => bind(*x, t.clone()),
         (t, Type::Var(x)) => bind(*x, t.clone()),
-    (Type::Unit, Type::Unit)
-    | (Type::Int, Type::Int)
-    | (Type::Float, Type::Float)
-    | (Type::Str, Type::Str)
-    | (Type::Char, Type::Char) => Ok(Subst::new()),
+        (Type::Unit, Type::Unit)
+        | (Type::Int, Type::Int)
+        | (Type::Float, Type::Float)
+        | (Type::Str, Type::Str)
+        | (Type::Char, Type::Char) => Ok(Subst::new()),
         (Type::Fun(a1, b1), Type::Fun(a2, b2)) => {
             let s1 = unify(a1, a2)?;
             let s2 = unify(&b1.apply(&s1), &b2.apply(&s1))?;
@@ -554,7 +552,7 @@ fn conv_typeexpr_with_subst(
         TypeExpr::Unit => Type::Unit,
         TypeExpr::Int => Type::Int,
         TypeExpr::Float => Type::Float,
-    TypeExpr::Bool => bool_sum_type(),
+        TypeExpr::Bool => bool_sum_type(),
         TypeExpr::Str => Type::Str,
         TypeExpr::Char => Type::Char,
         TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr_with_subst(ctx, t, subst)?)),
@@ -983,7 +981,7 @@ fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
         TypeExpr::Unit => Type::Unit,
         TypeExpr::Int => Type::Int,
         TypeExpr::Float => Type::Float,
-    TypeExpr::Bool => bool_sum_type(),
+        TypeExpr::Bool => bool_sum_type(),
         TypeExpr::Str => Type::Str,
         TypeExpr::Char => Type::Char,
         TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr_fresh(tv, t))),
@@ -1798,10 +1796,10 @@ fn pp_type(t: &Type) -> String {
         format!("%t{id}")
     }
     match t {
-    Type::Unit => "Unit".into(),
-    Type::Int => "Int".into(),
-    Type::Float => "Float".into(),
-    Type::Str => "Str".into(),
+        Type::Unit => "Unit".into(),
+        Type::Int => "Int".into(),
+        Type::Float => "Float".into(),
+        Type::Str => "Str".into(),
         Type::Char => "Char".into(),
         Type::Var(TvId(i)) => rename_var(*i as i64),
         Type::List(a) => format!("[{}]", pp_type(a)),
@@ -2190,13 +2188,22 @@ pub mod api {
         let bool_t = bool_sum_type();
         env.insert(
             "and".into(),
-            Scheme { vars: vec![], ty: Type::fun(bool_t.clone(), Type::fun(bool_t.clone(), bool_t.clone())) },
+            Scheme {
+                vars: vec![],
+                ty: Type::fun(bool_t.clone(), Type::fun(bool_t.clone(), bool_t.clone())),
+            },
         );
         env.insert(
             "or".into(),
-            Scheme { vars: vec![], ty: Type::fun(bool_t.clone(), Type::fun(bool_t.clone(), bool_t.clone())) },
+            Scheme {
+                vars: vec![],
+                ty: Type::fun(bool_t.clone(), Type::fun(bool_t.clone(), bool_t.clone())),
+            },
         );
-        env.insert("not".into(), Scheme { vars: vec![], ty: Type::fun(bool_t.clone(), bool_t.clone()) });
+        env.insert(
+            "not".into(),
+            Scheme { vars: vec![], ty: Type::fun(bool_t.clone(), bool_t.clone()) },
+        );
         // boolean values
         // seq : forall a b. a -> b -> b
         let a2 = TvId(1002);
