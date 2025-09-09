@@ -4,6 +4,7 @@
 //! typing with Ctor-limited union (SumCtor) for lambda chains.
 
 use lzscr_ast::ast::*;
+use lzscr_ast::span::Span;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -350,8 +351,8 @@ pub enum TypeError {
     Occurs { var: TvId, ty: Type },
     #[error("constructor union duplicate tag: {tag}")]
     DuplicateCtorTag { tag: String },
-    #[error("AltLambda branches mixed: expected all Ctor patterns or wildcard/default only")]
-    MixedAltBranches,
+    #[error("AltLambda branches mixed: expected all Ctor patterns or wildcard/default only at ({span_offset},{span_len})")]
+    MixedAltBranches { span_offset: usize, span_len: usize },
     #[error("not a function: {ty:?}")]
     NotFunction { ty: Type },
     #[error("unbound reference: {name} at ({span_offset},{span_len})")]
@@ -1462,391 +1463,203 @@ fn infer_expr(
             Ok((r.apply(&s), s))
         }
         ExprKind::AltLambda { left, right } => {
-            // Both sides must be Lambda
-            let (pl, bl) = match &left.kind {
-                ExprKind::Lambda { param, body } => (param, body),
-                _ => return Err(TypeError::MixedAltBranches),
-            };
-            let (pr, br) = match &right.kind {
-                ExprKind::Lambda { param, body } => (param, body),
-                _ => return Err(TypeError::MixedAltBranches),
-            };
-
-            // Peel typebinders and push frames per branch scope
-            let (pl_core, l_pushed) = push_tyvars_from_pattern(ctx, pl);
-            let (pr_core, r_pushed) = push_tyvars_from_pattern(ctx, pr);
-
-            // If either branch uses a constructor-like pattern, reject mixing with non-constructor
-            // patterns except for a wildcard default. Variable/default binders are NOT allowed in MVP.
-            let left_is_ctor =
-                matches!(pl_core.kind, PatternKind::Ctor { .. } | PatternKind::Symbol(_));
-            let right_is_ctor =
-                matches!(pr_core.kind, PatternKind::Ctor { .. } | PatternKind::Symbol(_));
-            let left_is_wild = matches!(pl_core.kind, PatternKind::Wildcard);
-            let right_is_wild = matches!(pr_core.kind, PatternKind::Wildcard);
-            if (left_is_ctor || right_is_ctor)
-                && !((left_is_ctor || left_is_wild) && (right_is_ctor || right_is_wild))
-            {
-                pop_tyvars(ctx, r_pushed);
-                pop_tyvars(ctx, l_pushed);
-                return Err(TypeError::MixedAltBranches);
+            // --- Flatten nested AltLambda chain into a Vec of branch expressions ---
+            fn collect<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+                match &e.kind {
+                    ExprKind::AltLambda { left, right } => {
+                        collect(left, out);
+                        collect(right, out);
+                    }
+                    _ => out.push(e),
+                }
+            }
+            let mut branches: Vec<&Expr> = vec![];
+            collect(left, &mut branches);
+            collect(right, &mut branches);
+            if branches.len() < 2 {
+                return Err(TypeError::MixedAltBranches { span_offset: left.span.offset, span_len: right.span.offset + right.span.len - left.span.offset });
             }
 
-            // Allow any structural patterns; if both are ctor-like, we'll also compute a SumCtor param type.
+            // Extract (pattern, body) per branch ensuring each is a Lambda
+            struct Br<'a> { pat: &'a Pattern, body: &'a Expr, span: Span }
+            let mut raw: Vec<Br> = vec![];
+            for b in &branches {
+                match &b.kind {
+                    ExprKind::Lambda { param, body } => raw.push(Br { pat: param, body, span: b.span }),
+                    _ => return Err(TypeError::MixedAltBranches { span_offset: b.span.offset, span_len: b.span.len }),
+                }
+            }
 
-            let mut variants: Vec<(String, Vec<Type>)> = vec![]; // param ctor variants
-            let mut seen = HashSet::<String>::new();
-            let mut param_ty = ctx.tv.fresh();
+            // Peel type binders per branch (store pushed count to pop later)
+            struct Peeled<'a> { core: &'a Pattern, pushed: usize, body: &'a Expr, span: Span }
+            let mut branches_p: Vec<Peeled> = vec![];
+            for br in raw {
+                let (core, pushed) = push_tyvars_from_pattern(ctx, br.pat);
+                branches_p.push(Peeled { core, pushed, body: br.body, span: br.span });
+            }
+
+            // Classification pass: detect ctor-like vs structural vs wildcard
+            let mut any_ctor = false;
+            let mut any_structural = false; // non-ctor non-wildcard patterns
+            let mut wildcard_pos: Option<usize> = None;
+            for (i, br) in branches_p.iter().enumerate() {
+                match br.core.kind {
+                    PatternKind::Ctor { .. } | PatternKind::Symbol(_) => any_ctor = true,
+                    PatternKind::Wildcard => {
+                        wildcard_pos = Some(i);
+                    }
+                    _ => any_structural = true,
+                }
+            }
+            // Reject mixing ctor-like with structural (except wildcard only branch) & wildcard not last
+            if any_ctor && any_structural {
+                let span_offset = branches_p.first().unwrap().span.offset;
+                let last = branches_p.last().unwrap();
+                let span_len = (last.span.offset + last.span.len).saturating_sub(span_offset);
+                // Pop pushed tyvars before returning
+                for br in branches_p.into_iter().rev() { pop_tyvars(ctx, br.pushed); }
+                return Err(TypeError::MixedAltBranches { span_offset, span_len });
+            }
+            if let Some(wpos) = wildcard_pos {
+                if wpos != branches_p.len() - 1 {
+                    let span_offset = branches_p[wpos].span.offset;
+                    let span_len = branches_p[wpos].span.len;
+                    for br in branches_p.into_iter().rev() { pop_tyvars(ctx, br.pushed); }
+                    return Err(TypeError::MixedAltBranches { span_offset, span_len });
+                }
+            }
+
+            // Accumulators
             let mut s_all = Subst::new();
-            // Collect return type candidates; allow finite ctor-union for returns as well.
-            // If all branches return ctor-like values, build SumCtor([...]) as return type.
+            let mut param_ty = ctx.tv.fresh();
+
+            // Constructor variants (unique tags) with shared unified payload vectors
+            use std::collections::BTreeMap;
+            let mut ctor_payloads: BTreeMap<String, Vec<Type>> = BTreeMap::new();
+
+            // Return type accumulation (reuse previous helper logic)
             let mut ret_variants: Vec<(String, Vec<Type>)> = vec![];
             let mut ret_seen = HashSet::<String>::new();
-            let mut ret_other: Option<Type> = None; // non-ctor return type fallback
-            fn merge_ret(
-                acc: &mut Vec<(String, Vec<Type>)>,
-                seen: &mut HashSet<String>,
-                t: &Type,
-            ) -> bool {
+            let mut ret_other: Option<Type> = None;
+            fn merge_ret(acc: &mut Vec<(String, Vec<Type>)>, seen: &mut HashSet<String>, t: &Type) -> bool {
                 match t {
                     Type::Ctor { tag, payload } => {
-                        if seen.insert(tag.clone()) {
-                            acc.push((tag.clone(), payload.clone()));
-                        }
+                        if seen.insert(tag.clone()) { acc.push((tag.clone(), payload.clone())); }
                         true
                     }
                     Type::SumCtor(vs) => {
-                        for (tg, ps) in vs {
-                            if seen.insert(tg.clone()) {
-                                acc.push((tg.clone(), ps.clone()));
-                            }
-                        }
+                        for (tg, ps) in vs { if seen.insert(tg.clone()) { acc.push((tg.clone(), ps.clone())); } }
                         true
                     }
                     _ => false,
                 }
             }
 
-            // Heuristic: if both patterns are list-like, specialize param_ty to List(fresh)
-            fn is_list_like(pk: &PatternKind) -> bool {
-                matches!(pk, PatternKind::List(_) | PatternKind::Cons(_, _))
-            }
-            if is_list_like(&pl_core.kind) && is_list_like(&pr_core.kind) {
-                param_ty = Type::List(Box::new(ctx.tv.fresh()));
-            }
-
-            // Left branch
-            match &pl_core.kind {
-                PatternKind::Wildcard => {
-                    let pi = infer_pattern(ctx, pl_core, &param_ty.apply(&s_all))?;
-                    // Extend env with pattern bindings for the body
-                    let mut env2 = ctx.env.clone();
-                    for (n, t) in &pi.bindings {
-                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
-                    }
-                    let prev = std::mem::replace(&mut ctx.env, env2);
-                    let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
-                    ctx.env = prev;
-                    let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    // Try to accumulate ctor-like returns; otherwise remember as fallback type
-                    let tbf_applied = tb_final.clone();
-                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                        match &mut ret_other {
-                            None => ret_other = Some(tbf_applied),
-                            Some(existing) => {
-                                // best-effort: unify non-ctor returns together
-                                let s1 = unify(&existing.clone(), &tbf_applied)?;
-                                *existing = existing.apply(&s1);
-                                s_all = s1.compose(s_all);
+            // Helper to infer one branch
+            for (idx, br) in branches_p.iter().enumerate() {
+                let core = br.core;
+                let body = br.body;
+                match &core.kind {
+                    PatternKind::Wildcard => {
+                        let pi = infer_pattern(ctx, core, &param_ty.apply(&s_all))?;
+                        let mut env2 = ctx.env.clone();
+                        for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
+                        let prev = std::mem::replace(&mut ctx.env, env2);
+                        let (tb, sb) = infer_expr(ctx, body, allow_effects)?;
+                        ctx.env = prev;
+                        let tb_final = tb.apply(&sb).apply(&pi.subst);
+                        let tbf_applied = tb_final.clone();
+                        if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                            match &mut ret_other {
+                                None => ret_other = Some(tbf_applied),
+                                Some(existing) => { let s1 = unify(&existing.clone(), &tbf_applied)?; *existing = existing.apply(&s1); s_all = s1.compose(s_all); }
                             }
                         }
+                        s_all = sb.compose(pi.subst).compose(s_all);
+                        param_ty = param_ty.apply(&s_all);
+                        // Wildcard must be last (already checked); remaining branches won't exist
+                        if idx != branches_p.len() - 1 { unreachable!(); }
                     }
-                    // Compose substitutions gathered for this branch
-                    s_all = sb.compose(pi.subst).compose(s_all);
-                    param_ty = param_ty.apply(&s_all);
-                }
-                // Record patterns treated structurally like other patterns (no ctor variant accumulation)
-                PatternKind::Record(_) => {
-                    let pi = infer_pattern(ctx, pl_core, &param_ty.apply(&s_all))?;
-                    let mut env2 = ctx.env.clone();
-                    for (n, t) in &pi.bindings {
-                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
-                    }
-                    let prev = std::mem::replace(&mut ctx.env, env2);
-                    let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
-                    ctx.env = prev;
-                    let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let tbf_applied = tb_final.clone();
-                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                        match &mut ret_other {
-                            None => ret_other = Some(tbf_applied),
-                            Some(existing) => {
-                                let s1 = unify(&existing.clone(), &tbf_applied)?;
-                                *existing = existing.apply(&s1);
-                                s_all = s1.compose(s_all);
-                            }
+                    PatternKind::Ctor { name, args } => {
+                        // Reuse or create payload vector
+                        let payload = if let Some(v) = ctor_payloads.get(name) { v.clone() } else {
+                            let v: Vec<Type> = (0..args.len()).map(|_| ctx.tv.fresh()).collect();
+                            ctor_payloads.insert(name.clone(), v.clone());
+                            v
+                        };
+                        if payload.len() != args.len() {
+                            // Arity mismatch: treat as MixedAltBranches (no dedicated variant yet)
+                            return Err(TypeError::MixedAltBranches { span_offset: core.span.offset, span_len: core.span.len });
                         }
-                    }
-                    s_all = sb.compose(pi.subst).compose(s_all);
-                    param_ty = param_ty.apply(&s_all);
-                }
-                PatternKind::Ctor { name, args } => {
-                    let payload: Vec<Type> = (0..args.len()).map(|_| ctx.tv.fresh()).collect();
-                    if !seen.insert(name.clone()) {
-                        pop_tyvars(ctx, l_pushed);
-                        pop_tyvars(ctx, r_pushed);
-                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
-                    }
-                    variants.push((name.clone(), payload.clone()));
-                    let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
-                    let pi = infer_pattern(ctx, pl_core, &scr.apply(&s_all))?;
-                    let mut env2 = ctx.env.clone();
-                    for (n, t) in &pi.bindings {
-                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
-                    }
-                    let prev = std::mem::replace(&mut ctx.env, env2);
-                    let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
-                    ctx.env = prev;
-                    let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let tbf_applied = tb_final.clone();
-                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                        match &mut ret_other {
-                            None => ret_other = Some(tbf_applied),
-                            Some(existing) => {
-                                let s1 = unify(&existing.clone(), &tbf_applied)?;
-                                *existing = existing.apply(&s1);
-                                s_all = s1.compose(s_all);
-                            }
+                        let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
+                        let pi = infer_pattern(ctx, core, &scr.apply(&s_all))?;
+                        let mut env2 = ctx.env.clone();
+                        for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
+                        let prev = std::mem::replace(&mut ctx.env, env2);
+                        let (tb, sb) = infer_expr(ctx, body, allow_effects)?;
+                        ctx.env = prev;
+                        let tb_final = tb.apply(&sb).apply(&pi.subst);
+                        let tbf_applied = tb_final.clone();
+                        if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                            match &mut ret_other { None => ret_other = Some(tbf_applied), Some(existing) => { let s1 = unify(&existing.clone(), &tbf_applied)?; *existing = existing.apply(&s1); s_all = s1.compose(s_all); } }
                         }
+                        s_all = sb.compose(pi.subst).compose(s_all);
                     }
-                    s_all = sb.compose(pi.subst).compose(s_all);
-                    param_ty = param_ty.apply(&s_all);
-                }
-                PatternKind::Symbol(name) => {
-                    if !seen.insert(name.clone()) {
-                        pop_tyvars(ctx, l_pushed);
-                        pop_tyvars(ctx, r_pushed);
-                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
-                    }
-                    variants.push((name.clone(), vec![]));
-                    let scr = Type::Ctor { tag: name.clone(), payload: vec![] };
-                    let pi = infer_pattern(ctx, pl_core, &scr.apply(&s_all))?;
-                    let mut env2 = ctx.env.clone();
-                    for (n, t) in &pi.bindings {
-                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
-                    }
-                    let prev = std::mem::replace(&mut ctx.env, env2);
-                    let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
-                    ctx.env = prev;
-                    let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let tbf_applied = tb_final.clone();
-                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                        match &mut ret_other {
-                            None => ret_other = Some(tbf_applied),
-                            Some(existing) => {
-                                let s1 = unify(&existing.clone(), &tbf_applied)?;
-                                *existing = existing.apply(&s1);
-                                s_all = s1.compose(s_all);
-                            }
+                    PatternKind::Symbol(name) => {
+                        let payload = ctor_payloads.entry(name.clone()).or_insert_with(|| vec![]).clone();
+                        if !payload.is_empty() { return Err(TypeError::DuplicateCtorTag { tag: name.clone() }); }
+                        let scr = Type::Ctor { tag: name.clone(), payload }; // zero-arg
+                        let pi = infer_pattern(ctx, core, &scr.apply(&s_all))?;
+                        let mut env2 = ctx.env.clone();
+                        for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
+                        let prev = std::mem::replace(&mut ctx.env, env2);
+                        let (tb, sb) = infer_expr(ctx, body, allow_effects)?;
+                        ctx.env = prev;
+                        let tb_final = tb.apply(&sb).apply(&pi.subst);
+                        let tbf_applied = tb_final.clone();
+                        if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                            match &mut ret_other { None => ret_other = Some(tbf_applied), Some(existing) => { let s1 = unify(&existing.clone(), &tbf_applied)?; *existing = existing.apply(&s1); s_all = s1.compose(s_all); } }
                         }
+                        s_all = sb.compose(pi.subst).compose(s_all);
                     }
-                    s_all = sb.compose(pi.subst).compose(s_all);
-                    param_ty = param_ty.apply(&s_all);
-                }
-                // Other structural patterns (list/tuple/record/cons/etc.)
-                _ => {
-                    let pi = infer_pattern(ctx, pl_core, &param_ty.apply(&s_all))?;
-                    let mut env2 = ctx.env.clone();
-                    for (n, t) in &pi.bindings {
-                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
-                    }
-                    let prev = std::mem::replace(&mut ctx.env, env2);
-                    let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
-                    ctx.env = prev;
-                    let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let tbf_applied = tb_final.clone();
-                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                        match &mut ret_other {
-                            None => ret_other = Some(tbf_applied),
-                            Some(existing) => {
-                                let s1 = unify(&existing.clone(), &tbf_applied)?;
-                                *existing = existing.apply(&s1);
-                                s_all = s1.compose(s_all);
-                            }
+                    // Structural (lists/tuples/records/cons/etc.) – only allowed if no ctor-like branches overall
+                    _ => {
+                        let pi = infer_pattern(ctx, core, &param_ty.apply(&s_all))?;
+                        let mut env2 = ctx.env.clone();
+                        for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
+                        let prev = std::mem::replace(&mut ctx.env, env2);
+                        let (tb, sb) = infer_expr(ctx, body, allow_effects)?;
+                        ctx.env = prev;
+                        let tb_final = tb.apply(&sb).apply(&pi.subst);
+                        let tbf_applied = tb_final.clone();
+                        if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                            match &mut ret_other { None => ret_other = Some(tbf_applied), Some(existing) => { let s1 = unify(&existing.clone(), &tbf_applied)?; *existing = existing.apply(&s1); s_all = s1.compose(s_all); } }
                         }
+                        s_all = sb.compose(pi.subst).compose(s_all);
+                        param_ty = param_ty.apply(&s_all);
                     }
-                    s_all = sb.compose(pi.subst).compose(s_all);
-                    param_ty = param_ty.apply(&s_all);
                 }
             }
 
-            // Right branch
-            match &pr_core.kind {
-                PatternKind::Wildcard => {
-                    let pi = infer_pattern(ctx, pr_core, &param_ty.apply(&s_all))?;
-                    let mut env2 = ctx.env.clone();
-                    for (n, t) in &pi.bindings {
-                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
-                    }
-                    let prev = std::mem::replace(&mut ctx.env, env2);
-                    let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
-                    ctx.env = prev;
-                    let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let tbf_applied = tb_final.clone();
-                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                        match &mut ret_other {
-                            None => ret_other = Some(tbf_applied),
-                            Some(existing) => {
-                                let s1 = unify(&existing.clone(), &tbf_applied)?;
-                                *existing = existing.apply(&s1);
-                                s_all = s1.compose(s_all);
-                            }
-                        }
-                    }
-                    s_all = sb.compose(pi.subst).compose(s_all);
-                    param_ty = param_ty.apply(&s_all);
-                }
-                PatternKind::Record(_) => {
-                    let pi = infer_pattern(ctx, pr_core, &param_ty.apply(&s_all))?;
-                    let mut env2 = ctx.env.clone();
-                    for (n, t) in &pi.bindings {
-                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
-                    }
-                    let prev = std::mem::replace(&mut ctx.env, env2);
-                    let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
-                    ctx.env = prev;
-                    let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let tbf_applied = tb_final.clone();
-                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                        match &mut ret_other {
-                            None => ret_other = Some(tbf_applied),
-                            Some(existing) => {
-                                let s1 = unify(&existing.clone(), &tbf_applied)?;
-                                *existing = existing.apply(&s1);
-                                s_all = s1.compose(s_all);
-                            }
-                        }
-                    }
-                    s_all = sb.compose(pi.subst).compose(s_all);
-                    param_ty = param_ty.apply(&s_all);
-                }
-                PatternKind::Ctor { name, args } => {
-                    let payload: Vec<Type> = (0..args.len()).map(|_| ctx.tv.fresh()).collect();
-                    if !seen.insert(name.clone()) {
-                        pop_tyvars(ctx, l_pushed);
-                        pop_tyvars(ctx, r_pushed);
-                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
-                    }
-                    variants.push((name.clone(), payload.clone()));
-                    let scr = Type::Ctor { tag: name.clone(), payload: payload.clone() };
-                    let pi = infer_pattern(ctx, pr_core, &scr.apply(&s_all))?;
-                    let mut env2 = ctx.env.clone();
-                    for (n, t) in &pi.bindings {
-                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
-                    }
-                    let prev = std::mem::replace(&mut ctx.env, env2);
-                    let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
-                    ctx.env = prev;
-                    let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let tbf_applied = tb_final.clone();
-                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                        match &mut ret_other {
-                            None => ret_other = Some(tbf_applied),
-                            Some(existing) => {
-                                let s1 = unify(&existing.clone(), &tbf_applied)?;
-                                *existing = existing.apply(&s1);
-                                s_all = s1.compose(s_all);
-                            }
-                        }
-                    }
-                    s_all = sb.compose(pi.subst).compose(s_all);
-                    param_ty = param_ty.apply(&s_all);
-                }
-                PatternKind::Symbol(name) => {
-                    if !seen.insert(name.clone()) {
-                        pop_tyvars(ctx, l_pushed);
-                        pop_tyvars(ctx, r_pushed);
-                        return Err(TypeError::DuplicateCtorTag { tag: name.clone() });
-                    }
-                    variants.push((name.clone(), vec![]));
-                    let scr = Type::Ctor { tag: name.clone(), payload: vec![] };
-                    let pi = infer_pattern(ctx, pr_core, &scr.apply(&s_all))?;
-                    let mut env2 = ctx.env.clone();
-                    for (n, t) in &pi.bindings {
-                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
-                    }
-                    let prev = std::mem::replace(&mut ctx.env, env2);
-                    let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
-                    ctx.env = prev;
-                    let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let tbf_applied = tb_final.clone();
-                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                        match &mut ret_other {
-                            None => ret_other = Some(tbf_applied),
-                            Some(existing) => {
-                                let s1 = unify(&existing.clone(), &tbf_applied)?;
-                                *existing = existing.apply(&s1);
-                                s_all = s1.compose(s_all);
-                            }
-                        }
-                    }
-                    s_all = sb.compose(pi.subst).compose(s_all);
-                    param_ty = param_ty.apply(&s_all);
-                }
-                _ => {
-                    let pi = infer_pattern(ctx, pr_core, &param_ty.apply(&s_all))?;
-                    let mut env2 = ctx.env.clone();
-                    for (n, t) in &pi.bindings {
-                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
-                    }
-                    let prev = std::mem::replace(&mut ctx.env, env2);
-                    let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
-                    ctx.env = prev;
-                    let tb_final = tb.apply(&sb).apply(&pi.subst);
-                    let tbf_applied = tb_final.clone();
-                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
-                        match &mut ret_other {
-                            None => ret_other = Some(tbf_applied),
-                            Some(existing) => {
-                                let s1 = unify(&existing.clone(), &tbf_applied)?;
-                                *existing = existing.apply(&s1);
-                                s_all = s1.compose(s_all);
-                            }
-                        }
-                    }
-                    s_all = sb.compose(pi.subst).compose(s_all);
-                    param_ty = param_ty.apply(&s_all);
-                }
-            }
+            // Pop type variable frames pushed per branch (reverse order)
+            for br in branches_p.iter().rev() { pop_tyvars(ctx, br.pushed); }
 
-            pop_tyvars(ctx, r_pushed);
-            pop_tyvars(ctx, l_pushed);
-
-            if !variants.is_empty() {
-                if variants.len() == 1 {
-                    let (tag, payload) = variants.pop().unwrap();
+            // Finalize parameter type if ctor branches present
+            if !ctor_payloads.is_empty() {
+                if ctor_payloads.len() == 1 {
+                    let (tag, payload) = ctor_payloads.into_iter().next().unwrap();
                     param_ty = Type::Ctor { tag, payload };
                 } else {
-                    variants.sort_by(|a, b| a.0.cmp(&b.0));
+                    let variants: Vec<(String, Vec<Type>)> = ctor_payloads.into_iter().collect();
                     param_ty = Type::SumCtor(variants);
                 }
             }
-            // Determine/Refine return type
+
+            // Finalize return type
             let ret_ty = if !ret_variants.is_empty() && ret_other.is_none() {
-                if ret_variants.len() == 1 {
-                    let (tag, payload) = ret_variants.pop().unwrap();
-                    Type::Ctor { tag, payload }
-                } else {
-                    ret_variants.sort_by(|a, b| a.0.cmp(&b.0));
-                    Type::SumCtor(ret_variants)
-                }
-            } else if let Some(t) = ret_other {
-                // Non-ctor returns unified into t
-                t
-            } else {
-                // Fallback (shouldn't really happen with two branches): fresh var
-                ctx.tv.fresh()
-            };
+                if ret_variants.len() == 1 { let (tag, payload) = ret_variants.pop().unwrap(); Type::Ctor { tag, payload } } else { ret_variants.sort_by(|a,b| a.0.cmp(&b.0)); Type::SumCtor(ret_variants) }
+            } else if let Some(t) = ret_other { t } else { ctx.tv.fresh() };
+
             Ok((Type::fun(param_ty.apply(&s_all), ret_ty.apply(&s_all)), s_all))
         }
     };

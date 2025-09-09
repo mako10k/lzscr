@@ -2,8 +2,8 @@
 # Provides functional helpers around .Some/.None option-like constructors.
 
 # Predicates
-~is_some = \(.Some _) -> ~true | \.None -> ~false;
-~is_none = \(.Some _) -> ~false | \.None -> ~true;
+~is_some = \(.Some _) -> .True | \.None -> .False;
+~is_none = \(.Some _) -> .False | \.None -> .True;
 
 # map (f : a -> b) : Option a -> Option b
 ~map ~f = \(.Some ~x) -> .Some (~f ~x) | \.None -> .None;
@@ -31,7 +31,7 @@
 ~maybe ~def ~f = \(.Some ~x) -> (~f ~x) | \.None -> ~def;
 
 # contains : (Eq) a => a -> Option a -> Bool
-~contains ~needle = \(.Some ~x) -> (~x == ~needle) | \.None -> ~false;
+~contains ~needle = \(.Some ~x) -> (~x == ~needle) | \.None -> .False;
 
 {
   is_some: ~is_some,

@@ -645,7 +645,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match e {
                             TypeError::Mismatch { span_offset, span_len, .. }
                             | TypeError::EffectNotAllowed { span_offset, span_len }
-                            | TypeError::UnboundRef { span_offset, span_len, .. } => {
+                                | TypeError::UnboundRef { span_offset, span_len, .. }
+                            | TypeError::MixedAltBranches { span_offset, span_len } => {
                                 eprintln!("type error: {}", e);
                                 let block = src_reg.format_span_block(span_offset, span_len);
                                 eprintln!("{}", block);
@@ -670,7 +671,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             match e {
                                 TypeError::Mismatch { span_offset, span_len, .. }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
-                                | TypeError::UnboundRef { span_offset, span_len, .. } => {
+                                | TypeError::UnboundRef { span_offset, span_len, .. }
+                                | TypeError::MixedAltBranches { span_offset, span_len } => {
                                     eprintln!("type error: {}", e);
                                     let block = src_reg.format_span_block(span_offset, span_len);
                                     eprintln!("{}", block);
@@ -703,7 +705,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             match e {
                                 TypeError::Mismatch { span_offset, span_len, .. }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
-                                | TypeError::UnboundRef { span_offset, span_len, .. } => {
+                                | TypeError::UnboundRef { span_offset, span_len, .. }
+                                | TypeError::MixedAltBranches { span_offset, span_len } => {
                                     eprintln!("type error: {}", e);
                                     let block = src_reg.format_span_block(span_offset, span_len);
                                     eprintln!("{}", block);

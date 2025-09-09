@@ -11,6 +11,7 @@
 ~id ~x = ~x;
 ~compose ~f ~g ~x = ~f (~g ~x);
 
+
 # ---------------------------------------------------------------------------
 # Modular stdlib (deduplicated): load extended helpers from separate modules.
 # We keep backward-compatible aliases for existing prelude function names.
@@ -68,7 +69,7 @@
 ~starts_with ~s ~pre = (
   ~n = (~Str .len ~pre);
   ~m = (~Str .len ~s);
-  ~if (~m >= ~n) (((~Str .slice ~s 0 ~n) == ~pre)) ~false
+  ~if (~m >= ~n) (((~Str .slice ~s 0 ~n) == ~pre)) .False
 );
 
 ~ends_with ~s ~suf = (
@@ -77,7 +78,7 @@
   ~if (~m >= ~n) (
     ~st = ~m - ~n;
     ((~Str .slice ~s ~st ~n) == ~suf)
-  ) ~false
+  ) .False
 );
 
 # String find: index of first occurrence of a character, else .None
@@ -156,12 +157,12 @@
     ~neg = ((~Str .slice ~s 0 1) == "-");
     ~start = (~if (~neg) 1 0);
     ~if (~start >= ~len) .None (
-  ~loop ~i ~acc = (~if (~i >= ~len) ( ~true , ~acc ) (
+  ~loop ~i ~acc = (~if (~i >= ~len) ( .True , ~acc ) (
         ((\(.Some ~c) -> (~if ((~Char .is_digit ~c)) (
             ~d = ((~Unicode .to_int ~c) - (~Unicode .to_int '0'));
             ~loop (~i + 1) ((~acc * 10) + ~d)
-          ) ( ~false , ~acc )))
-         | (\.None -> ( ~false , ~acc )))
+          ) ( .False , ~acc )))
+         | (\.None -> ( .False , ~acc )))
         ((~Str .char_at ~s ~i))
       ));
       ~res = (~loop ~start 0);

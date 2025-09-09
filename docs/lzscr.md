@@ -192,7 +192,7 @@ Representative builtin kinds:
 - `seq : a -> b -> b` (Pure; second arg may be IO under context check)
 - `chain/bind` are context-driven (checked by the runtime and, future, by kinds)
 
-Note: We represent booleans as `.true`/`.false` tags via a `Bool` constructor in the surface language; `true()`/`false()` sugar expands to `~true`/`~false` for convenience.
+Note: Booleans are represented by constructors `.True` / `.False` (the earlier `~true` / `~false` aliases and `true()`/`false()` sugar have been removed).
 
 ### 10) Constructors and patterns (.Member-only)
 

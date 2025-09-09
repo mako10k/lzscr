@@ -20,8 +20,8 @@
 ~unwrap_or_else ~f = \(.Ok ~x) -> ~x | \(.Err ~e) -> (~f ~e);
 
 # is_ok / is_err
-~is_ok = \(.Ok _) -> ~true | \(.Err _) -> ~false;
-~is_err = \(.Ok _) -> ~false | \(.Err _) -> ~true;
+~is_ok = \(.Ok _) -> .True | \(.Err _) -> .False;
+~is_err = \(.Ok _) -> .False | \(.Err _) -> .True;
 
 # to_option : Result a e -> Option a
 ~to_option = \(.Ok ~x) -> .Some ~x | \(.Err _) -> .None;

@@ -220,7 +220,7 @@ Type hints below are informal (to be aligned with the HM type inference). Bool n
 
 Notes:
 - Zero-arity constructors must be written as `.Ctor()` (bare `Ctor` is parsed as a variable name; Member-only policy).
-- Provide sugar where `true()` / `false()` expand to `~true` / `~false`.
+// Booleans use `.True` / `.False` constructors directly (legacy sugar removed).
 
 ---
 

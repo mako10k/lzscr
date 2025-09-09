@@ -201,14 +201,12 @@ impl Env {
     pub fn with_builtins() -> Self {
         let mut e = Env::new();
 
-        // Inject ~true / ~false as references
-        e.vars.insert("true".into(), Value::Bool(true));
-        e.vars.insert("false".into(), Value::Bool(false));
-        e.declare_ctor_arity(".true", 0);
-        e.declare_ctor_arity(".false", 0);
-        // Pre-intern commonly used symbols
-        let _ = e.intern_symbol("True");
-        let _ = e.intern_symbol("False");
+    // Bool via constructors .True / .False (no legacy ~true/~false refs)
+    e.declare_ctor_arity(".True", 0);
+    e.declare_ctor_arity(".False", 0);
+    // Pre-intern commonly used symbols
+    let _ = e.intern_symbol(".True");
+    let _ = e.intern_symbol(".False");
         let _ = e.intern_symbol(".print");
         let _ = e.intern_symbol(".println");
         let _ = e.intern_symbol(".,");
