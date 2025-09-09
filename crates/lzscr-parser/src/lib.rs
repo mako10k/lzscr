@@ -1173,73 +1173,17 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 }
             },
             Tok::LBrace => {
-                // record literal: { k: v, ... } is sugar for (.Record (., (.KV "k" v) ...)); keys are idents only
-                // Empty {} is not an empty block; special-case to an empty Record
-                if let Some(nxt) = peek(*i, toks) {
-                    if matches!(nxt.tok, Tok::RBrace) {
-                        let r = bump(i, toks).unwrap();
-                        let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset);
-                        // empty record: (.Record .)
-                        return Ok(Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Symbol(".Record".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Symbol(".".into()), r.span)) }, span_all));
-                    }
-                }
-                let mut pairs: Vec<(String, Expr)> = Vec::new();
+                // Direct record literal to ExprKind::Record
+                if let Some(nxt) = peek(*i, toks) { if matches!(nxt.tok, Tok::RBrace) { let r = bump(i, toks).unwrap(); let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset); return Ok(Expr::new(ExprKind::Record(vec![]), span_all)); } }
+                let mut fields: Vec<(String, Expr)> = Vec::new();
                 loop {
-                    // key
-                    let k = bump(i, toks).ok_or_else(|| ParseError::Generic("expected key".into()))?;
-                    let key = match &k.tok { Tok::Ident => k.text.to_string(), _ => return Err(ParseError::Generic("expected ident key".into())) };
-                    // Optional parameter chain before ':' :  key Pat* : Expr  (Pat* may be empty)
-                    let mut params: Vec<Pattern> = Vec::new();
-                    // Greedily parse patterns until ':'
-                    loop {
-                        let save = *i;
-                        // Stop at ':'
-                        if let Some(nx) = peek(*i, toks) { if matches!(nx.tok, Tok::Colon) { break; } }
-                        // Try a pattern; if fails, stop (will error on ':' check below)
-                        if let Ok(p) = parse_pattern(i, toks) { params.push(p); } else { *i = save; break; }
-                    }
-                    // ':'
-                    let col = bump(i, toks).ok_or_else(|| ParseError::Generic("expected :".into()))?;
-                    if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected".into())); }
-                    // value
-                    let mut val = parse_expr_bp(i, toks, 0)?;
-                    if !params.is_empty() {
-                        // enforce duplicate-binder prohibition in field param chain
-                        let mut names = Vec::new();
-                        for p in &params { collect_binders(p, &mut names); }
-                        names.sort();
-                        if names.windows(2).any(|w| w[0] == w[1]) {
-                            return Err(ParseError::Generic("duplicate binder in record field parameter chain".into()));
-                        }
-                        val = nest_lambdas(&params, val);
-                    }
-                    pairs.push((key, val));
-                    // , or }
+                    let ktok = bump(i, toks).ok_or_else(|| ParseError::Generic("expected key".into()))?;
+                    let key = match &ktok.tok { Tok::Ident => ktok.text.to_string(), _ => return Err(ParseError::Generic("expected ident key".into())) };
+                    let col = bump(i, toks).ok_or_else(|| ParseError::Generic("expected :".into()))?; if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected".into())); }
+                    let val = parse_expr_bp(i, toks, 0)?;
+                    fields.push((key, val));
                     let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("expected , or }".into()))?;
-                    match sep.tok {
-                        Tok::Comma => continue,
-                        Tok::RBrace => {
-                            let span_all = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset);
-                            // (., (.KV "k" v) ...) with arity-specific tag
-                            let tag = {
-                                let mut s = String::from(".");
-                                let n_commas = if !pairs.is_empty() { pairs.len() - 1 } else { 0 };
-                                for _ in 0..n_commas { s.push(','); }
-                                s
-                            };
-                            let mut tuple_expr = Expr::new(ExprKind::Symbol(tag), t.span);
-                            for (k, v) in pairs {
-                                let kv = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Symbol(".KV".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Str(k), t.span)) }, t.span);
-                                let kv2 = Expr::new(ExprKind::Apply { func: Box::new(kv), arg: Box::new(v) }, t.span);
-                                let sp = Span::new(tuple_expr.span.offset, span_all.offset + span_all.len - tuple_expr.span.offset);
-                                tuple_expr = Expr::new(ExprKind::Apply { func: Box::new(tuple_expr), arg: Box::new(kv2) }, sp);
-                            }
-                            // (.Record (., ...))
-                            let expr = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Symbol(".Record".into()), t.span)), arg: Box::new(tuple_expr) }, span_all);
-                            return Ok(expr);
-                        }
-                        _ => return Err(ParseError::Generic("expected , or }".into())),
-                    }
+                    match sep.tok { Tok::Comma => continue, Tok::RBrace => { let span_all = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset); return Ok(Expr::new(ExprKind::Record(fields), span_all)); }, _ => return Err(ParseError::Generic("expected , or }".into())), }
                 }
             },
             Tok::Ident => {

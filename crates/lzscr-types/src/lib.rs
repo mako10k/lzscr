@@ -1326,6 +1326,17 @@ fn infer_expr(
             }
             Ok((Type::List(Box::new(a.apply(&s))), s))
         }
+        ExprKind::Record(fields) => {
+            let mut subst = Subst::new();
+            let mut map = BTreeMap::new();
+            for (k, v) in fields {
+                let (tv, sv) = infer_expr(ctx, v, allow_effects)?;
+                // Compose so far substitution into accumulated field types if needed
+                subst = sv.compose(subst);
+                map.insert(k.clone(), tv.apply(&subst));
+            }
+            Ok((Type::Record(map), subst))
+        }
         ExprKind::LetGroup { type_decls, bindings, body, .. } => {
             // Recursive let-group inference (Algorithm W style for letrec):
             // 1) Create monomorphic assumptions for each binder in all patterns using fresh type vars.
@@ -1554,6 +1565,31 @@ fn infer_expr(
                     s_all = sb.compose(pi.subst).compose(s_all);
                     param_ty = param_ty.apply(&s_all);
                 }
+                // Record patterns treated structurally like other patterns (no ctor variant accumulation)
+                PatternKind::Record(_) => {
+                    let pi = infer_pattern(ctx, pl_core, &param_ty.apply(&s_all))?;
+                    let mut env2 = ctx.env.clone();
+                    for (n, t) in &pi.bindings {
+                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
+                    }
+                    let prev = std::mem::replace(&mut ctx.env, env2);
+                    let (tb, sb) = infer_expr(ctx, bl, allow_effects)?;
+                    ctx.env = prev;
+                    let tb_final = tb.apply(&sb).apply(&pi.subst);
+                    let tbf_applied = tb_final.clone();
+                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                        match &mut ret_other {
+                            None => ret_other = Some(tbf_applied),
+                            Some(existing) => {
+                                let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                *existing = existing.apply(&s1);
+                                s_all = s1.compose(s_all);
+                            }
+                        }
+                    }
+                    s_all = sb.compose(pi.subst).compose(s_all);
+                    param_ty = param_ty.apply(&s_all);
+                }
                 PatternKind::Ctor { name, args } => {
                     let payload: Vec<Type> = (0..args.len()).map(|_| ctx.tv.fresh()).collect();
                     if !seen.insert(name.clone()) {
@@ -1647,6 +1683,30 @@ fn infer_expr(
             // Right branch
             match &pr_core.kind {
                 PatternKind::Wildcard => {
+                    let pi = infer_pattern(ctx, pr_core, &param_ty.apply(&s_all))?;
+                    let mut env2 = ctx.env.clone();
+                    for (n, t) in &pi.bindings {
+                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
+                    }
+                    let prev = std::mem::replace(&mut ctx.env, env2);
+                    let (tb, sb) = infer_expr(ctx, br, allow_effects)?;
+                    ctx.env = prev;
+                    let tb_final = tb.apply(&sb).apply(&pi.subst);
+                    let tbf_applied = tb_final.clone();
+                    if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
+                        match &mut ret_other {
+                            None => ret_other = Some(tbf_applied),
+                            Some(existing) => {
+                                let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                *existing = existing.apply(&s1);
+                                s_all = s1.compose(s_all);
+                            }
+                        }
+                    }
+                    s_all = sb.compose(pi.subst).compose(s_all);
+                    param_ty = param_ty.apply(&s_all);
+                }
+                PatternKind::Record(_) => {
                     let pi = infer_pattern(ctx, pr_core, &param_ty.apply(&s_all))?;
                     let mut env2 = ctx.env.clone();
                     for (n, t) in &pi.bindings {
@@ -1818,6 +1878,7 @@ fn short_expr_kind(k: &ExprKind) -> &'static str {
         Annot { .. } => "Annot",
         TypeVal(_) => "TypeVal",
         List(_) => "List",
+        Record(_) => "Record",
         Block(_) => "Block",
         LetGroup { .. } => "LetGroup",
         Raise(_) => "Raise",

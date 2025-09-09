@@ -152,6 +152,22 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Char(c) => Term::new(Op::Char(*c)),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
+        ExprKind::Record(fields) => {
+            // Lower structurally to a synthetic Op::Record (if exists) else build associative nest.
+            // Since no dedicated Op currently, reuse a tagged symbol chain: start with Symbol("RECORD") then fold KV.
+            let mut acc = Term::new(Op::Symbol("RECORD".into()));
+            for (k, v) in fields {
+                let kv_sym = Term::new(Op::Symbol("KV".into()));
+                let key = Term::new(Op::Str(k.clone()));
+                let kv1 = Term::new(Op::App { func: Box::new(kv_sym), arg: Box::new(key) });
+                let kv2 = Term::new(Op::App {
+                    func: Box::new(kv1),
+                    arg: Box::new(lower_expr_to_core(v)),
+                });
+                acc = Term::new(Op::App { func: Box::new(acc), arg: Box::new(kv2) });
+            }
+            acc
+        }
         ExprKind::LetGroup { bindings, body, .. } => {
             let bs: Vec<(String, Term)> =
                 bindings.iter().map(|(p, ex)| (print_pattern(p), lower_expr_to_core(ex))).collect();

@@ -1796,6 +1796,15 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Str(s) => Ok(Value::Str(env.intern_string(s))),
         ExprKind::Float(f) => Ok(Value::Float(*f)),
         ExprKind::Char(c) => Ok(Value::Char(*c)),
+        ExprKind::Record(fields) => {
+            // Eagerly evaluate field expressions (could later be lazy if desired)
+            let mut map = std::collections::BTreeMap::new();
+            for (k, v) in fields {
+                let val = eval(env, v)?;
+                map.insert(k.clone(), val);
+            }
+            Ok(Value::Record(map))
+        }
         ExprKind::LetGroup { bindings, body, .. } => {
             // Support recursion for non-functions via lazy bindings
             // Use a shared environment so RHS thunks see recursive names.
