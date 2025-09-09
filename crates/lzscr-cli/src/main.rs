@@ -169,7 +169,7 @@ struct Opt {
     #[arg(long = "no-typecheck", default_value_t = false)]
     no_typecheck: bool,
 
-    /// Type output mode: pretty|json (when typechecking runs)
+    /// Type output mode: pretty|legacy|json (when typechecking runs)
     #[arg(long = "types", default_value = "pretty")]
     types: String,
 

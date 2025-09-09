@@ -2143,12 +2143,14 @@ pub mod api {
             debug: Some(std::rc::Rc::new(std::cell::RefCell::new(dbg))),
             depth: 0,
         };
-        // Log initial environment keys (first 64) for diagnostics
+        // Log initial environment keys only if env logging enabled
         if let Some(dbg) = &ctx.debug {
-            let mut keys: Vec<_> = ctx.env.0.keys().cloned().collect();
-            keys.sort();
-            let preview: Vec<_> = keys.into_iter().take(64).collect();
-            dbg.borrow_mut().log(0, 1, format!("initial env keys={:?}", preview));
+            if dbg.borrow().log_env {
+                let mut keys: Vec<_> = ctx.env.0.keys().cloned().collect();
+                keys.sort();
+                let preview: Vec<_> = keys.into_iter().take(64).collect();
+                dbg.borrow_mut().log(0, 1, format!("initial env keys={:?}", preview));
+            }
         }
         let (t, s) = infer_expr(&mut ctx, ast, false)?;
         let ty = user_pretty_type(&t.apply(&s));
