@@ -621,7 +621,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
                             );
                         } else if opt.types == "pretty" {
-                            println!("%{{{}}}", t);
+                            // t は既に %{...} 形式
+                            println!("{}", t);
                         }
                         for line in logs {
                             eprintln!("[type-debug] {}", line);
@@ -654,7 +655,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             println!("{}", serde_json::to_string_pretty(&TypeOut { ty: t })?);
                         } else if opt.types == "pretty" {
-                            println!("%{{{}}}", t);
+                            // t は既に %{...} 形式
+                            println!("{}", t);
                         }
                     }
                     Err(e) => {

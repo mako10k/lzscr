@@ -69,6 +69,77 @@ impl Subst {
     }
 }
 
+// Deeply resolve (zonk) a type under a substitution: recursively chase Var chains.
+fn zonk_type(t: &Type, s: &Subst) -> Type {
+    match t {
+        Type::Var(v) => {
+            if let Some(inner) = s.0.get(v) {
+                zonk_type(inner, s)
+            } else {
+                Type::Var(*v)
+            }
+        }
+        Type::Fun(a, b) => Type::fun(zonk_type(a, s), zonk_type(b, s)),
+        Type::List(x) => Type::List(Box::new(zonk_type(x, s))),
+        Type::Tuple(xs) => Type::Tuple(xs.iter().map(|x| zonk_type(x, s)).collect()),
+        Type::Record(fs) => {
+            let mut m = BTreeMap::new();
+            for (k, v) in fs {
+                m.insert(k.clone(), zonk_type(v, s));
+            }
+            Type::Record(m)
+        }
+        Type::Ctor { tag, payload } => Type::Ctor {
+            tag: tag.clone(),
+            payload: payload.iter().map(|x| zonk_type(x, s)).collect(),
+        },
+        Type::Named { name, args } => {
+            Type::Named { name: name.clone(), args: args.iter().map(|x| zonk_type(x, s)).collect() }
+        }
+        Type::SumCtor(vs) => Type::SumCtor(
+            vs.iter()
+                .map(|(n, ps)| (n.clone(), ps.iter().map(|x| zonk_type(x, s)).collect()))
+                .collect(),
+        ),
+        primitive => primitive.clone(),
+    }
+}
+
+// Normalize tuple-like constructor tags (.,  .,,  .,,, ...) into canonical Type::Tuple.
+fn normalize_tuples(t: &Type) -> Type {
+    match t {
+        Type::Ctor { tag, payload }
+            if tag.starts_with('.') && tag.chars().skip(1).all(|c| c == ',') =>
+        {
+            // arity = payload.len(); treat as tuple of payload
+            let items = payload.iter().map(normalize_tuples).collect();
+            Type::Tuple(items)
+        }
+        Type::Fun(a, b) => Type::fun(normalize_tuples(a), normalize_tuples(b)),
+        Type::List(x) => Type::List(Box::new(normalize_tuples(x))),
+        Type::Tuple(xs) => Type::Tuple(xs.iter().map(normalize_tuples).collect()),
+        Type::Record(fs) => {
+            let mut m = BTreeMap::new();
+            for (k, v) in fs {
+                m.insert(k.clone(), normalize_tuples(v));
+            }
+            Type::Record(m)
+        }
+        Type::Ctor { tag, payload } => {
+            Type::Ctor { tag: tag.clone(), payload: payload.iter().map(normalize_tuples).collect() }
+        }
+        Type::Named { name, args } => {
+            Type::Named { name: name.clone(), args: args.iter().map(normalize_tuples).collect() }
+        }
+        Type::SumCtor(vs) => Type::SumCtor(
+            vs.iter()
+                .map(|(n, ps)| (n.clone(), ps.iter().map(normalize_tuples).collect()))
+                .collect(),
+        ),
+        primitive => primitive.clone(),
+    }
+}
+
 trait TypesApply {
     fn apply(&self, s: &Subst) -> Self;
     fn ftv(&self) -> HashSet<TvId>;
@@ -576,16 +647,19 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
             );
         }
     }
-    let res = match (a, b) {
+    // Normalize tuple-like constructors before actual unification
+    let na = normalize_tuples(a);
+    let nb = normalize_tuples(b);
+    let res = match (&na, &nb) {
         (Type::Named { name: na, args: aa }, _) => {
             let sa = instantiate_named_sum(ctx, na, aa)?;
-            ctx_unify(ctx, &Type::SumCtor(sa), b)
+            ctx_unify(ctx, &Type::SumCtor(sa), &nb)
         }
         (_, Type::Named { name: nb, args: ab }) => {
             let sb = instantiate_named_sum(ctx, nb, ab)?;
-            ctx_unify(ctx, a, &Type::SumCtor(sb))
+            ctx_unify(ctx, &na, &Type::SumCtor(sb))
         }
-        _ => unify(a, b),
+        _ => unify(&na, &nb),
     };
     if let Some(dbg) = &ctx.debug {
         if dbg.borrow().log_unify {
@@ -1018,7 +1092,12 @@ fn infer_expr(
                 span_offset: e.span.offset,
                 span_len: e.span.len,
             })?;
-            Ok((instantiate(&mut ctx.tv, &s), Subst::new()))
+            let inst = instantiate(&mut ctx.tv, &s);
+            if let Some(dbg) = &ctx.debug {
+                dbg.borrow_mut().log(ctx.depth, 1, format!("scheme {} => {}", n, pp_type(&s.ty)));
+                dbg.borrow_mut().log(ctx.depth, 1, format!("inst {} => {}", n, pp_type(&inst)));
+            }
+            Ok((inst, Subst::new()))
         }
         ExprKind::Symbol(name) => {
             // Treat bare symbol as ctor value of arity 0 at type level
@@ -1293,6 +1372,16 @@ fn infer_expr(
                 for (n, t) in &pi.bindings {
                     env_assume.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
                 }
+                // Debug: log binding variable names extracted from pattern (helps diagnose missing 'append')
+                if let Some(dbg) = &ctx.debug {
+                    if !pi.bindings.is_empty() {
+                        let names: Vec<String> =
+                            pi.bindings.iter().map(|(n, _)| n.clone()).collect();
+                        dbg.borrow_mut().log(ctx.depth, 1, format!("bind vars={:?}", names));
+                    } else {
+                        dbg.borrow_mut().log(ctx.depth, 1, "bind vars=[] (no pattern vars)");
+                    }
+                }
                 pres.push(PreBind { _p_core: p_core.clone(), pushed, a_scrut: a, pat_info: pi });
                 // Note: type-binder frames will be popped after RHS processing per-binding
             }
@@ -1307,7 +1396,10 @@ fn infer_expr(
                 let subst_all = s.compose(s_rhs.clone()).compose(pre.pat_info.subst.clone());
                 // Update env_final entries with generalized types against env0
                 for (n, t) in pre.pat_info.bindings.iter() {
-                    let sc = generalize(&env0, &t.apply(&subst_all));
+                    // Apply substitution then zonk to fully expand nested function arrows etc.
+                    let applied = t.apply(&subst_all);
+                    let zonked = zonk_type(&applied, &subst_all);
+                    let sc = generalize(&env0, &zonked);
                     env_final.insert(n.clone(), sc.clone());
                     if let Some(dbg) = &ctx.debug {
                         dbg.borrow_mut().log_scheme(ctx.depth, n, &sc);
@@ -1783,13 +1875,209 @@ fn pp_atom(t: &Type) -> String {
     }
 }
 
+// ---------- User Pretty (zonk + var rename + cycle guard) ----------
+
+fn user_pretty_type(t: &Type) -> String {
+    use std::collections::HashMap;
+    // 1) Collect free vars in first-occurrence order
+    fn collect_order(t: &Type, order: &mut Vec<TvId>, seen: &mut std::collections::HashSet<TvId>) {
+        match t {
+            Type::Var(v) => {
+                if seen.insert(*v) {
+                    order.push(*v);
+                }
+            }
+            Type::Fun(a, b) => {
+                collect_order(a, order, seen);
+                collect_order(b, order, seen);
+            }
+            Type::List(x) => collect_order(x, order, seen),
+            Type::Tuple(xs) => {
+                for x in xs {
+                    collect_order(x, order, seen);
+                }
+            }
+            Type::Record(fs) => {
+                for v in fs.values() {
+                    collect_order(v, order, seen);
+                }
+            }
+            Type::Ctor { payload, .. } => {
+                for x in payload {
+                    collect_order(x, order, seen);
+                }
+            }
+            Type::Named { args, .. } => {
+                for x in args {
+                    collect_order(x, order, seen);
+                }
+            }
+            Type::SumCtor(vs) => {
+                for (_, ps) in vs {
+                    for x in ps {
+                        collect_order(x, order, seen);
+                    }
+                }
+            }
+            Type::Unit | Type::Int | Type::Float | Type::Bool | Type::Str | Type::Char => {}
+        }
+    }
+    let mut order = Vec::new();
+    collect_order(t, &mut order, &mut std::collections::HashSet::new());
+    // 2) Build rename map
+    fn name_of(i: usize) -> String {
+        if i < 26 {
+            format!("%{}", (b'a' + i as u8) as char)
+        } else {
+            format!("%{}{}", (b'a' + (i % 26) as u8) as char, i / 26)
+        }
+    }
+    let mut m: HashMap<TvId, String> = HashMap::new();
+    for (idx, v) in order.iter().enumerate() {
+        m.insert(*v, name_of(idx));
+    }
+    // 3) Cycle-aware pretty (should not normally see cycles because occurs-check, but guard anyway)
+    use std::ptr::addr_of;
+    fn go<'a>(
+        t: &'a Type,
+        m: &HashMap<TvId, String>,
+        seen: &mut HashMap<usize, String>,
+        out_defs: &mut Vec<String>,
+    ) -> String {
+        let id_addr = addr_of!(*t) as usize;
+        if let Some(label) = seen.get(&id_addr) {
+            return format!("@{}", label);
+        }
+        match t {
+            Type::Var(v) => m.get(v).cloned().unwrap_or_else(|| format!("_")),
+            Type::Unit => "Unit".into(),
+            Type::Int => "Int".into(),
+            Type::Float => "Float".into(),
+            Type::Bool => "Bool".into(),
+            Type::Str => "Str".into(),
+            Type::Char => "Char".into(),
+            Type::List(x) => format!("[{}]", go(x, m, seen, out_defs)),
+            Type::Tuple(xs) => {
+                let inner =
+                    xs.iter().map(|x| go(x, m, seen, out_defs)).collect::<Vec<_>>().join(", ");
+                format!("({})", inner)
+            }
+            Type::Record(fs) => {
+                let mut items: Vec<_> = fs
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, go(v, m, seen, out_defs)))
+                    .collect();
+                items.sort();
+                format!("{{{}}}", items.join(", "))
+            }
+            Type::Fun(a, b) => {
+                let pa = match **a {
+                    Type::Fun(_, _) => format!("({})", go(a, m, seen, out_defs)),
+                    _ => go(a, m, seen, out_defs),
+                };
+                let pb = go(b, m, seen, out_defs);
+                format!("{} -> {}", pa, pb)
+            }
+            Type::Ctor { tag, payload } => {
+                if payload.is_empty() {
+                    tag.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        tag,
+                        payload
+                            .iter()
+                            .map(|x| {
+                                let s = go(x, m, seen, out_defs);
+                                if matches!(x, Type::Fun(_, _)) {
+                                    format!("({})", s)
+                                } else {
+                                    s
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                }
+            }
+            Type::Named { name, args } => {
+                if args.is_empty() {
+                    name.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        name,
+                        args.iter()
+                            .map(|x| {
+                                let s = go(x, m, seen, out_defs);
+                                if matches!(x, Type::Fun(_, _)) {
+                                    format!("({})", s)
+                                } else {
+                                    s
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                }
+            }
+            Type::SumCtor(vs) => {
+                let inner = vs
+                    .iter()
+                    .map(|(tag, ps)| {
+                        if ps.is_empty() {
+                            tag.clone()
+                        } else {
+                            format!(
+                                "{} {}",
+                                tag,
+                                ps.iter()
+                                    .map(|x| {
+                                        let s = go(x, m, seen, out_defs);
+                                        if matches!(x, Type::Fun(_, _)) {
+                                            format!("({})", s)
+                                        } else {
+                                            s
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            )
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                format!("({})", inner)
+            }
+        }
+    }
+    let mut seen = HashMap::new();
+    let mut out_defs = Vec::new();
+    let core = go(t, &m, &mut seen, &mut out_defs);
+    // 期待仕様: 外部表示は %{ ... } ラッピング
+    format!("%{{{}}}", core)
+}
+
 // ---------- Public API ----------
 
 pub mod api {
     use super::*;
     use lzscr_parser::parse_expr;
+    /// オプション指定で推論結果文字列のフォーマットを切り替えるための設定。
+    #[derive(Debug, Clone, Copy, Default)]
+    pub struct InferOptions {
+        /// true ならユーザ向け pretty 表示 (%{ ... } + 型変数 %a,%b など)。
+        /// false ならレガシー表示 (テスト互換: %tN 生の変数, ラッパ無し)。
+        pub pretty: bool,
+    }
 
+    /// 下位互換 (レガシー) API: 既存テストが期待するフォーマット (pretty=false)。
     pub fn infer_program(src: &str) -> Result<String, String> {
+        infer_program_with_opts(src, InferOptions { pretty: false })
+    }
+
+    /// 新 API: フォーマット指定付き。将来はこちらを安定化させる。
+    pub fn infer_program_with_opts(src: &str, opts: InferOptions) -> Result<String, String> {
         let ast = parse_expr(src).map_err(|e| format!("parse error: {e}"))?;
         let mut ctx = InferCtx {
             tv: TvGen { next: 0 },
@@ -1801,7 +2089,14 @@ pub mod api {
             depth: 0,
         };
         match infer_expr(&mut ctx, &ast, false) {
-            Ok((t, s)) => Ok(pp_type(&t.apply(&s))),
+            Ok((t, s)) => {
+                let zonked = zonk_type(&t.apply(&s), &s);
+                if opts.pretty {
+                    Ok(user_pretty_type(&zonked))
+                } else {
+                    Ok(pp_type(&zonked))
+                }
+            }
             Err(e) => Err(format!("{e}")),
         }
     }
@@ -1819,7 +2114,7 @@ pub mod api {
             depth: 0,
         };
         match infer_expr(&mut ctx, ast, false) {
-            Ok((t, s)) => Ok(pp_type(&t.apply(&s))),
+            Ok((t, s)) => Ok(user_pretty_type(&t.apply(&s))),
             Err(e) => Err(e),
         }
     }
@@ -1848,8 +2143,15 @@ pub mod api {
             debug: Some(std::rc::Rc::new(std::cell::RefCell::new(dbg))),
             depth: 0,
         };
+        // Log initial environment keys (first 64) for diagnostics
+        if let Some(dbg) = &ctx.debug {
+            let mut keys: Vec<_> = ctx.env.0.keys().cloned().collect();
+            keys.sort();
+            let preview: Vec<_> = keys.into_iter().take(64).collect();
+            dbg.borrow_mut().log(0, 1, format!("initial env keys={:?}", preview));
+        }
         let (t, s) = infer_expr(&mut ctx, ast, false)?;
-        let ty = pp_type(&t.apply(&s));
+        let ty = user_pretty_type(&t.apply(&s));
         let logs = ctx.debug.as_ref().unwrap().borrow().logs.clone();
         Ok((ty, logs))
     }
@@ -1875,7 +2177,7 @@ pub mod api {
             depth: 0,
         };
         let (t, s) = infer_expr(&mut ctx, ast, false)?;
-        let ty = pp_type(&t.apply(&s));
+        let ty = user_pretty_type(&t.apply(&s));
         let logs = ctx.debug.as_ref().unwrap().borrow().logs.clone();
         Ok((ty, logs))
     }
@@ -1979,6 +2281,48 @@ pub mod api {
             ),
         );
         env.insert("cons".into(), Scheme { vars: vec![a_cons], ty: cons_ty });
+
+        // Common list functions (if stdlib not already providing before top-level expression inference)
+        // append : forall a. [a] -> [a] -> [a]
+        if !env.0.contains_key("append") {
+            let a_app = TvId(2000);
+            let app_ty = Type::fun(
+                Type::List(Box::new(Type::Var(a_app))),
+                Type::fun(
+                    Type::List(Box::new(Type::Var(a_app))),
+                    Type::List(Box::new(Type::Var(a_app))),
+                ),
+            );
+            env.insert("append".into(), Scheme { vars: vec![a_app], ty: app_ty });
+        }
+        // length : forall a. [a] -> Int
+        if !env.0.contains_key("length") {
+            let a_len = TvId(2001);
+            let len_ty = Type::fun(Type::List(Box::new(Type::Var(a_len))), Type::Int);
+            env.insert("length".into(), Scheme { vars: vec![a_len], ty: len_ty });
+        }
+        // map : forall a b. (a -> b) -> [a] -> [b]
+        if !env.0.contains_key("map") {
+            let a_map = TvId(2002);
+            let b_map = TvId(2003);
+            let map_ty = Type::fun(
+                Type::fun(Type::Var(a_map), Type::Var(b_map)),
+                Type::fun(
+                    Type::List(Box::new(Type::Var(a_map))),
+                    Type::List(Box::new(Type::Var(b_map))),
+                ),
+            );
+            env.insert("map".into(), Scheme { vars: vec![a_map, b_map], ty: map_ty });
+        }
+        // reverse : forall a. [a] -> [a]
+        if !env.0.contains_key("reverse") {
+            let a_rev = TvId(2004);
+            let rev_ty = Type::fun(
+                Type::List(Box::new(Type::Var(a_rev))),
+                Type::List(Box::new(Type::Var(a_rev))),
+            );
+            env.insert("reverse".into(), Scheme { vars: vec![a_rev], ty: rev_ty });
+        }
 
         // to_str : forall a. a -> Str
         let a_ts = TvId(1013);
