@@ -186,9 +186,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             Tok::Str(s) => Pattern::new(PatternKind::Str(s.clone()), t.span),
             Tok::Char(c) => Pattern::new(PatternKind::Char(*c), t.span),
             Tok::Ident => {
-                if t.text == "true" || t.text == "false" {
-                    Pattern::new(PatternKind::Bool(t.text == "true"), t.span)
-                } else if t.text == "_" {
+                if t.text == "_" {
                     Pattern::new(PatternKind::Wildcard, t.span)
                 } else {
                     return Err(ParseError::WithSpan { msg: "invalid bare identifier in pattern".into(), span_offset: t.span.offset, span_len: t.span.len });
@@ -208,8 +206,12 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         _ => break,
                     }
                 }
-                let end = if args.is_empty() { h.span.offset + h.span.len } else { let last = args.last().unwrap(); last.span.offset + last.span.len };
-                Pattern::new(PatternKind::Ctor { name: m.clone(), args }, Span::new(h.span.offset, end - h.span.offset))
+                if args.is_empty() && (m == ".True" || m == ".False") {
+                    Pattern::new(PatternKind::Bool(m == ".True"), h.span)
+                } else {
+                    let end = if args.is_empty() { h.span.offset + h.span.len } else { let last = args.last().unwrap(); last.span.offset + last.span.len };
+                    Pattern::new(PatternKind::Ctor { name: m.clone(), args }, Span::new(h.span.offset, end - h.span.offset))
+                }
             }
             _ => return Err(ParseError::WithSpan { msg: "unexpected token in pattern".into(), span_offset: t.span.offset, span_len: t.span.len }),
         };

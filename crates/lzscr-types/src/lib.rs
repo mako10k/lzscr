@@ -1105,8 +1105,12 @@ fn infer_expr(
             Ok((inst, Subst::new()))
         }
         ExprKind::Symbol(name) => {
-            // Treat bare symbol as ctor value of arity 0 at type level
-            Ok((Type::Ctor { tag: name.clone(), payload: vec![] }, Subst::new()))
+            if name == ".True" || name == ".False" {
+                Ok((Type::Bool, Subst::new()))
+            } else {
+                // Treat other bare symbol as 0-arity ctor
+                Ok((Type::Ctor { tag: name.clone(), payload: vec![] }, Subst::new()))
+            }
         }
         ExprKind::Lambda { param, body } => {
             // Handle pattern-level type binders: push frames while inferring param and body
@@ -2111,8 +2115,6 @@ pub mod api {
         );
         env.insert("not".into(), Scheme { vars: vec![], ty: Type::fun(Type::Bool, Type::Bool) });
         // boolean values
-        env.insert("true".into(), Scheme { vars: vec![], ty: Type::Bool });
-        env.insert("false".into(), Scheme { vars: vec![], ty: Type::Bool });
         // seq : forall a b. a -> b -> b
         let a2 = TvId(1002);
         let b2 = TvId(1003);
