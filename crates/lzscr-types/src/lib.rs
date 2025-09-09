@@ -567,7 +567,16 @@ fn instantiate_named_sum(
 // Unification with awareness of Named types (μ-types): one-step unfold into SumCtor
 #[allow(clippy::result_large_err)]
 fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
-    match (a, b) {
+    if let Some(dbg) = &ctx.debug {
+        if dbg.borrow().log_unify {
+            dbg.borrow_mut().log(
+                ctx.depth,
+                2,
+                format!("unify TRY {} ~ {}", pp_type(a), pp_type(b)),
+            );
+        }
+    }
+    let res = match (a, b) {
         (Type::Named { name: na, args: aa }, _) => {
             let sa = instantiate_named_sum(ctx, na, aa)?;
             ctx_unify(ctx, &Type::SumCtor(sa), b)
@@ -577,7 +586,36 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
             ctx_unify(ctx, a, &Type::SumCtor(sb))
         }
         _ => unify(a, b),
+    };
+    if let Some(dbg) = &ctx.debug {
+        if dbg.borrow().log_unify {
+            match &res {
+                Ok(s) => {
+                    let subst_str = if s.0.is_empty() {
+                        "<id>".to_string()
+                    } else {
+                        s.0.iter()
+                            .map(|(TvId(id), t)| format!("%t{id}={}", pp_type(t)))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    dbg.borrow_mut().log(
+                        ctx.depth,
+                        2,
+                        format!("unify OK {} ~ {} => {subst_str}", pp_type(a), pp_type(b)),
+                    );
+                }
+                Err(e) => {
+                    dbg.borrow_mut().log(
+                        ctx.depth,
+                        2,
+                        format!("unify ERR {} ~ {} => {e}", pp_type(a), pp_type(b)),
+                    );
+                }
+            }
+        }
     }
+    res
 }
 
 #[allow(clippy::result_large_err)]
@@ -788,6 +826,40 @@ struct InferCtx {
     tyvars: Vec<HashMap<String, TvId>>, // stack of frames; lookup is from last to first
     typedefs: Vec<TypeDefsFrame>,       // stack of ctor templates from % declarations
     typedef_types: Vec<TypeNameDefsFrame>, // stack of named type defs (μ-types)
+    debug: Option<std::rc::Rc<std::cell::RefCell<DebugConfig>>>, // optional debugging
+    depth: usize,                       // current AST depth for logging
+}
+
+#[derive(Clone)]
+struct DebugConfig {
+    level: usize,
+    max_depth: usize,
+    logs: Vec<String>,
+    log_unify: bool,
+    log_env: bool,
+    log_schemes: bool,
+}
+
+impl DebugConfig {
+    fn log(&mut self, depth: usize, lvl: usize, msg: impl Into<String>) {
+        if lvl <= self.level && depth <= self.max_depth {
+            self.logs.push(format!("[d{depth} l{lvl}] {}", msg.into()));
+        }
+    }
+    fn dump_env(&mut self, depth: usize, env: &TypeEnv) {
+        if self.log_env && depth <= self.max_depth {
+            let mut entries: Vec<_> = env.0.iter().map(|(k, v)| (k, v)).collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (k, sc) in entries.into_iter().take(64) {
+                self.logs.push(format!("[d{depth} env] {} : {}", k, pp_type(&sc.ty)));
+            }
+        }
+    }
+    fn log_scheme(&mut self, depth: usize, name: &str, sc: &Scheme) {
+        if self.log_schemes && depth <= self.max_depth {
+            self.logs.push(format!("[d{depth} scheme] {} :: {}", name, pp_type(&sc.ty)));
+        }
+    }
 }
 
 fn lookup_tyvar(ctx: &InferCtx, name: &str) -> Option<TvId> {
@@ -860,6 +932,11 @@ fn infer_expr(
     e: &Expr,
     allow_effects: bool,
 ) -> Result<(Type, Subst), TypeError> {
+    // Enter logging
+    if let Some(dbg) = &ctx.debug {
+        dbg.borrow_mut().log(ctx.depth, 1, format!("enter {}", short_expr_kind(&e.kind)));
+    }
+    ctx.depth += 1;
     // Helper: convert TypeExpr to Type using ctx.tyvars and a local holes table for '?'
     fn conv_typeexpr(ctx: &mut InferCtx, te: &TypeExpr, holes: &mut HashMap<String, TvId>) -> Type {
         match te {
@@ -921,7 +998,7 @@ fn infer_expr(
         }
     }
 
-    match &e.kind {
+    let result = match &e.kind {
         ExprKind::Annot { ty, expr } => {
             let (got, s) = infer_expr(ctx, expr, allow_effects)?;
             let mut holes = HashMap::new();
@@ -1231,11 +1308,17 @@ fn infer_expr(
                 // Update env_final entries with generalized types against env0
                 for (n, t) in pre.pat_info.bindings.iter() {
                     let sc = generalize(&env0, &t.apply(&subst_all));
-                    env_final.insert(n.clone(), sc);
+                    env_final.insert(n.clone(), sc.clone());
+                    if let Some(dbg) = &ctx.debug {
+                        dbg.borrow_mut().log_scheme(ctx.depth, n, &sc);
+                    }
                 }
                 pop_tyvars(ctx, pre.pushed);
                 // Also update env_assume so subsequent RHS can see refined types
                 env_assume = env_final.clone();
+                if let Some(dbg) = &ctx.debug {
+                    dbg.borrow_mut().dump_env(ctx.depth, &env_assume);
+                }
             }
             // Infer body under finalized environment
             let saved = std::mem::replace(&mut ctx.env, env_final);
@@ -1599,12 +1682,52 @@ fn infer_expr(
             };
             Ok((Type::fun(param_ty.apply(&s_all), ret_ty.apply(&s_all)), s_all))
         }
+    };
+    ctx.depth -= 1;
+    if let Some(dbg) = &ctx.debug {
+        if let Ok((ty, _)) = &result {
+            dbg.borrow_mut().log(
+                ctx.depth,
+                1,
+                format!("exit {} => {}", short_expr_kind(&e.kind), pp_type(ty)),
+            );
+        }
+    }
+    result
+}
+
+fn short_expr_kind(k: &ExprKind) -> &'static str {
+    use ExprKind::*;
+    match k {
+        Unit => "Unit",
+        Int(_) => "Int",
+        Float(_) => "Float",
+        Str(_) => "Str",
+        Char(_) => "Char",
+        Ref(_) => "Ref",
+        Symbol(_) => "Symbol",
+        Lambda { .. } => "Lambda",
+        Apply { .. } => "Apply",
+        Annot { .. } => "Annot",
+        TypeVal(_) => "TypeVal",
+        List(_) => "List",
+        Block(_) => "Block",
+        LetGroup { .. } => "LetGroup",
+        Raise(_) => "Raise",
+        OrElse { .. } => "OrElse",
+        Catch { .. } => "Catch",
+        AltLambda { .. } => "AltLambda",
     }
 }
 
 // ---------- Pretty Printing ----------
 
 fn pp_type(t: &Type) -> String {
+    fn rename_var(id: i64) -> String {
+        // Map 0->%t0 stays as %t0 for stability; optional enhancement: %a,%b,... cycling.
+        // Keep current behavior for now (already %tN). Placeholder for future customization.
+        format!("%t{id}")
+    }
     match t {
         Type::Unit => "Unit".into(),
         Type::Int => "Int".into(),
@@ -1612,7 +1735,7 @@ fn pp_type(t: &Type) -> String {
         Type::Bool => "Bool".into(),
         Type::Str => "Str".into(),
         Type::Char => "Char".into(),
-        Type::Var(TvId(i)) => format!("%t{i}"),
+        Type::Var(TvId(i)) => rename_var(*i as i64),
         Type::List(a) => format!("[{}]", pp_type(a)),
         Type::Tuple(xs) => format!("({})", xs.iter().map(pp_type).collect::<Vec<_>>().join(", ")),
         Type::Record(fs) => {
@@ -1674,9 +1797,11 @@ pub mod api {
             tyvars: vec![],
             typedefs: vec![],
             typedef_types: vec![],
+            debug: None,
+            depth: 0,
         };
         match infer_expr(&mut ctx, &ast, false) {
-            Ok((t, _s)) => Ok(pp_type(&t)),
+            Ok((t, s)) => Ok(pp_type(&t.apply(&s))),
             Err(e) => Err(format!("{e}")),
         }
     }
@@ -1690,11 +1815,69 @@ pub mod api {
             tyvars: vec![],
             typedefs: vec![],
             typedef_types: vec![],
+            debug: None,
+            depth: 0,
         };
         match infer_expr(&mut ctx, ast, false) {
-            Ok((t, _s)) => Ok(pp_type(&t)),
+            Ok((t, s)) => Ok(pp_type(&t.apply(&s))),
             Err(e) => Err(e),
         }
+    }
+
+    // Debug variant returning (type, logs)
+    #[allow(clippy::result_large_err)]
+    pub fn infer_ast_debug(
+        ast: &Expr,
+        level: usize,
+        max_depth: usize,
+    ) -> Result<(String, Vec<String>), super::TypeError> {
+        let dbg = DebugConfig {
+            level,
+            max_depth,
+            logs: Vec::new(),
+            log_unify: true,
+            log_env: false,
+            log_schemes: true,
+        };
+        let mut ctx = InferCtx {
+            tv: TvGen { next: 0 },
+            env: prelude_env(),
+            tyvars: vec![],
+            typedefs: vec![],
+            typedef_types: vec![],
+            debug: Some(std::rc::Rc::new(std::cell::RefCell::new(dbg))),
+            depth: 0,
+        };
+        let (t, s) = infer_expr(&mut ctx, ast, false)?;
+        let ty = pp_type(&t.apply(&s));
+        let logs = ctx.debug.as_ref().unwrap().borrow().logs.clone();
+        Ok((ty, logs))
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub fn infer_ast_debug_with(
+        ast: &Expr,
+        level: usize,
+        max_depth: usize,
+        log_unify: bool,
+        log_env: bool,
+        log_schemes: bool,
+    ) -> Result<(String, Vec<String>), super::TypeError> {
+        let dbg =
+            DebugConfig { level, max_depth, logs: Vec::new(), log_unify, log_env, log_schemes };
+        let mut ctx = InferCtx {
+            tv: TvGen { next: 0 },
+            env: prelude_env(),
+            tyvars: vec![],
+            typedefs: vec![],
+            typedef_types: vec![],
+            debug: Some(std::rc::Rc::new(std::cell::RefCell::new(dbg))),
+            depth: 0,
+        };
+        let (t, s) = infer_expr(&mut ctx, ast, false)?;
+        let ty = pp_type(&t.apply(&s));
+        let logs = ctx.debug.as_ref().unwrap().borrow().logs.clone();
+        Ok((ty, logs))
     }
 
     fn prelude_env() -> TypeEnv {

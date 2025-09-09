@@ -173,6 +173,18 @@ struct Opt {
     #[arg(long = "types", default_value = "pretty")]
     types: String,
 
+    /// 型デバッグ詳細レベル (0=無効)
+    #[arg(long = "type-debug", default_value_t = 0)]
+    type_debug: usize,
+
+    /// 型デバッグ最大深さ
+    #[arg(long = "type-debug-depth", default_value_t = 64)]
+    type_debug_depth: usize,
+
+    /// 型デバッグフラグ (カンマ区切り: unify,env,schemes) 例: --type-debug-flags unify,env
+    #[arg(long = "type-debug-flags", default_value = "unify,schemes")]
+    type_debug_flags: String,
+
     /// Declare constructor arities (e.g., Foo=2,Bar=0). Comma-separated.
     #[arg(long = "ctor-arity")]
     ctor_arity: Option<String>,
@@ -571,33 +583,96 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         // Optional typechecking phase
         if !opt.no_typecheck {
-            match lzscr_types::api::infer_ast(&ast) {
-                Ok(t) => {
-                    if opt.types == "json" {
-                        #[derive(Serialize)]
-                        struct TypeOut {
-                            ty: String,
+            if opt.type_debug > 0 {
+                // Parse flags
+                let mut log_unify = false;
+                let mut log_env = false;
+                let mut log_schemes = false;
+                for f in opt.type_debug_flags.split(',').map(|s| s.trim()).filter(|s| !s.is_empty())
+                {
+                    match f {
+                        "unify" => log_unify = true,
+                        "env" => log_env = true,
+                        "schemes" => log_schemes = true,
+                        "all" => {
+                            log_unify = true;
+                            log_env = true;
+                            log_schemes = true;
                         }
-                        println!("{}", serde_json::to_string_pretty(&TypeOut { ty: t })?);
-                    } else if opt.types == "pretty" {
-                        eprintln!("%{{{}}}", t);
+                        _ => {}
                     }
                 }
-                Err(e) => {
-                    use lzscr_types::TypeError;
-                    match e {
-                        TypeError::Mismatch { span_offset, span_len, .. }
-                        | TypeError::EffectNotAllowed { span_offset, span_len }
-                        | TypeError::UnboundRef { span_offset, span_len, .. } => {
-                            eprintln!("type error: {}", e);
-                            let block = src_reg.format_span_block(span_offset, span_len);
-                            eprintln!("{}", block);
+                match lzscr_types::api::infer_ast_debug_with(
+                    &ast,
+                    opt.type_debug,
+                    opt.type_debug_depth,
+                    log_unify,
+                    log_env,
+                    log_schemes,
+                ) {
+                    Ok((t, logs)) => {
+                        if opt.types == "json" {
+                            #[derive(Serialize)]
+                            struct TypeOut {
+                                ty: String,
+                            }
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
+                            );
+                        } else if opt.types == "pretty" {
+                            println!("%{{{}}}", t);
                         }
-                        other => {
-                            eprintln!("type error: {}", other);
+                        for line in logs {
+                            eprintln!("[type-debug] {}", line);
                         }
                     }
-                    std::process::exit(2);
+                    Err(e) => {
+                        use lzscr_types::TypeError;
+                        match e {
+                            TypeError::Mismatch { span_offset, span_len, .. }
+                            | TypeError::EffectNotAllowed { span_offset, span_len }
+                            | TypeError::UnboundRef { span_offset, span_len, .. } => {
+                                eprintln!("type error: {}", e);
+                                let block = src_reg.format_span_block(span_offset, span_len);
+                                eprintln!("{}", block);
+                            }
+                            other => {
+                                eprintln!("type error: {}", other);
+                            }
+                        }
+                        std::process::exit(2);
+                    }
+                }
+            } else {
+                match lzscr_types::api::infer_ast(&ast) {
+                    Ok(t) => {
+                        if opt.types == "json" {
+                            #[derive(Serialize)]
+                            struct TypeOut {
+                                ty: String,
+                            }
+                            println!("{}", serde_json::to_string_pretty(&TypeOut { ty: t })?);
+                        } else if opt.types == "pretty" {
+                            println!("%{{{}}}", t);
+                        }
+                    }
+                    Err(e) => {
+                        use lzscr_types::TypeError;
+                        match e {
+                            TypeError::Mismatch { span_offset, span_len, .. }
+                            | TypeError::EffectNotAllowed { span_offset, span_len }
+                            | TypeError::UnboundRef { span_offset, span_len, .. } => {
+                                eprintln!("type error: {}", e);
+                                let block = src_reg.format_span_block(span_offset, span_len);
+                                eprintln!("{}", block);
+                            }
+                            other => {
+                                eprintln!("type error: {}", other);
+                            }
+                        }
+                        std::process::exit(2);
+                    }
                 }
             }
         }
