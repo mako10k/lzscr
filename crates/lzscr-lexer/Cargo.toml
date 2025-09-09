@@ -5,6 +5,6 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-logos = "0.14"
+logos = "0.15"
 thiserror = "1"
 lzscr-ast = { path = "../lzscr-ast", version = "0.1.0" }
