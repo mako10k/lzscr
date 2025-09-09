@@ -7,4 +7,4 @@ license = "MIT"
 [dependencies]
 logos = "0.14"
 thiserror = "1"
-lzscr-ast = { path = "../lzscr-ast" }
+lzscr-ast = { path = "../lzscr-ast", version = "0.1.0" }

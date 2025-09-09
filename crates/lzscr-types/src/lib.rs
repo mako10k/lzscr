@@ -926,7 +926,7 @@ impl DebugConfig {
     }
     fn dump_env(&mut self, depth: usize, env: &TypeEnv) {
         if self.log_env && depth <= self.max_depth {
-            let mut entries: Vec<_> = env.0.iter().map(|(k, v)| (k, v)).collect();
+            let mut entries: Vec<_> = env.0.iter().collect();
             entries.sort_by(|a, b| a.0.cmp(b.0));
             for (k, sc) in entries.into_iter().take(64) {
                 self.logs.push(format!("[d{depth} env] {} : {}", k, pp_type(&sc.ty)));
@@ -1877,7 +1877,7 @@ fn pp_type(t: &Type) -> String {
                     _ => {
                         let parts: Vec<String> = ps.into_iter().map(|ty| pp_type(&ty)).collect();
                         format!("{}({})", tag, parts.join(", "))
-                    },
+                    }
                 })
                 .collect::<Vec<_>>()
                 .join(" | ");
@@ -1956,44 +1956,44 @@ fn user_pretty_type(t: &Type) -> String {
     }
     // 3) Cycle-aware pretty (should not normally see cycles because occurs-check, but guard anyway)
     use std::ptr::addr_of;
-    fn go<'a>(
-        t: &'a Type,
+    fn go(
+        t: &Type,
         m: &HashMap<TvId, String>,
         seen: &mut HashMap<usize, String>,
-        out_defs: &mut Vec<String>,
+        _out_defs: &mut Vec<String>,
     ) -> String {
         let id_addr = addr_of!(*t) as usize;
         if let Some(label) = seen.get(&id_addr) {
             return format!("@{}", label);
         }
         match t {
-            Type::Var(v) => m.get(v).cloned().unwrap_or_else(|| format!("_")),
+            Type::Var(v) => m.get(v).cloned().unwrap_or_else(|| "_".to_string()),
             Type::Unit => "Unit".into(),
             Type::Int => "Int".into(),
             Type::Float => "Float".into(),
             Type::Bool => "Bool".into(),
             Type::Str => "Str".into(),
             Type::Char => "Char".into(),
-            Type::List(x) => format!("[{}]", go(x, m, seen, out_defs)),
+            Type::List(x) => format!("[{}]", go(x, m, seen, _out_defs)),
             Type::Tuple(xs) => {
                 let inner =
-                    xs.iter().map(|x| go(x, m, seen, out_defs)).collect::<Vec<_>>().join(", ");
+                    xs.iter().map(|x| go(x, m, seen, _out_defs)).collect::<Vec<_>>().join(", ");
                 format!("({})", inner)
             }
             Type::Record(fs) => {
                 let mut items: Vec<_> = fs
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, go(v, m, seen, out_defs)))
+                    .map(|(k, v)| format!("{}: {}", k, go(v, m, seen, _out_defs)))
                     .collect();
                 items.sort();
                 format!("{{{}}}", items.join(", "))
             }
             Type::Fun(a, b) => {
                 let pa = match **a {
-                    Type::Fun(_, _) => format!("({})", go(a, m, seen, out_defs)),
-                    _ => go(a, m, seen, out_defs),
+                    Type::Fun(_, _) => format!("({})", go(a, m, seen, _out_defs)),
+                    _ => go(a, m, seen, _out_defs),
                 };
-                let pb = go(b, m, seen, out_defs);
+                let pb = go(b, m, seen, _out_defs);
                 format!("{} -> {}", pa, pb)
             }
             Type::Ctor { tag, payload } => {
@@ -2006,7 +2006,7 @@ fn user_pretty_type(t: &Type) -> String {
                         payload
                             .iter()
                             .map(|x| {
-                                let s = go(x, m, seen, out_defs);
+                                let s = go(x, m, seen, _out_defs);
                                 if matches!(x, Type::Fun(_, _)) {
                                     format!("({})", s)
                                 } else {
@@ -2027,7 +2027,7 @@ fn user_pretty_type(t: &Type) -> String {
                         name,
                         args.iter()
                             .map(|x| {
-                                let s = go(x, m, seen, out_defs);
+                                let s = go(x, m, seen, _out_defs);
                                 if matches!(x, Type::Fun(_, _)) {
                                     format!("({})", s)
                                 } else {
@@ -2051,7 +2051,7 @@ fn user_pretty_type(t: &Type) -> String {
                                 tag,
                                 ps.iter()
                                     .map(|x| {
-                                        let s = go(x, m, seen, out_defs);
+                                        let s = go(x, m, seen, _out_defs);
                                         if matches!(x, Type::Fun(_, _)) {
                                             format!("({})", s)
                                         } else {

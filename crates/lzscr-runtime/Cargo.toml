@@ -5,8 +5,8 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-lzscr-ast = { path = "../lzscr-ast" }
+lzscr-ast = { path = "../lzscr-ast", version = "0.1.0" }
 thiserror = "1"
 
 [dev-dependencies]
-lzscr-parser = { path = "../lzscr-parser" }
+lzscr-parser = { path = "../lzscr-parser", version = "0.1.0" }

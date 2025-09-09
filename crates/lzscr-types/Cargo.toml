@@ -6,7 +6,7 @@ authors = ["lzscr contributors"]
 license = "MIT"
 
 [dependencies]
-lzscr-ast = { path = "../lzscr-ast" }
-lzscr-parser = { path = "../lzscr-parser" }
+lzscr-ast = { path = "../lzscr-ast", version = "0.1.0" }
+lzscr-parser = { path = "../lzscr-parser", version = "0.1.0" }
 thiserror = "1"
 serde = { version = "1", features = ["derive"] }
