@@ -1179,8 +1179,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     if matches!(nxt.tok, Tok::RBrace) {
                         let r = bump(i, toks).unwrap();
                         let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset);
-                        // empty application of (.Record)
-                        return Ok(Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Ref("Record".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Unit, r.span)) }, span_all));
+                        // empty record: (.Record .)
+                        return Ok(Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Symbol(".Record".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Symbol(".".into()), r.span)) }, span_all));
                     }
                 }
                 let mut pairs: Vec<(String, Expr)> = Vec::new();
@@ -1229,13 +1229,13 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             };
                             let mut tuple_expr = Expr::new(ExprKind::Symbol(tag), t.span);
                             for (k, v) in pairs {
-                                let kv = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Ref("KV".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Str(k), t.span)) }, t.span);
+                                let kv = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Symbol(".KV".into()), t.span)), arg: Box::new(Expr::new(ExprKind::Str(k), t.span)) }, t.span);
                                 let kv2 = Expr::new(ExprKind::Apply { func: Box::new(kv), arg: Box::new(v) }, t.span);
                                 let sp = Span::new(tuple_expr.span.offset, span_all.offset + span_all.len - tuple_expr.span.offset);
                                 tuple_expr = Expr::new(ExprKind::Apply { func: Box::new(tuple_expr), arg: Box::new(kv2) }, sp);
                             }
                             // (.Record (., ...))
-                            let expr = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Ref("Record".into()), t.span)), arg: Box::new(tuple_expr) }, span_all);
+                            let expr = Expr::new(ExprKind::Apply { func: Box::new(Expr::new(ExprKind::Symbol(".Record".into()), t.span)), arg: Box::new(tuple_expr) }, span_all);
                             return Ok(expr);
                         }
                         _ => return Err(ParseError::Generic("expected , or }".into())),

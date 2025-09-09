@@ -154,11 +154,11 @@ impl TypesApply for Type {
         match self {
             Type::Var(v) => s.0.get(v).cloned().unwrap_or(Type::Var(*v)),
             Type::Fun(a, b) => Type::fun(a.apply(s), b.apply(s)),
-            Type::List(t) => Type::List(Box::new(t.apply(s))),
-            Type::Tuple(ts) => Type::Tuple(ts.iter().map(|t| t.apply(s)).collect()),
+            Type::List(x) => Type::List(Box::new(x.apply(s))),
+            Type::Tuple(xs) => Type::Tuple(xs.iter().map(|t| t.apply(s)).collect()),
             Type::Record(fs) => {
                 let mut m = BTreeMap::new();
-                for (k, v) in fs.iter() {
+                for (k, v) in fs {
                     m.insert(k.clone(), v.apply(s));
                 }
                 Type::Record(m)
@@ -477,8 +477,8 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
                 Ok(s)
             } else {
                 Err(TypeError::Mismatch {
-                    expected: Type::SumCtor(variants.clone()),
-                    actual: Type::Ctor { tag: tag.clone(), payload: payload.clone() },
+                    expected: a.clone(),
+                    actual: b.clone(),
                     span_offset: 0,
                     span_len: 0,
                 })

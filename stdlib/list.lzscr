@@ -39,7 +39,7 @@
 );
 
 # zip : [a] -> [b] -> [(a,b)]
-~zip ~xs ~ys = (~zip_with (\~a ~b -> (. , ~a ~b)) ~xs ~ys);
+~zip ~xs ~ys = (~zip_with (\~a ~b -> (~a, ~b)) ~xs ~ys);
 
 # intersperse : a -> [a] -> [a]
 ~intersperse ~sep ~xs = (

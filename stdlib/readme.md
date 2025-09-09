@@ -6,7 +6,7 @@ core namespaces from the runtime `Builtins` plus foundational list/string/option
 
 ## Files
 
-- `prelude.lzscr`: Core base + Option/Result primitives + list, string, scan helpers.
+- `prelude.lzscr`: Core base + list/string/scan helpers. Now lazily loads `option.lzscr`, `result.lzscr`, and `list.lzscr` via `~require` and exposes backward-compatible deprecated aliases (e.g. `~is_some`, `~map_option`, `~map_result`).
 - `option.lzscr`: Stand-alone Option helper module (functional ops).
 - `result.lzscr`: Stand-alone Result helper module (map/and_then/or_else, etc.).
 - `list.lzscr`: Expanded list algorithms (any/all/sum/product/zip/etc.).
