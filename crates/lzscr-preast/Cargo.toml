@@ -8,4 +8,4 @@ license = "MIT"
 serde = { version = "1", features = ["derive"] }
 lzscr-lexer = { path = "../lzscr-lexer", version = "0.1.0" }
 lzscr-ast = { path = "../lzscr-ast", version = "0.1.0" }
-thiserror = "1"
+thiserror = "2"
