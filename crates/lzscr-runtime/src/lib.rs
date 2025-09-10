@@ -1752,7 +1752,10 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
     }
     match &e.kind {
         ExprKind::Annot { ty: _, expr } => eval(env, expr),
-        ExprKind::TypeVal(ty) => Ok(Value::Str(env.intern_string(print_type_expr(ty)))),
+        ExprKind::TypeVal(ty) => {
+            let inner = print_type_expr(ty);
+            Ok(Value::Str(env.intern_string(format!("%{{{}}}", inner))))
+        }
         ExprKind::Unit => Ok(Value::Unit),
         ExprKind::Int(n) => Ok(Value::Int(*n)),
         ExprKind::Str(s) => Ok(Value::Str(env.intern_string(s))),

@@ -123,6 +123,7 @@ jobs:
 
   udeps:
     name: Unused deps (cargo-udeps)
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:

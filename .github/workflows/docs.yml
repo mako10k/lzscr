@@ -16,7 +16,8 @@ jobs:
       - name: Check for non-ASCII Japanese characters in docs
         run: |
           set -euo pipefail
-          if git ls-files 'docs/**' | xargs -I{} grep -nE "[\u3040-\u30ff\u4e00-\u9fff\uff66-\uff9f]" {} -H | tee /tmp/jp.txt; then
+          # Use PCRE (-P) to support Unicode escapes reliably on Ubuntu runners
+          if git ls-files 'docs/**' | xargs -I{} grep -nPH "[\x{3040}-\x{30ff}\x{4e00}-\x{9fff}\x{ff66}-\x{ff9f}]" {} -H | tee /tmp/jp.txt; then
             echo "Japanese characters detected in docs:"
             cat /tmp/jp.txt
             echo "Please translate to English."

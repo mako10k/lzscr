@@ -677,6 +677,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let block = src_reg.format_span_block(span_offset, span_len);
                                     eprintln!("{}", block);
                                 }
+                                TypeError::AnnotMismatch {
+                                    annot_span_offset,
+                                    annot_span_len,
+                                    expr_span_offset,
+                                    expr_span_len,
+                                    ..
+                                } => {
+                                    eprintln!("type error: {}", e);
+                                    let b1 = src_reg
+                                        .format_span_block(annot_span_offset, annot_span_len);
+                                    let b2 =
+                                        src_reg.format_span_block(expr_span_offset, expr_span_len);
+                                    eprintln!("{}\n{}", b1, b2);
+                                }
                                 other => {
                                     eprintln!("type error: {}", other);
                                 }
@@ -710,6 +724,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("type error: {}", e);
                                     let block = src_reg.format_span_block(span_offset, span_len);
                                     eprintln!("{}", block);
+                                }
+                                TypeError::AnnotMismatch {
+                                    annot_span_offset,
+                                    annot_span_len,
+                                    expr_span_offset,
+                                    expr_span_len,
+                                    ..
+                                } => {
+                                    eprintln!("type error: {}", e);
+                                    let b1 = src_reg
+                                        .format_span_block(annot_span_offset, annot_span_len);
+                                    let b2 =
+                                        src_reg.format_span_block(expr_span_offset, expr_span_len);
+                                    eprintln!("{}\n{}", b1, b2);
                                 }
                                 other => {
                                     eprintln!("type error: {}", other);
