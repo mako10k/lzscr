@@ -35,13 +35,12 @@ fn annotation_type_mismatch() {
 
 #[test]
 fn type_value_vs_annotation_disambiguation() {
-    // Standalone: %{Int} is a type value -> its type prints as Str (current impl) or some representation.
+    // Standalone: %{Int} is a type value -> its type prints as Type (legacy) and %{Type} in pretty form.
     // Then applying as function would be a separate parse; here just ensure parser sees a TypeVal when no trailing atom.
     let ast = parse_expr("%{Int}").unwrap();
     let legacy = infer_ast_with_opts(&ast, InferOptions { pretty: false }).unwrap();
-    // The type of a type value literal currently inferred as Str (documented temporary behavior)
-    // Accept either Str or %{Str} pretty form depending on future refactor.
-    assert!(legacy == "Str" || legacy.contains("Str"));
+    // The type of a type value literal is Type in legacy mode.
+    assert_eq!(legacy, "Type");
 }
 
 #[test]

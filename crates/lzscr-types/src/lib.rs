@@ -20,6 +20,8 @@ pub enum Type {
     Float,
     Str,
     Char,
+    /// Meta-type for type values (e.g., `%{Int}` has type `Type`).
+    Type,
     Var(TvId),
     Fun(Box<Type>, Box<Type>),
     List(Box<Type>),
@@ -180,7 +182,9 @@ impl TypesApply for Type {
                     .map(|(n, ps)| (n.clone(), ps.iter().map(|t| t.apply(s)).collect()))
                     .collect(),
             ),
-            t @ (Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char) => t.clone(),
+            t @ (Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char | Type::Type) => {
+                t.clone()
+            }
         }
     }
     fn ftv(&self) -> HashSet<TvId> {
@@ -223,7 +227,7 @@ impl TypesApply for Type {
                     }
                 }
             }
-            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char => {}
+            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char | Type::Type => {}
         }
         s
     }
@@ -382,7 +386,8 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
         | (Type::Int, Type::Int)
         | (Type::Float, Type::Float)
         | (Type::Str, Type::Str)
-        | (Type::Char, Type::Char) => Ok(Subst::new()),
+    | (Type::Char, Type::Char)
+    | (Type::Type, Type::Type) => Ok(Subst::new()),
         (Type::Fun(a1, b1), Type::Fun(a2, b2)) => {
             let s1 = unify(a1, a2)?;
             let s2 = unify(&b1.apply(&s1), &b2.apply(&s1))?;
@@ -503,7 +508,7 @@ fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> boo
         | TypeExpr::Float
         | TypeExpr::Bool
         | TypeExpr::Str
-        | TypeExpr::Char => true,
+    | TypeExpr::Char => true,
         TypeExpr::Var(_) => true,
         TypeExpr::Hole(_) => false, // holes are not allowed in type decls
         TypeExpr::List(t) => check_positive_occurrence(t, target, polarity),
@@ -1083,7 +1088,7 @@ fn infer_expr(
             let s2 = ctx_unify(ctx, &got.apply(&s), &want)?;
             Ok((want.apply(&s2), s2.compose(s)))
         }
-        ExprKind::TypeVal(_ty) => Ok((Type::Str, Subst::new())),
+    ExprKind::TypeVal(_ty) => Ok((Type::Type, Subst::new())),
         ExprKind::Unit => Ok((Type::Unit, Subst::new())),
         ExprKind::Int(_) => Ok((Type::Int, Subst::new())),
         ExprKind::Float(_) => Ok((Type::Float, Subst::new())),
@@ -1801,6 +1806,7 @@ fn pp_type(t: &Type) -> String {
         Type::Float => "Float".into(),
         Type::Str => "Str".into(),
         Type::Char => "Char".into(),
+    Type::Type => "Type".into(),
         Type::Var(TvId(i)) => rename_var(*i as i64),
         Type::List(a) => format!("[{}]", pp_type(a)),
         Type::Tuple(xs) => format!("({})", xs.iter().map(pp_type).collect::<Vec<_>>().join(", ")),
@@ -1896,7 +1902,7 @@ fn user_pretty_type(t: &Type) -> String {
                     }
                 }
             }
-            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char => {}
+            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char | Type::Type => {}
         }
     }
     let mut order = Vec::new();
@@ -1932,6 +1938,7 @@ fn user_pretty_type(t: &Type) -> String {
             Type::Float => "Float".into(),
             Type::Str => "Str".into(),
             Type::Char => "Char".into(),
+            Type::Type => "Type".into(),
             Type::List(x) => format!("[{}]", go(x, m, seen, _out_defs)),
             Type::Tuple(xs) => {
                 let inner =
