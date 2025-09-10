@@ -28,7 +28,7 @@ fn annotation_enforces_type_ok() {
 
 #[test]
 fn annotation_type_mismatch() {
-    let err = infer_program("%{Str} 1").err().expect("expected mismatch");
+    let err = infer_program("%{Str} 1").expect_err("expected mismatch");
     assert!(err.contains("type mismatch"));
     assert!(err.contains("Str") || err.contains("Int"));
 }
