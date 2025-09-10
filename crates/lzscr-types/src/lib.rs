@@ -20,14 +20,22 @@ pub enum Type {
     Float,
     Str,
     Char,
+    /// Meta-type for type values (e.g., `%{Int}` has type `Type`).
+    Type,
     Var(TvId),
     Fun(Box<Type>, Box<Type>),
     List(Box<Type>),
     Tuple(Vec<Type>),
     Record(BTreeMap<String, Type>),
-    Ctor { tag: String, payload: Vec<Type> },
+    Ctor {
+        tag: String,
+        payload: Vec<Type>,
+    },
     // Named ADT (from % type declarations), e.g., Option a
-    Named { name: String, args: Vec<Type> },
+    Named {
+        name: String,
+        args: Vec<Type>,
+    },
     // Limited union for constructor tags used by AltLambda chains.
     // Invariants (after construction):
     //  * Variants sorted lexicographically by tag
@@ -180,7 +188,9 @@ impl TypesApply for Type {
                     .map(|(n, ps)| (n.clone(), ps.iter().map(|t| t.apply(s)).collect()))
                     .collect(),
             ),
-            t @ (Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char) => t.clone(),
+            t @ (Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char | Type::Type) => {
+                t.clone()
+            }
         }
     }
     fn ftv(&self) -> HashSet<TvId> {
@@ -223,7 +233,7 @@ impl TypesApply for Type {
                     }
                 }
             }
-            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char => {}
+            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char | Type::Type => {}
         }
         s
     }
@@ -349,6 +359,15 @@ pub enum TypeError {
         "type mismatch: expected {expected:?} vs actual {actual:?} at ({span_offset},{span_len})"
     )]
     Mismatch { expected: Type, actual: Type, span_offset: usize, span_len: usize },
+    #[error("type mismatch: expected {expected:?} vs actual {actual:?}")]
+    AnnotMismatch {
+        expected: Type,
+        actual: Type,
+        annot_span_offset: usize,
+        annot_span_len: usize,
+        expr_span_offset: usize,
+        expr_span_len: usize,
+    },
     #[error("occurs check failed: {var:?} in {ty:?}")]
     Occurs { var: TvId, ty: Type },
     #[error("constructor union duplicate tag: {tag}")]
@@ -382,7 +401,8 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
         | (Type::Int, Type::Int)
         | (Type::Float, Type::Float)
         | (Type::Str, Type::Str)
-        | (Type::Char, Type::Char) => Ok(Subst::new()),
+        | (Type::Char, Type::Char)
+        | (Type::Type, Type::Type) => Ok(Subst::new()),
         (Type::Fun(a1, b1), Type::Fun(a2, b2)) => {
             let s1 = unify(a1, a2)?;
             let s2 = unify(&b1.apply(&s1), &b2.apply(&s1))?;
@@ -1080,10 +1100,23 @@ fn infer_expr(
             let (got, s) = infer_expr(ctx, expr, allow_effects)?;
             let mut holes = HashMap::new();
             let want = conv_typeexpr(ctx, ty, &mut holes);
-            let s2 = ctx_unify(ctx, &got.apply(&s), &want)?;
-            Ok((want.apply(&s2), s2.compose(s)))
+            match ctx_unify(ctx, &got.apply(&s), &want) {
+                Ok(s2) => Ok((want.apply(&s2), s2.compose(s))),
+                Err(TypeError::Mismatch { expected, actual, .. }) => {
+                    let annot_len = expr.span.offset.saturating_sub(e.span.offset);
+                    Err(TypeError::AnnotMismatch {
+                        expected,
+                        actual,
+                        annot_span_offset: e.span.offset,
+                        annot_span_len: annot_len,
+                        expr_span_offset: expr.span.offset,
+                        expr_span_len: expr.span.len,
+                    })
+                }
+                Err(other) => Err(other),
+            }
         }
-        ExprKind::TypeVal(_ty) => Ok((Type::Str, Subst::new())),
+        ExprKind::TypeVal(_ty) => Ok((Type::Type, Subst::new())),
         ExprKind::Unit => Ok((Type::Unit, Subst::new())),
         ExprKind::Int(_) => Ok((Type::Int, Subst::new())),
         ExprKind::Float(_) => Ok((Type::Float, Subst::new())),
@@ -1801,6 +1834,7 @@ fn pp_type(t: &Type) -> String {
         Type::Float => "Float".into(),
         Type::Str => "Str".into(),
         Type::Char => "Char".into(),
+        Type::Type => "Type".into(),
         Type::Var(TvId(i)) => rename_var(*i as i64),
         Type::List(a) => format!("[{}]", pp_type(a)),
         Type::Tuple(xs) => format!("({})", xs.iter().map(pp_type).collect::<Vec<_>>().join(", ")),
@@ -1896,7 +1930,7 @@ fn user_pretty_type(t: &Type) -> String {
                     }
                 }
             }
-            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char => {}
+            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char | Type::Type => {}
         }
     }
     let mut order = Vec::new();
@@ -1932,6 +1966,7 @@ fn user_pretty_type(t: &Type) -> String {
             Type::Float => "Float".into(),
             Type::Str => "Str".into(),
             Type::Char => "Char".into(),
+            Type::Type => "Type".into(),
             Type::List(x) => format!("[{}]", go(x, m, seen, _out_defs)),
             Type::Tuple(xs) => {
                 let inner =

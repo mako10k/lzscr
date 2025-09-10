@@ -583,6 +583,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         // Optional typechecking phase
+        let mut inferred_type_pretty: Option<String> = None; // for --types pretty: print on same line with value later
         if !opt.no_typecheck {
             if opt.type_debug > 0 {
                 // Parse flags
@@ -622,7 +623,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
                             );
                         } else if opt.types == "pretty" {
-                            println!("{}", t); // 既に %{...}
+                            // Defer printing to combine with value on one line
+                            inferred_type_pretty = Some(t.clone());
                         } else if opt.types == "legacy" {
                             // 再推論 (pretty=false) — オーバーヘッドは小さいので許容
                             match lzscr_types::api::infer_ast_with_opts(
@@ -677,6 +679,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let block = src_reg.format_span_block(span_offset, span_len);
                                     eprintln!("{}", block);
                                 }
+                                TypeError::AnnotMismatch {
+                                    annot_span_offset,
+                                    annot_span_len,
+                                    expr_span_offset,
+                                    expr_span_len,
+                                    ..
+                                } => {
+                                    eprintln!("type error: {}", e);
+                                    let b1 = src_reg
+                                        .format_span_block(annot_span_offset, annot_span_len);
+                                    let b2 =
+                                        src_reg.format_span_block(expr_span_offset, expr_span_len);
+                                    eprintln!("{}\n{}", b1, b2);
+                                }
                                 other => {
                                     eprintln!("type error: {}", other);
                                 }
@@ -697,7 +713,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
                                 );
                             } else if opt.types == "pretty" {
-                                println!("{}", t); // 既に %{...}
+                                // Defer printing to combine with value on one line
+                                inferred_type_pretty = Some(t.clone());
                             }
                         }
                         Err(e) => {
@@ -710,6 +727,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("type error: {}", e);
                                     let block = src_reg.format_span_block(span_offset, span_len);
                                     eprintln!("{}", block);
+                                }
+                                TypeError::AnnotMismatch {
+                                    annot_span_offset,
+                                    annot_span_len,
+                                    expr_span_offset,
+                                    expr_span_len,
+                                    ..
+                                } => {
+                                    eprintln!("type error: {}", e);
+                                    let b1 = src_reg
+                                        .format_span_block(annot_span_offset, annot_span_len);
+                                    let b2 =
+                                        src_reg.format_span_block(expr_span_offset, expr_span_len);
+                                    eprintln!("{}\n{}", b1, b2);
                                 }
                                 other => {
                                     eprintln!("type error: {}", other);
@@ -817,7 +848,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         let out = val_to_string(&env, &val);
-        println!("{out}");
+        if opt.types == "pretty" {
+            if let Some(tp) = inferred_type_pretty {
+                println!("{} {}", tp, out);
+            } else {
+                println!("{out}");
+            }
+        } else {
+            println!("{out}");
+        }
         Ok(())
     }
 } // end of main()
