@@ -359,6 +359,15 @@ pub enum TypeError {
         "type mismatch: expected {expected:?} vs actual {actual:?} at ({span_offset},{span_len})"
     )]
     Mismatch { expected: Type, actual: Type, span_offset: usize, span_len: usize },
+    #[error("type mismatch: expected {expected:?} vs actual {actual:?}")]
+    AnnotMismatch {
+        expected: Type,
+        actual: Type,
+        annot_span_offset: usize,
+        annot_span_len: usize,
+        expr_span_offset: usize,
+        expr_span_len: usize,
+    },
     #[error("occurs check failed: {var:?} in {ty:?}")]
     Occurs { var: TvId, ty: Type },
     #[error("constructor union duplicate tag: {tag}")]
@@ -1091,8 +1100,21 @@ fn infer_expr(
             let (got, s) = infer_expr(ctx, expr, allow_effects)?;
             let mut holes = HashMap::new();
             let want = conv_typeexpr(ctx, ty, &mut holes);
-            let s2 = ctx_unify(ctx, &got.apply(&s), &want)?;
-            Ok((want.apply(&s2), s2.compose(s)))
+            match ctx_unify(ctx, &got.apply(&s), &want) {
+                Ok(s2) => Ok((want.apply(&s2), s2.compose(s))),
+                Err(TypeError::Mismatch { expected, actual, .. }) => {
+                    let annot_len = expr.span.offset.saturating_sub(e.span.offset);
+                    Err(TypeError::AnnotMismatch {
+                        expected,
+                        actual,
+                        annot_span_offset: e.span.offset,
+                        annot_span_len: annot_len,
+                        expr_span_offset: expr.span.offset,
+                        expr_span_len: expr.span.len,
+                    })
+                }
+                Err(other) => Err(other),
+            }
         }
         ExprKind::TypeVal(_ty) => Ok((Type::Type, Subst::new())),
         ExprKind::Unit => Ok((Type::Unit, Subst::new())),
