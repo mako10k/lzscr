@@ -583,6 +583,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         // Optional typechecking phase
+        let mut inferred_type_pretty: Option<String> = None; // for --types pretty: print on same line with value later
         if !opt.no_typecheck {
             if opt.type_debug > 0 {
                 // Parse flags
@@ -622,7 +623,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
                             );
                         } else if opt.types == "pretty" {
-                            println!("{}", t); // 既に %{...}
+                            // Defer printing to combine with value on one line
+                            inferred_type_pretty = Some(t.clone());
                         } else if opt.types == "legacy" {
                             // 再推論 (pretty=false) — オーバーヘッドは小さいので許容
                             match lzscr_types::api::infer_ast_with_opts(
@@ -711,7 +713,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
                                 );
                             } else if opt.types == "pretty" {
-                                println!("{}", t); // 既に %{...}
+                                // Defer printing to combine with value on one line
+                                inferred_type_pretty = Some(t.clone());
                             }
                         }
                         Err(e) => {
@@ -845,7 +848,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         let out = val_to_string(&env, &val);
-        println!("{out}");
+        if opt.types == "pretty" {
+            if let Some(tp) = inferred_type_pretty {
+                println!("{} {}", tp, out);
+            } else {
+                println!("{out}");
+            }
+        } else {
+            println!("{out}");
+        }
         Ok(())
     }
 } // end of main()
