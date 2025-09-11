@@ -893,7 +893,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             TypeError::Mismatch { span_offset, span_len, .. }
                             | TypeError::EffectNotAllowed { span_offset, span_len }
                             | TypeError::UnboundRef { span_offset, span_len, .. }
-                            | TypeError::MixedAltBranches { span_offset, span_len } => {
+                            | TypeError::MixedAltBranches { span_offset, span_len }
+                            | TypeError::NegativeOccurrence { span_offset, span_len, .. }
+                            | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
+                            | TypeError::DuplicateCtorTag { span_offset, span_len, .. }
+                            | TypeError::AltLambdaArityMismatch { span_offset, span_len, .. } => {
                                 eprintln!("type error: {}", e);
                                 // Heuristic: if span len is 1 (generic), nudge caret to the first
                                 // non-comment token at/after that offset for better UX.
@@ -948,7 +952,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 TypeError::Mismatch { span_offset, span_len, .. }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
                                 | TypeError::UnboundRef { span_offset, span_len, .. }
-                                | TypeError::MixedAltBranches { span_offset, span_len } => {
+                                | TypeError::MixedAltBranches { span_offset, span_len }
+                                | TypeError::NegativeOccurrence { span_offset, span_len, .. }
+                                | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
+                                | TypeError::DuplicateCtorTag { span_offset, span_len, .. }
+                                | TypeError::AltLambdaArityMismatch { span_offset, span_len, .. } => {
                                     eprintln!("type error: {}", e);
                                     let (adj_off, adj_len) = if span_len == 1 {
                                         if let Some((op, _len)) = src_reg
@@ -1021,7 +1029,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 TypeError::Mismatch { span_offset, span_len, .. }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
                                 | TypeError::UnboundRef { span_offset, span_len, .. }
-                                | TypeError::MixedAltBranches { span_offset, span_len } => {
+                                | TypeError::MixedAltBranches { span_offset, span_len }
+                                | TypeError::NegativeOccurrence { span_offset, span_len, .. }
+                                | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
+                                | TypeError::DuplicateCtorTag { span_offset, span_len, .. }
+                                | TypeError::AltLambdaArityMismatch { span_offset, span_len, .. } => {
                                     eprintln!("type error: {}", e);
                                     let (adj_off, adj_len) = if span_len == 1 {
                                         if let Some((op, _len)) = src_reg
