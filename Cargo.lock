@@ -370,6 +370,7 @@ dependencies = [
  "lzscr-ast",
  "lzscr-coreir",
  "lzscr-format",
+ "lzscr-lexer",
  "lzscr-parser",
  "lzscr-runtime",
  "lzscr-types",

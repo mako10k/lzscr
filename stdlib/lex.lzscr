@@ -1,13 +1,20 @@
 # stdlib: lexer (self-hosted) built atop Builtins.char/string/scan
 
+# Note on grouping and semicolons:
+# - Inside parentheses ( ... ), ';' is reserved for LetGroup: one or more leading
+#   bindings/types followed by a single final expression (and optional trailing binds
+#   as supported by the parser). Example: (~x = 1; ~y = 2; (~x + ~y))
+# - Plain sequencing like (e1; e2) is NOT part of the grammar. Write (~seq e1 e2)
+#   (or a dedicated block sugar in future) instead.
+
 ~B = ~Builtins;
 ~Char = ~B .char;
 ~Scan = ~B .scan;
 ~Str  = ~B .string;
 
 # predicate combinators
-~is_lower ~c = ~Char .between ~c (97) (122);   # 'a'..'z'
-~is_upper ~c = ~Char .between ~c (65) (90);    # 'A'..'Z'
+~is_lower ~c = ~Char .between ~c ('a') ('z');   # 'a'..'z'
+~is_upper ~c = ~Char .between ~c ('A') ('Z');    # 'A'..'Z'
 ~is_letter ~c = ~Char .is_alpha ~c;            # unicode aware
 ~is_digit ~c = ~Char .is_digit ~c;             # ASCII digit
 ~is_alnum ~c = ~Char .is_alnum ~c;
@@ -26,11 +33,11 @@
 
 # identifier: [A-Za-z_][A-Za-z0-9_]* (ASCII subset for bootstrap)
 # use boolean or (||), not alt-lambda (|), inside predicates
-~is_ident_start ~c = (~is_letter ~c) || (~Char .between ~c (95) (95)); # '_'
-~is_ident_rest  ~c = (~is_alnum  ~c) || (~Char .between ~c (95) (95));
+~is_ident_start ~c = (~is_letter ~c) || (~Char .between ~c ('_') ('_')); # '_'
+~is_ident_rest  ~c = (~is_alnum  ~c) || (~Char .between ~c ('_') ('_'));
 
 ~take_ident ~sc = (
-  (\ .Some (_, ~sc1) ->
+  (\(.Some (_, ~sc1)) ->
      (
   (\(~rest, ~sc2) ->
           .Some ((~Scan .slice_span ~sc (~Scan .pos ~sc) (~Scan .pos ~sc2), ~sc2))
@@ -74,42 +81,57 @@
   ~n = (~Str .len ~lit);
   ~loop ~i ~cur = (
     (~if (~i == ~n) (.Some ~cur) (
-      ((\ .Some ~c -> (
-          ((\ .Some ~d -> (~if (~c == ~d) (~loop (~i + 1) ((\(.Some (~_, ~nxt)) -> ~nxt) (~Scan .next ~cur))) (.None))
-            | (\.None -> .None)
+  ((\(.Some ~c) -> (
+        ((\(.Some ~d) -> (~if (~c == ~d) (~loop (~i + 1) ((\(.Some (~_, ~nxt)) -> ~nxt) (~Scan .next ~cur))) (.None))
+            | (\(.None) -> .None)
           ) (~Str .char_at ~lit ~i)
-      )) | (\.None -> .None)) (~Scan .peek ~cur)
+  )) | (\(.None) -> .None)) (~Scan .peek ~cur)
     )))
   );
   (~loop 0 ~sc)
 );
 
-# Skip spaces and comments (#...\n, and nestable block {- -})
+# Skip spaces and comments (#...\n, nestable {- -})
+# 方針: ヘルパーを分離し読みやすさ向上。
+#   skip_line_comment    : '#' 後を改行まで飛ばす
+#   scan_block_comment   : '{-' から対応する '-}' まで（ネスト可）
+#   step                 : 空白をスキップし、行/ブロックコメント 1 個を処理し進んだら .Some 新 Scan、進まなければ .None
+#   loop                 : step が成功する限り再帰
 ~skip_ws_and_comments ~sc0 = (
-  ~loop ~sc = (
-    # skip spaces
-    (\(~_ , ~sc1) ->
-      # line comment
-  (\ (.Some ~sc2) -> (
- (~loop (((\(~_, ~s3) -> ~s3) (~Scan .take_while (\ ~c -> (~if (~c == (10)) .False .True)) ~sc2)))
-  )) | (\.None ->
-        # block comment
-  ((\ .Some ~scb -> (
-          ~blk ~depth ~s =
-            (~if (~depth == (0)) ~s (
-              ((\ .Some ~_ ->
-                ((\ .Some ~s1 -> (~blk (~depth + 1) ~s1)) | (\.None ->
-                  ((\ .Some ~s2 -> (~blk (~depth - 1) ~s2)) | (\.None -> (~blk ~depth (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s)))))) (~match_str "-}" ~s)
-                )) (~match_str "{-" ~s))
-              ) | (\.None -> ~s)) (~Scan .peek ~s)
-            )
-          ;
-          (~loop (~blk 1 ~scb))
-  )) | (\.None -> ~sc1)) (~match_str "{-" ~sc1)
-      )) (~match_str "#" ~sc1)
-    ) (~skip_spaces ~sc)
+  ~loop = (\ ~self -> \ ~sc ->
+    # 先頭空白を飛ばす
+    (\(~_, ~sc1) -> (
+      # 行コメント試行
+      (\(.Some ~sc_hash) -> (
+        ~next_after_hash = (\(~_, ~s3) -> ~s3) (~Scan .take_while (\ ~c -> (~if (~c == ('\n')) .False .True)) ~sc_hash);
+        ((~self ~self) ~next_after_hash)
+      )
+       | (\.None -> (
+          # ブロックコメント試行
+          (\(.Some ~sc_block_start) -> (
+            (# ローカル再帰 LetGroup
+              (
+                ~blk = (\ ~blk_self -> \ ~depth -> \ ~s2 ->
+                  ~if (~depth == (0)) ~s2 (
+                    (\(.Some ~_peek) -> (
+                      ((\(.Some ~s_open) -> ((~blk ~blk_self) (~depth + 1) ~s_open))
+                       | (\.None -> (
+                          ((\(.Some ~s_close) -> ((~blk ~blk_self) (~depth - 1) ~s_close))
+                           | (\.None -> ((~blk ~blk_self) ~depth ((\(~_, ~n) -> ~n) (~Scan .next ~s2))))
+                          ) (~match_str "-}" ~s2)
+                       )) (~match_str "{-" ~s2)
+                    )) | (\.None -> ~s2)) (~Scan .peek ~s2)
+                ));
+                ~after = ((~blk ~blk) 1 ~sc_block_start);
+                ((~self ~self) ~after)
+              )
+            ) )
+          )
+           | (\.None -> ~sc1)) (~match_str "{-" ~sc1)
+       )) (~match_str "#" ~sc1)
+    )) (~skip_spaces ~sc)
   );
-  (~loop ~sc0)
+  ((~loop ~loop) ~sc0)
 );
 
 # Single/multi character token matchers (maximal munch)
@@ -123,8 +145,8 @@
 # Ident, Member, TyVar, TypeOpen
 ~take_ident_token ~sc = ((\ .Some (~txt, ~s1) -> .Some (~Tok (.Ident) (~span_between ~sc ~s1) ~txt)) | (\.None -> .None)) (~take_ident ~sc);
 
-~is_dot ~c = (~c == (46));
-~is_comma ~c = (~c == (44));
+~is_dot ~c = (~c == ('.'));
+~is_comma ~c = (~c == (','));
 ~take_member ~sc = (
   # After a dot, either tuple operator with commas or a member name
   ((\ .Some ~s1 ->
@@ -132,7 +154,7 @@
       (~if (~c == (44)) (
         # tuple member operator ".,,," — eat commas greedily
         ~more ~s = (
-          ((\ .Some ~d -> (~if (~d == (44)) (~more (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s))) (~s)) | (~s))) | (\.None -> ~s)) (~Scan .peek ~s)
+          ((\ .Some ~d -> (~if (~d == (',')) (~more (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s))) (~s)) | (~s))) | (\.None -> ~s)) (~Scan .peek ~s)
         );
         ~s2 = (~more ~s1);
         .Some (~Tok (.Member) (~span_between ~sc ~s2) (~Scan .slice_span ~sc (~Scan .pos ~sc) (~Scan .pos ~s2)))
@@ -163,21 +185,21 @@
 ~take_string ~sc =
   ((\ .Some ~s1 -> (
     # DRAFT: minimal string scanner — handles closing quote and basic escapes; TODO: refine unicode and error cases
-    ~next1 ~s = (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s)));
+  ~next1 ~s = (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s)));
     ~loop ~s = (
       ((\ .Some ~c -> (
-        (~if (~c == (34))
+        (~if (~c == ('"'))
           (.Some (~emit (.Str) ~sc (~next1 ~s)))
-          (~if (~c == (92))
+          (~if (~c == ('\\'))
             (
               ~s2 = (~next1 ~s);  # after '\'
               ((\ .Some ~d -> (
-                (~if (~d == (117)) (
+                (~if (~d == ('u')) (
                   # \u{...} — skip until next '}'
                   ~s3 = (~next1 ~s2);
-                  (~if ((~Scan .peek ~s3) == (.Some (123))) (
+                  (~if ((~Scan .peek ~s3) == (.Some ('{'))) (
                       ~u ~t = (
-                        ((\ .Some ~ch -> (~if (~ch == (125)) ~t (~u (~next1 ~t)))) | (\.None -> ~t)) (~Scan .peek ~t)
+                        ((\ .Some ~ch -> (~if (~ch == ('}')) ~t (~u (~next1 ~t)))) | (\.None -> ~t)) (~Scan .peek ~t)
                       );
                       (~loop (~u (~next1 ~s3)))
                     )
@@ -197,10 +219,10 @@
 ~take_char_lit ~sc =
   ((\ .Some ~s1 -> (
     ~adv ~s = (
-  ((\ .Some ~c -> (~if (~c == (92)) (~adv (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s)))) (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s))))) | (\.None -> ~s)) (~Scan .peek ~s)
+  ((\ .Some ~c -> (~if (~c == ('\\')) (~adv (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s)))) (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s))))) | (\.None -> ~s)) (~Scan .peek ~s)
     );
     ~s2 = (~adv ~s1);
-  (~if (((~Scan .peek ~s2) == (.Some (39)))) (.Some (~emit (.Char) ~sc (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s2))))) (.None))
+  (~if (((~Scan .peek ~s2) == (.Some ('\'')))) (.Some (~emit (.Char) ~sc (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s2))))) (.None))
   )) | (\.None -> .None)) (~match_str "'" ~sc);
 
 # next_token: returns .Some((Token, Scan)) or .None at EOF
@@ -230,29 +252,29 @@
      | (~take_number_token ~sc)
      | (~take_string ~sc)
      | (~take_char_lit ~sc)
-     | (~one_char (123) (.LBrace) ~sc)    # {
-     | (~one_char (125) (.RBrace) ~sc)    # }
-     | (~one_char (40)  (.LParen) ~sc)    # (
-     | (~one_char (41)  (.RParen) ~sc)    # )
-     | (~one_char (91)  (.LBracket) ~sc)  # [
-     | (~one_char (93)  (.RBracket) ~sc)  # ]
-     | (~one_char (44)  (.Comma) ~sc)     # ,
-     | (~one_char (59)  (.Semicolon) ~sc) # ;
-     | (~one_char (94)  (.Caret) ~sc)     # ^
-     | (~one_char (124) (.Pipe) ~sc)      # |
-     | (~one_char (58)  (.Colon) ~sc)     # :
-     | (~one_char (61)  (.Eq) ~sc)        # =
-  | (~one_char (62)  (.Greater) ~sc)   # >
-  | (~one_char (60)  (.Less) ~sc)      # <
-     | (~one_char (64)  (.At) ~sc)        # @
-     | (~one_char (33)  (.Bang) ~sc)      # !
-     | (~one_char (92)  (.Backslash) ~sc) # \
-     | (~one_char (63)  (.Question) ~sc)  # ?
-     | (~one_char (43)  (.Plus) ~sc)      # +
-     | (~one_char (45)  (.Minus) ~sc)     # -
-     | (~one_char (42)  (.Star) ~sc)      # *
-     | (~one_char (47)  (.Slash) ~sc)     # /
-     | (~one_char (126) (.Tilde) ~sc)     # ~
+    | (~one_char ('{') (.LBrace) ~sc)    # {
+    | (~one_char ('}') (.RBrace) ~sc)    # }
+    | (~one_char ('(')  (.LParen) ~sc)    # (
+    | (~one_char (')')  (.RParen) ~sc)    # )
+    | (~one_char ('[')  (.LBracket) ~sc)  # [
+    | (~one_char (']')  (.RBracket) ~sc)  # ]
+    | (~one_char (',')  (.Comma) ~sc)     # ,
+    | (~one_char (';')  (.Semicolon) ~sc) # ;
+    | (~one_char ('^')  (.Caret) ~sc)     # ^
+    | (~one_char ('|') (.Pipe) ~sc)      # |
+    | (~one_char (':')  (.Colon) ~sc)     # :
+    | (~one_char ('=')  (.Eq) ~sc)        # =
+  | (~one_char ('>')  (.Greater) ~sc)   # >
+  | (~one_char ('<')  (.Less) ~sc)      # <
+    | (~one_char ('@')  (.At) ~sc)        # @
+    | (~one_char ('!')  (.Bang) ~sc)      # !
+    | (~one_char ('\\')  (.Backslash) ~sc) # \
+    | (~one_char ('?')  (.Question) ~sc)  # ?
+    | (~one_char ('+')  (.Plus) ~sc)      # +
+    | (~one_char ('-')  (.Minus) ~sc)     # -
+    | (~one_char ('*')  (.Star) ~sc)      # *
+    | (~one_char ('/')  (.Slash) ~sc)     # /
+    | (~one_char ('~') (.Tilde) ~sc)     # ~
     ) |> (\ .Some ~tok -> (
           ~sp = (~tok .span);
           ~end = ((~sp .off) + (~sp .len));

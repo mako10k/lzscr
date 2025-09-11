@@ -159,7 +159,7 @@
     ~neg = ((~Str .slice ~s 0 1) == "-");
     ~start = (~if (~neg) 1 0);
     ~if (~start >= ~len) .None (
-  ~loop ~i ~acc = (~if (~i >= ~len) ( .True , ~acc ) (
+  ~loop ~i ~acc = (~if (~i >= ~len) (.True, ~acc) (
         ((\(.Some ~c) -> (~if ((~Char .is_digit ~c)) (
             ~d = ((~Unicode .to_int ~c) - (~Unicode .to_int '0'));
             ~loop (~i + 1) ((~acc * 10) + ~d)

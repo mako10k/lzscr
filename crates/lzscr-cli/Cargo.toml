@@ -8,6 +8,7 @@ license = "MIT"
 clap = { version = "4", features = ["derive"] }
 lzscr-ast = { path = "../lzscr-ast", version = "0.1.0" }
 lzscr-parser = { path = "../lzscr-parser", version = "0.1.0" }
+lzscr-lexer = { path = "../lzscr-lexer", version = "0.1.0" }
 lzscr-runtime = { path = "../lzscr-runtime", version = "0.1.0" }
 lzscr-analyzer = { path = "../lzscr-analyzer", version = "0.1.0" }
 lzscr-coreir = { path = "../lzscr-coreir", version = "0.1.0" }

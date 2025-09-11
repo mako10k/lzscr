@@ -6,6 +6,7 @@ use lzscr_analyzer::{
 use lzscr_ast::ast::*;
 use lzscr_coreir::{eval_term, lower_expr_to_core, print_ir_value, print_term};
 use lzscr_parser::parse_expr;
+use lzscr_lexer as _lexer_for_caret; // for re-lexing to correct line/col in secondary caret block
 use lzscr_runtime::{eval, Env, Value};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -147,7 +148,11 @@ impl SourceRegistry {
                 let mut j = pos;
                 while j < line_end {
                     let b = bytes[j];
-                    if b == b' ' || b == b'\t' || b == b'\r' { j += 1; } else { break; }
+                    if b == b' ' || b == b'\t' || b == b'\r' {
+                        j += 1;
+                    } else {
+                        break;
+                    }
                 }
                 if j < line_end {
                     let b0 = bytes[j];
@@ -158,7 +163,11 @@ impl SourceRegistry {
                         let mut k = j + 1;
                         while k < line_end {
                             let b = bytes[k];
-                            if b == b' ' || b == b'\t' || b == b'\r' { k += 1; } else { break; }
+                            if b == b' ' || b == b'\t' || b == b'\r' {
+                                k += 1;
+                            } else {
+                                break;
+                            }
                         }
                         if k < line_end {
                             if bytes[k] == b'#' {
@@ -209,37 +218,71 @@ impl SourceRegistry {
                 let b = bytes[i];
                 // Handle line comment
                 if in_line_comment {
-                    if b == b'\n' { in_line_comment = false; }
-                    i += 1; continue;
+                    if b == b'\n' {
+                        in_line_comment = false;
+                    }
+                    i += 1;
+                    continue;
                 }
                 // Handle block comment
                 if block_comment_depth > 0 {
                     if b == b'-' && i + 1 < bytes.len() && bytes[i + 1] == b'}' {
-                        block_comment_depth -= 1; i += 2; continue;
+                        block_comment_depth -= 1;
+                        i += 2;
+                        continue;
                     }
                     if b == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
-                        block_comment_depth += 1; i += 2; continue;
+                        block_comment_depth += 1;
+                        i += 2;
+                        continue;
                     }
-                    i += 1; continue;
+                    i += 1;
+                    continue;
                 }
                 // Handle strings
                 if in_str {
-                    if b == b'\\' { i = (i + 2).min(bytes.len()); continue; }
-                    if b == b'"' { in_str = false; }
-                    i += 1; continue;
+                    if b == b'\\' {
+                        i = (i + 2).min(bytes.len());
+                        continue;
+                    }
+                    if b == b'"' {
+                        in_str = false;
+                    }
+                    i += 1;
+                    continue;
                 }
                 if in_char {
-                    if b == b'\\' { i = (i + 2).min(bytes.len()); continue; }
-                    if b == b'\'' { in_char = false; }
-                    i += 1; continue;
+                    if b == b'\\' {
+                        i = (i + 2).min(bytes.len());
+                        continue;
+                    }
+                    if b == b'\'' {
+                        in_char = false;
+                    }
+                    i += 1;
+                    continue;
                 }
                 // Detect comment/string/char starts
-                if b == b'#' { in_line_comment = true; i += 1; continue; }
-                if b == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
-                    block_comment_depth = 1; i += 2; continue;
+                if b == b'#' {
+                    in_line_comment = true;
+                    i += 1;
+                    continue;
                 }
-                if b == b'"' { in_str = true; i += 1; continue; }
-                if b == b'\'' { in_char = true; i += 1; continue; }
+                if b == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
+                    block_comment_depth = 1;
+                    i += 2;
+                    continue;
+                }
+                if b == b'"' {
+                    in_str = true;
+                    i += 1;
+                    continue;
+                }
+                if b == b'\'' {
+                    in_char = true;
+                    i += 1;
+                    continue;
+                }
                 // Track braces
                 if b == b'{' {
                     depth += 1;
@@ -513,6 +556,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match e {
                     ParseError::WithSpan { msg, span_offset, span_len } => {
                         eprintln!("parse error: {}", msg);
+                        // If message includes "Opening '(' at line X:Y (offset Z)" extract and show second caret block.
+                        let mut open_paren_block: Option<String> = None;
+                        // (legacy patterns ignored)
+                        if let Some(idx) = msg.find("Opening '(' at line ") {
+                            // pattern: Opening '(' at line L:C (offset O)
+                            let tail = &msg[idx + "Opening '(' at line ".len()..];
+                            // Extract L
+                            // Parse numbers manually
+                            let mut lchars = tail.chars();
+                            let mut line_s = String::new();
+                            while let Some(ch) = lchars.next() { if ch.is_ascii_digit() { line_s.push(ch); } else { if ch == ':' { break; } else { line_s.clear(); break; } } }
+                            let mut col_s = String::new();
+                            while let Some(ch) = lchars.next() { if ch.is_ascii_digit() { col_s.push(ch); } else { if ch == ' ' { break; } else { col_s.clear(); break; } } }
+                            let mut off_s = String::new();
+                            if let Some(pos_off) = tail.find("(offset ") {
+                                let after = &tail[pos_off + "(offset ".len()..];
+                                for ch in after.chars() { if ch.is_ascii_digit() { off_s.push(ch); } else { break; } }
+                            }
+                            if let (Ok(_line_no), Ok(_col_no), Ok(off_no)) = (line_s.parse::<usize>(), col_s.parse::<usize>(), off_s.parse::<usize>()) {
+                                // Build caret block for the opening paren (length 1)
+                                let raw_block = format_span_caret(&code, &input_name, off_no, 1);
+                                // Re-lex to get authoritative line/col from token (accounts for any wrapper adjustments later)
+                                let toks = _lexer_for_caret::lex(&code);
+                                if let Some(tok) = toks.iter().find(|t| t.span.offset == off_no) {
+                                    let mut lines = raw_block.lines();
+                                    if let Some(first) = lines.next() {
+                                        // Replace header line with token's recorded line/col
+                                        let _orig_header = first; // keep for potential future debugging
+                                        let new_first = format!("at {}:{}:{}", input_name, tok.line, tok.col);
+                                        let rest: String = lines.map(|l| format!("\n{}", l)).collect();
+                                        open_paren_block = Some(format!("{}{}", new_first, rest));
+                                    } else {
+                                        open_paren_block = Some(raw_block);
+                                    }
+                                } else {
+                                    open_paren_block = Some(raw_block);
+                                }
+                            }
+                        }
                         // Try to attribute the span to prelude or user input for a better filename
                         if let Some((ref pre_src, ref pre_name)) = prelude_for_diag {
                             let pre_start = 1; // after opening '('
@@ -545,6 +627,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 format_span_caret(&code, &input_name, span_offset, span_len)
                             );
                         }
+                        if let Some(block) = open_paren_block { eprintln!("\n{}", block); }
+                    }
+                    ParseError::WithSpan2 { msg, span1_offset, span1_len, span2_offset, span2_len } => {
+                        eprintln!("parse error: {}", msg);
+                        // Always print both spans with proper source segmentation handling (reuse logic for first span)
+                        let print_block = |off: usize, len: usize| {
+                            if let Some((ref pre_src, ref pre_name)) = prelude_for_diag {
+                                let pre_start = 1;
+                                let pre_end = pre_start + pre_src.len();
+                                if off >= pre_start && off < pre_end {
+                                    let rel = off - pre_start;
+                                    eprintln!("{}", format_span_caret(pre_src, pre_name, rel, len));
+                                    return;
+                                } else {
+                                    let mut user_start = 0usize;
+                                    user_start += 1 + pre_src.len() + 1;
+                                    if user_wrapped_parens { user_start += 1; }
+                                    let rel = off.saturating_sub(user_start);
+                                    eprintln!("{}", format_span_caret(&user_raw, &input_name, rel, len));
+                                    return;
+                                }
+                            }
+                            eprintln!("{}", format_span_caret(&code, &input_name, off, len));
+                        };
+                        print_block(span1_offset, span1_len);
+                        print_block(span2_offset, span2_len);
                     }
                     other => {
                         eprintln!("parse error: {}", other);
@@ -572,17 +680,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 s
             } else {
                 // No prelude; we may still have wrapped parens for file input
-                if user_wrapped_parens { 1 } else { 0 }
+                if user_wrapped_parens {
+                    1
+                } else {
+                    0
+                }
             };
             let user_seg = Some((input_name.clone(), user_raw.clone(), user_start));
             (prelude_seg, user_seg)
         };
-        let mut src_reg = SourceRegistry::with_segments(
-            input_name.clone(),
-            code.clone(),
-            prelude_seg,
-            user_seg,
-        );
+        let mut src_reg =
+            SourceRegistry::with_segments(input_name.clone(), code.clone(), prelude_seg, user_seg);
         let ast = match expand_requires_in_expr(
             &ast0,
             &module_search_paths,
@@ -956,7 +1064,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 | TypeError::NegativeOccurrence { span_offset, span_len, .. }
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                                 | TypeError::DuplicateCtorTag { span_offset, span_len, .. }
-                                | TypeError::AltLambdaArityMismatch { span_offset, span_len, .. } => {
+                                | TypeError::AltLambdaArityMismatch {
+                                    span_offset, span_len, ..
+                                } => {
                                     eprintln!("type error: {}", e);
                                     let (adj_off, adj_len) = if span_len == 1 {
                                         if let Some((op, _len)) = src_reg
@@ -966,7 +1076,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         } else {
                                             (src_reg.first_non_comment_offset_from(span_offset), 1)
                                         }
-                                    } else { (span_offset, span_len) };
+                                    } else {
+                                        (span_offset, span_len)
+                                    };
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                 }
@@ -1033,7 +1145,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 | TypeError::NegativeOccurrence { span_offset, span_len, .. }
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                                 | TypeError::DuplicateCtorTag { span_offset, span_len, .. }
-                                | TypeError::AltLambdaArityMismatch { span_offset, span_len, .. } => {
+                                | TypeError::AltLambdaArityMismatch {
+                                    span_offset, span_len, ..
+                                } => {
                                     eprintln!("type error: {}", e);
                                     let (adj_off, adj_len) = if span_len == 1 {
                                         if let Some((op, _len)) = src_reg
@@ -1043,7 +1157,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         } else {
                                             (src_reg.first_non_comment_offset_from(span_offset), 1)
                                         }
-                                    } else { (span_offset, span_len) };
+                                    } else {
+                                        (span_offset, span_len)
+                                    };
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                 }
