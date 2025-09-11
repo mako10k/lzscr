@@ -1,16 +1,17 @@
-# stdlib: lexer helpers built atop Builtins.char and Builtins.scan
+# stdlib: lexer (self-hosted) built atop Builtins.char/string/scan
 
 ~B = ~Builtins;
 ~Char = ~B .char;
 ~Scan = ~B .scan;
+~Str  = ~B .string;
 
 # predicate combinators
-~is_lower = \~c -> ~Char .between ~c (97) (122);   # 'a'..'z'
-~is_upper = \~c -> ~Char .between ~c (65) (90);    # 'A'..'Z'
-~is_letter = \~c -> ~Char .is_alpha ~c;            # unicode aware
-~is_digit = \~c -> ~Char .is_digit ~c;             # ASCII digit
-~is_alnum = \~c -> ~Char .is_alnum ~c;
-~is_space = \~c -> ~Char .is_space ~c;
+~is_lower ~c = ~Char .between ~c (97) (122);   # 'a'..'z'
+~is_upper ~c = ~Char .between ~c (65) (90);    # 'A'..'Z'
+~is_letter ~c = ~Char .is_alpha ~c;            # unicode aware
+~is_digit ~c = ~Char .is_digit ~c;             # ASCII digit
+~is_alnum ~c = ~Char .is_alnum ~c;
+~is_space ~c = ~Char .is_space ~c;
 
 # scanning primitives re-export
 ~new = ~Scan .new;
@@ -25,49 +26,257 @@
 
 # identifier: [A-Za-z_][A-Za-z0-9_]* (ASCII subset for bootstrap)
 # use boolean or (||), not alt-lambda (|), inside predicates
-~is_ident_start = \~c -> (~is_letter ~c) || (~Char .between ~c (95) (95)); # '_'
-~is_ident_rest  = \~c -> (~is_alnum  ~c) || (~Char .between ~c (95) (95));
+~is_ident_start ~c = (~is_letter ~c) || (~Char .between ~c (95) (95)); # '_'
+~is_ident_rest  ~c = (~is_alnum  ~c) || (~Char .between ~c (95) (95));
 
-~take_ident = \~sc -> (
-  (\ .Some (., _ ~sc1) ->
+~take_ident ~sc = (
+  (\ .Some (_, ~sc1) ->
      (
-  (\ ., ~rest ~sc2 ->
+  (\(~rest, ~sc2) ->
           .Some ((~Scan .slice_span ~sc (~Scan .pos ~sc) (~Scan .pos ~sc2), ~sc2))
        ) (~Scan .take_while ~is_ident_rest ~sc1)
      )
   ) | (\ .None -> .None)
 ) (~Scan .take_if ~is_ident_start ~sc);
 # number: [0-9]+
-~take_number = \~sc -> ~take_while1 ~is_digit ~sc;
+~take_number ~sc = ~take_while1 ~is_digit ~sc;
 
 # skip spaces
-~skip_spaces = \~sc -> ~take_while ~is_space ~sc;
-~skip_spaces1 = \~sc -> ~take_while1 ~is_space ~sc;
+~skip_spaces ~sc = ~take_while ~is_space ~sc;
+~skip_spaces1 ~sc = ~take_while1 ~is_space ~sc;
+
+# ---------------- Tokenizer (self-hosted) ----------------
+
+# Span helpers
+~span ~off ~len = { off: ~off, len: ~len };
+~span_between ~s1 ~s2 = ~span (~Scan .pos ~s1) ((~Scan .pos ~s2) - (~Scan .pos ~s1));
+
+# Token record: { kind: Ctor, span: {off,len}, text: Str }
+~Tok ~kind ~sp ~txt = { kind: ~kind, span: ~sp, text: ~txt };
+
+# String helpers
+~str_eq ~a ~b = (
+  ~if (((~Str .len ~a) == (~Str .len ~b))) (
+    ~go ~i = (
+      (~if (~i >= (~Str .len ~a)) .True (
+        ((\(.Some ~x) (.Some ~y) -> (~if (~x == ~y) (~go (~i + 1)) .False))
+         | (\.None _ -> .False)
+         | (\_ .None -> .False)
+        ) ((~Str .char_at ~a ~i)) ((~Str .char_at ~b ~i))
+      ))
+    );
+    (~go 0)
+  ) .False
+);
+
+# Try match a fixed string at current position; if matched, advance
+~match_str ~lit ~sc = (
+  ~n = (~Str .len ~lit);
+  ~loop ~i ~cur = (
+    (~if (~i == ~n) (.Some ~cur) (
+      ((\ .Some ~c -> (
+          ((\ .Some ~d -> (~if (~c == ~d) (~loop (~i + 1) ((\(.Some (~_, ~nxt)) -> ~nxt) (~Scan .next ~cur))) (.None))
+            | (\.None -> .None)
+          ) (~Str .char_at ~lit ~i)
+      )) | (\.None -> .None)) (~Scan .peek ~cur)
+    )))
+  );
+  (~loop 0 ~sc)
+);
+
+# Skip spaces and comments (#...\n, and nestable block {- -})
+~skip_ws_and_comments ~sc0 = (
+  ~loop ~sc = (
+    # skip spaces
+    (\(~_ , ~sc1) ->
+      # line comment
+  (\ (.Some ~sc2) -> (
+ (~loop (((\(~_, ~s3) -> ~s3) (~Scan .take_while (\ ~c -> (~if (~c == (10)) .False .True)) ~sc2)))
+  )) | (\.None ->
+        # block comment
+  ((\ .Some ~scb -> (
+          ~blk ~depth ~s =
+            (~if (~depth == (0)) ~s (
+              ((\ .Some ~_ ->
+                ((\ .Some ~s1 -> (~blk (~depth + 1) ~s1)) | (\.None ->
+                  ((\ .Some ~s2 -> (~blk (~depth - 1) ~s2)) | (\.None -> (~blk ~depth (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s)))))) (~match_str "-}" ~s)
+                )) (~match_str "{-" ~s))
+              ) | (\.None -> ~s)) (~Scan .peek ~s)
+            )
+          ;
+          (~loop (~blk 1 ~scb))
+  )) | (\.None -> ~sc1)) (~match_str "{-" ~sc1)
+      )) (~match_str "#" ~sc1)
+    ) (~skip_spaces ~sc)
+  );
+  (~loop ~sc0)
+);
+
+# Single/multi character token matchers (maximal munch)
+~emit ~kind ~s0 ~s1 = ~Tok ~kind (~span_between ~s0 ~s1) (~Scan .slice_span ~s0 (~Scan .pos ~s0) (~Scan .pos ~s1));
+
+~one_char ~ch ~kind ~sc =
+  ((\ .Some ~c -> (~if (~c == ~ch) (.Some (~emit ~kind ~sc (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~sc))))) (.None)) | (\.None -> .None)) (~Scan .peek ~sc));
+
+~keyword ~lit ~kind ~sc = ((\ .Some ~s1 -> .Some (~emit ~kind ~sc ~s1)) | (\.None -> .None)) (~match_str ~lit ~sc);
+
+# Ident, Member, TyVar, TypeOpen
+~take_ident_token ~sc = ((\ .Some (~txt, ~s1) -> .Some (~Tok (.Ident) (~span_between ~sc ~s1) ~txt)) | (\.None -> .None)) (~take_ident ~sc);
+
+~is_dot ~c = (~c == (46));
+~is_comma ~c = (~c == (44));
+~take_member ~sc = (
+  # After a dot, either tuple operator with commas or a member name
+  ((\ .Some ~s1 ->
+    ((\ .Some ~c ->
+      (~if (~c == (44)) (
+        # tuple member operator ".,,," — eat commas greedily
+        ~more ~s = (
+          ((\ .Some ~d -> (~if (~d == (44)) (~more (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s))) (~s)) | (~s))) | (\.None -> ~s)) (~Scan .peek ~s)
+        );
+        ~s2 = (~more ~s1);
+        .Some (~Tok (.Member) (~span_between ~sc ~s2) (~Scan .slice_span ~sc (~Scan .pos ~sc) (~Scan .pos ~s2)))
+      ) (
+        # member name: use ~take_ident after '.'
+        ((\ .Some (~txt, ~s2) ->
+            .Some (~Tok (.Member) (~span_between ~sc ~s2) (~Scan .slice_span ~sc (~Scan .pos ~sc) (~Scan .pos ~s2)))
+         ) | (\.None -> .None)) (~take_ident ~s1)
+      ))
+    ) | (\.None -> .None)) (~Scan .peek ~s1)
+  ) | (\.None -> .None)) (~match_str "." ~sc)
+);
+
+~take_tyvar_or_typeopen ~sc = (
+  ((\ .Some ~s1 -> .Some (~emit (.TypeOpen) ~sc ~s1)) | (\.None ->
+    ((\ .Some ~s1 -> (
+      ((\ .Some (~txt, ~s2) -> .Some (~Tok (.TyVar) (~span_between ~sc ~s2) ~txt)) | (\.None -> .None)) (~take_ident ~s1)
+    )) | (\.None -> .None)) (~match_str "%" ~sc)
+  )) (~match_str "%{" ~sc)
+);
+
+# Numbers (simple but practical): decimal int; float if '.' digits or exponent; TODO: radix 0x/0o/0b
+~take_digits ~sc = ~take_while1 ~is_digit ~sc;
+~is_e ~s = ((~str_eq ~s "e") || (~str_eq ~s "E"));
+# (duplicate ~take_member removed)
+
+# Strings and Chars (returns raw slice text)
+~take_string ~sc =
+  ((\ .Some ~s1 -> (
+    # DRAFT: minimal string scanner — handles closing quote and basic escapes; TODO: refine unicode and error cases
+    ~next1 ~s = (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s)));
+    ~loop ~s = (
+      ((\ .Some ~c -> (
+        (~if (~c == (34))
+          (.Some (~emit (.Str) ~sc (~next1 ~s)))
+          (~if (~c == (92))
+            (
+              ~s2 = (~next1 ~s);  # after '\'
+              ((\ .Some ~d -> (
+                (~if (~d == (117)) (
+                  # \u{...} — skip until next '}'
+                  ~s3 = (~next1 ~s2);
+                  (~if ((~Scan .peek ~s3) == (.Some (123))) (
+                      ~u ~t = (
+                        ((\ .Some ~ch -> (~if (~ch == (125)) ~t (~u (~next1 ~t)))) | (\.None -> ~t)) (~Scan .peek ~t)
+                      );
+                      (~loop (~u (~next1 ~s3)))
+                    )
+                    (~loop ~s3)
+                  )
+                ) (~loop ~s2))
+              )) | (\.None -> (~loop ~s2))) (~Scan .peek ~s2)
+            )
+            (~loop (~next1 ~s))
+          )
+        )
+      )) | (\.None -> (.Some (~emit (.Str) ~sc ~s)))) (~Scan .peek ~s)
+    );
+    (~loop ~s1)
+  )) | (\.None -> .None)) (~match_str "\"" ~sc);
+
+~take_char_lit ~sc =
+  ((\ .Some ~s1 -> (
+    ~adv ~s = (
+  ((\ .Some ~c -> (~if (~c == (92)) (~adv (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s)))) (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s))))) | (\.None -> ~s)) (~Scan .peek ~s)
+    );
+    ~s2 = (~adv ~s1);
+  (~if (((~Scan .peek ~s2) == (.Some (39)))) (.Some (~emit (.Char) ~sc (((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s2))))) (.None))
+  )) | (\.None -> .None)) (~match_str "'" ~sc);
+
+# next_token: returns .Some((Token, Scan)) or .None at EOF
+~next_token ~sc0 = (
+  ~sc = (~skip_ws_and_comments ~sc0);
+  (~if (~Scan .eof ~sc) (.None) (
+    ~start = ~sc;
+    # multi-char operators first
+    ((~keyword "||" (.PipePipe) ~sc)
+     | (~keyword "->" (.Arrow) ~sc)
+     | (~keyword "==" (.EqEq) ~sc)
+     | (~keyword "!=" (.BangEq) ~sc)
+     | (~keyword "<=" (.LessEq) ~sc)
+     | (~keyword "<-" (.LeftArrow) ~sc)
+     | (~keyword ">=" (.GreaterEq) ~sc)
+     | (~keyword ".<=" (.DotLessEq) ~sc)
+     | (~keyword ".<" (.DotLess) ~sc)
+     | (~keyword ".>=" (.DotGreaterEq) ~sc)
+     | (~keyword ".>" (.DotGreater) ~sc)
+     | (~keyword ".+" (.DotPlus) ~sc)
+     | (~keyword ".-" (.DotMinus) ~sc)
+     | (~keyword ".*" (.DotStar) ~sc)
+     | (~keyword "./" (.DotSlash) ~sc)
+     | (~take_tyvar_or_typeopen ~sc)
+     | (~take_member ~sc)
+     | (~take_ident_token ~sc)
+     | (~take_number_token ~sc)
+     | (~take_string ~sc)
+     | (~take_char_lit ~sc)
+     | (~one_char (123) (.LBrace) ~sc)    # {
+     | (~one_char (125) (.RBrace) ~sc)    # }
+     | (~one_char (40)  (.LParen) ~sc)    # (
+     | (~one_char (41)  (.RParen) ~sc)    # )
+     | (~one_char (91)  (.LBracket) ~sc)  # [
+     | (~one_char (93)  (.RBracket) ~sc)  # ]
+     | (~one_char (44)  (.Comma) ~sc)     # ,
+     | (~one_char (59)  (.Semicolon) ~sc) # ;
+     | (~one_char (94)  (.Caret) ~sc)     # ^
+     | (~one_char (124) (.Pipe) ~sc)      # |
+     | (~one_char (58)  (.Colon) ~sc)     # :
+     | (~one_char (61)  (.Eq) ~sc)        # =
+  | (~one_char (62)  (.Greater) ~sc)   # >
+  | (~one_char (60)  (.Less) ~sc)      # <
+     | (~one_char (64)  (.At) ~sc)        # @
+     | (~one_char (33)  (.Bang) ~sc)      # !
+     | (~one_char (92)  (.Backslash) ~sc) # \
+     | (~one_char (63)  (.Question) ~sc)  # ?
+     | (~one_char (43)  (.Plus) ~sc)      # +
+     | (~one_char (45)  (.Minus) ~sc)     # -
+     | (~one_char (42)  (.Star) ~sc)      # *
+     | (~one_char (47)  (.Slash) ~sc)     # /
+     | (~one_char (126) (.Tilde) ~sc)     # ~
+    ) |> (\ .Some ~tok -> (
+          ~sp = (~tok .span);
+          ~end = ((~sp .off) + (~sp .len));
+          .Some ((~tok), (~Scan .set_pos ~start ~end))
+        ))
+      | (\.None -> .None)
+  ))
+);
+
+# tokenize all
+~tokenize ~s = (
+  ~sc0 = (~Scan .new ~s);
+  ~rev_go ~xs ~acc = ((\[] -> ~acc | \(~h : ~t) -> (~rev_go ~t (~cons ~h ~acc))) ~xs);
+  ~reverse ~xs = (~rev_go ~xs []);
+  ~loop ~sc ~acc = (
+    ((\ .Some (~tok, ~s1) -> (~loop ~s1 (~cons ~tok ~acc))) | (\.None -> (~reverse ~acc))) (~next_token ~sc)
+  );
+  (~loop ~sc0 [])
+);
 
 {
-  char: {
-    is_lower: ~is_lower,
-    is_upper: ~is_upper,
-    is_letter: ~is_letter,
-    is_digit: ~is_digit,
-    is_alnum: ~is_alnum,
+  token: { tokenize: ~tokenize },
+  is_alpha: ~is_letter,
+  is_digit: ~is_digit,
+  is_alnum: ~is_alnum,
   is_space: ~is_space
-  },
-  scan: {
-    new: ~new,
-    eof: ~eof,
-    pos: ~pos,
-    set_pos: ~set_pos,
-    peek: ~peek,
-    next: ~next,
-    take_if: ~take_if,
-    take_while: ~take_while,
-  take_while1: ~take_while1
-  },
-  token: {
-    take_ident: ~take_ident,
-    take_number: ~take_number,
-  skip_spaces: ~skip_spaces,
-  skip_spaces1: ~skip_spaces1
-  }
 }

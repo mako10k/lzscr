@@ -50,6 +50,13 @@ impl Type {
     }
 }
 
+// Human-friendly Display for Type: %{ ... } style via user_pretty_type
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", user_pretty_type(self))
+    }
+}
+
 // Canonical Bool representation as a sum of two zero-arity constructors.
 fn bool_sum_type() -> Type {
     Type::SumCtor(vec![(".False".into(), vec![]), (".True".into(), vec![])])
@@ -356,10 +363,21 @@ fn typedefs_lookup_typename<'a>(ctx: &'a InferCtx, name: &str) -> Option<&'a Typ
 #[derive(thiserror::Error, Debug)]
 pub enum TypeError {
     #[error(
-        "type mismatch: expected {expected:?} vs actual {actual:?} at ({span_offset},{span_len})"
+        "type mismatch: expected {expected} vs actual {actual} at ({span_offset},{span_len})"
     )]
     Mismatch { expected: Type, actual: Type, span_offset: usize, span_len: usize },
-    #[error("type mismatch: expected {expected:?} vs actual {actual:?}")]
+    #[error(
+        "type mismatch: expected {expected} vs actual {actual}"
+    )]
+    MismatchBoth {
+        expected: Type,
+        actual: Type,
+        expected_span_offset: usize,
+        expected_span_len: usize,
+        actual_span_offset: usize,
+        actual_span_len: usize,
+    },
+    #[error("type mismatch: expected {expected} vs actual {actual}")]
     AnnotMismatch {
         expected: Type,
         actual: Type,
@@ -368,13 +386,13 @@ pub enum TypeError {
         expr_span_offset: usize,
         expr_span_len: usize,
     },
-    #[error("occurs check failed: {var:?} in {ty:?}")]
+    #[error("occurs check failed: {var:?} in {ty}")]
     Occurs { var: TvId, ty: Type },
     #[error("constructor union duplicate tag: {tag}")]
     DuplicateCtorTag { tag: String },
     #[error("AltLambda branches mixed: expected all Ctor patterns or wildcard/default only at ({span_offset},{span_len})")]
     MixedAltBranches { span_offset: usize, span_len: usize },
-    #[error("not a function: {ty:?}")]
+    #[error("not a function: {ty}")]
     NotFunction { ty: Type },
     #[error("unbound reference: {name} at ({span_offset},{span_len})")]
     UnboundRef { name: String, span_offset: usize, span_len: usize },
@@ -1035,6 +1053,52 @@ fn infer_expr(
     }
     ctx.depth += 1;
     // Helper: convert TypeExpr to Type using ctx.tyvars and a local holes table for '?'
+    // Helper: try to find the span of a constructor symbol (e.g., .Some/.None) in an expression.
+    fn find_ctor_symbol_span_in_expr(expr: &Expr) -> Option<Span> {
+        match &expr.kind {
+            ExprKind::Symbol(_) => Some(expr.span),
+            ExprKind::Apply { func, .. } => find_ctor_symbol_span_in_expr(func),
+            ExprKind::Block(b) => find_ctor_symbol_span_in_expr(b),
+            ExprKind::Lambda { param, body } => {
+                // Also check lambda params (multi-parameter lambdas are nested)
+                find_ctor_symbol_span_in_pattern(param)
+                    .or_else(|| find_ctor_symbol_span_in_expr(body))
+            }
+            _ => None,
+        }
+    }
+
+    // Helper: pattern search for ctor/symbol head; returns a tight caret span at pattern start.
+    fn find_ctor_symbol_span_in_pattern(p: &Pattern) -> Option<Span> {
+        match &p.kind {
+            PatternKind::Ctor { .. } | PatternKind::Symbol(_) => {
+                // Point to the start of the pattern (at '.') with len=1 for a tight caret
+                Some(Span::new(p.span.offset, 1))
+            }
+            PatternKind::Tuple(xs) | PatternKind::List(xs) => {
+                for x in xs {
+                    if let Some(sp) = find_ctor_symbol_span_in_pattern(x) {
+                        return Some(sp);
+                    }
+                }
+                None
+            }
+            PatternKind::Record(fs) => {
+                for (_k, v) in fs {
+                    if let Some(sp) = find_ctor_symbol_span_in_pattern(v) {
+                        return Some(sp);
+                    }
+                }
+                None
+            }
+            PatternKind::Cons(a, b) | PatternKind::As(a, b) => {
+                find_ctor_symbol_span_in_pattern(a)
+                    .or_else(|| find_ctor_symbol_span_in_pattern(b))
+            }
+            PatternKind::TypeBind { pat, .. } => find_ctor_symbol_span_in_pattern(pat),
+            _ => None,
+        }
+    }
     fn conv_typeexpr(ctx: &mut InferCtx, te: &TypeExpr, holes: &mut HashMap<String, TvId>) -> Type {
         match te {
             TypeExpr::Unit => Type::Unit,
@@ -1236,7 +1300,28 @@ fn infer_expr(
                             // Fallback to regular if typing: unify branch types to a common var
                             let r = ctx.tv.fresh();
                             let s1 = ctx_unify(ctx, &tt.apply(&se).apply(&s_acc), &r)?;
-                            let s2 = ctx_unify(ctx, &te.apply(&s1).apply(&se).apply(&s_acc), &r)?;
+                            // 2回目の unify 失敗時に then/else のスパン（可能なら .Some/.None の記号位置）を添えて返す
+                            let s2 = match ctx_unify(
+                                ctx,
+                                &te.apply(&s1).apply(&se).apply(&s_acc),
+                                &r,
+                            ) {
+                                Ok(s) => s,
+                                Err(TypeError::Mismatch { expected, actual, .. }) => {
+                                    let exp_sp = find_ctor_symbol_span_in_expr(then_branch)
+                                        .unwrap_or(then_branch.span);
+                                    let act_sp = find_ctor_symbol_span_in_expr(arg).unwrap_or(arg.span);
+                                    return Err(TypeError::MismatchBoth {
+                                        expected,
+                                        actual,
+                                        expected_span_offset: exp_sp.offset,
+                                        expected_span_len: exp_sp.len,
+                                        actual_span_offset: act_sp.offset,
+                                        actual_span_len: act_sp.len,
+                                    });
+                                }
+                                Err(e) => return Err(e),
+                            };
                             let s = s2.compose(s1).compose(se).compose(s_acc);
                             return Ok((r.apply(&s), s));
                         }
@@ -1465,7 +1550,28 @@ fn infer_expr(
             }
             // Infer body under finalized environment
             let saved = std::mem::replace(&mut ctx.env, env_final);
-            let res = infer_expr(ctx, body, allow_effects);
+            // If body inference produces a generic Mismatch without a precise span,
+            // remap it to the inner body's span (peeling Block) so diagnostics
+            // highlight the first real expression rather than the group/comment start.
+            let res = infer_expr(ctx, body, allow_effects).map_err(|e| match e {
+                // 既に有効なスパンが無い (0,0) 場合のみ、LetGroup の body スパンへ差し替える
+                TypeError::Mismatch { expected, actual, span_offset, span_len }
+                    if span_offset == 0 && span_len == 0 =>
+                {
+                    // Peel nested Block nodes to get a tighter span
+                    let mut inner = body.as_ref();
+                    while let ExprKind::Block(ref bx) = inner.kind {
+                        inner = bx.as_ref();
+                    }
+                    TypeError::Mismatch {
+                        expected,
+                        actual,
+                        span_offset: inner.span.offset,
+                        span_len: 1, // point at body start with a single caret
+                    }
+                }
+                other => other,
+            });
             if pushed_typenames {
                 let _ = ctx.typedef_types.pop();
             }
@@ -1483,7 +1589,23 @@ fn infer_expr(
         ExprKind::OrElse { left, right } => {
             let (tl, sl) = infer_expr(ctx, left, allow_effects)?;
             let (tr, sr) = infer_expr(ctx, right, allow_effects)?;
-            let s1 = ctx_unify(ctx, &tl.apply(&sr).apply(&sl), &tr.apply(&sr))?;
+            // On unification failure, return both sides' spans (.Some/.None 記号位置があれば優先) for better diagnostics
+            let s1 = match ctx_unify(ctx, &tl.apply(&sr).apply(&sl), &tr.apply(&sr)) {
+                Ok(s) => s,
+                Err(TypeError::Mismatch { expected, actual, .. }) => {
+                    let lsp = find_ctor_symbol_span_in_expr(left).unwrap_or(left.span);
+                    let rsp = find_ctor_symbol_span_in_expr(right).unwrap_or(right.span);
+                    return Err(TypeError::MismatchBoth {
+                        expected,
+                        actual,
+                        expected_span_offset: lsp.offset,
+                        expected_span_len: lsp.len,
+                        actual_span_offset: rsp.offset,
+                        actual_span_len: rsp.len,
+                    });
+                }
+                Err(e) => return Err(e),
+            };
             let s = s1.compose(sr).compose(sl);
             Ok((tr.apply(&s), s))
         }
@@ -1598,7 +1720,8 @@ fn infer_expr(
             // Return type accumulation (reuse previous helper logic)
             let mut ret_variants: Vec<(String, Vec<Type>)> = vec![];
             let mut ret_seen = HashSet::<String>::new();
-            let mut ret_other: Option<Type> = None;
+            // ret_other holds (type, preferred span for caret if known)
+            let mut ret_other: Option<(Type, Option<Span>)> = None;
             fn merge_ret(
                 acc: &mut Vec<(String, Vec<Type>)>,
                 seen: &mut HashSet<String>,
@@ -1641,9 +1764,24 @@ fn infer_expr(
                         let tbf_applied = tb_final.clone();
                         if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
                             match &mut ret_other {
-                                None => ret_other = Some(tbf_applied),
-                                Some(existing) => {
-                                    let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                None => ret_other = Some((tbf_applied, find_ctor_symbol_span_in_expr(body))),
+                                Some((existing, pref_span)) => {
+                                    let s1 = match unify(&existing.clone(), &tbf_applied) {
+                                        Ok(s) => s,
+                                        Err(TypeError::Mismatch { expected, actual, .. }) => {
+                                            let cur_sp = find_ctor_symbol_span_in_expr(body).or(*pref_span).unwrap_or(br.span);
+                                            let ex_sp = pref_span.unwrap_or(br.span);
+                                            return Err(TypeError::MismatchBoth {
+                                                expected,
+                                                actual,
+                                                expected_span_offset: ex_sp.offset,
+                                                expected_span_len: ex_sp.len,
+                                                actual_span_offset: cur_sp.offset,
+                                                actual_span_len: cur_sp.len,
+                                            });
+                                        }
+                                        Err(e) => return Err(e),
+                                    };
                                     *existing = existing.apply(&s1);
                                     s_all = s1.compose(s_all);
                                 }
@@ -1682,9 +1820,24 @@ fn infer_expr(
                         let tbf_applied = tb_final.clone();
                         if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
                             match &mut ret_other {
-                                None => ret_other = Some(tbf_applied),
-                                Some(existing) => {
-                                    let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                None => ret_other = Some((tbf_applied, find_ctor_symbol_span_in_expr(body))),
+                                Some((existing, pref_span)) => {
+                                    let s1 = match unify(&existing.clone(), &tbf_applied) {
+                                        Ok(s) => s,
+                                        Err(TypeError::Mismatch { expected, actual, .. }) => {
+                                            let cur_sp = find_ctor_symbol_span_in_expr(body).or(*pref_span).unwrap_or(br.span);
+                                            let ex_sp = pref_span.unwrap_or(br.span);
+                                            return Err(TypeError::MismatchBoth {
+                                                expected,
+                                                actual,
+                                                expected_span_offset: ex_sp.offset,
+                                                expected_span_len: ex_sp.len,
+                                                actual_span_offset: cur_sp.offset,
+                                                actual_span_len: cur_sp.len,
+                                            });
+                                        }
+                                        Err(e) => return Err(e),
+                                    };
                                     *existing = existing.apply(&s1);
                                     s_all = s1.compose(s_all);
                                 }
@@ -1710,9 +1863,24 @@ fn infer_expr(
                         let tbf_applied = tb_final.clone();
                         if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
                             match &mut ret_other {
-                                None => ret_other = Some(tbf_applied),
-                                Some(existing) => {
-                                    let s1 = unify(&existing.clone(), &tbf_applied)?;
+                                None => ret_other = Some((tbf_applied, find_ctor_symbol_span_in_expr(body))),
+                                Some((existing, pref_span)) => {
+                                    let s1 = match unify(&existing.clone(), &tbf_applied) {
+                                        Ok(s) => s,
+                                        Err(TypeError::Mismatch { expected, actual, .. }) => {
+                                            let cur_sp = find_ctor_symbol_span_in_expr(body).or(*pref_span).unwrap_or(br.span);
+                                            let ex_sp = pref_span.unwrap_or(br.span);
+                                            return Err(TypeError::MismatchBoth {
+                                                expected,
+                                                actual,
+                                                expected_span_offset: ex_sp.offset,
+                                                expected_span_len: ex_sp.len,
+                                                actual_span_offset: cur_sp.offset,
+                                                actual_span_len: cur_sp.len,
+                                            });
+                                        }
+                                        Err(e) => return Err(e),
+                                    };
                                     *existing = existing.apply(&s1);
                                     s_all = s1.compose(s_all);
                                 }
@@ -1734,8 +1902,8 @@ fn infer_expr(
                         let tbf_applied = tb_final.clone();
                         if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf_applied) {
                             match &mut ret_other {
-                                None => ret_other = Some(tbf_applied),
-                                Some(existing) => {
+                                None => ret_other = Some((tbf_applied, find_ctor_symbol_span_in_expr(body))),
+                                Some((existing, _pref_span)) => {
                                     let s1 = unify(&existing.clone(), &tbf_applied)?;
                                     *existing = existing.apply(&s1);
                                     s_all = s1.compose(s_all);
@@ -1773,7 +1941,7 @@ fn infer_expr(
                     ret_variants.sort_by(|a, b| a.0.cmp(&b.0));
                     Type::SumCtor(ret_variants)
                 }
-            } else if let Some(t) = ret_other {
+            } else if let Some((t, _)) = ret_other {
                 t
             } else {
                 ctx.tv.fresh()
@@ -2403,6 +2571,14 @@ pub mod api {
             ("is_alpha", Type::fun(Type::Char, bool_t.clone())),
             ("is_alnum", Type::fun(Type::Char, bool_t.clone())),
             ("is_space", Type::fun(Type::Char, bool_t.clone())),
+            // between : Char -> Int -> Int -> Bool-like
+            (
+                "between",
+                Type::fun(
+                    Type::Char,
+                    Type::fun(Type::Int, Type::fun(Type::Int, bool_t.clone())),
+                ),
+            ),
         ]);
         // Unicode namespace
         let unicode_ns = record(vec![
@@ -2434,6 +2610,77 @@ pub mod api {
                         (".Some".into(), vec![Type::Char]),
                         (".None".into(), vec![]),
                     ]),
+                ),
+            ),
+            // next : ScanState -> (.Some (., Char Scan) | .None)
+            (
+                "next",
+                Type::fun(
+                    scan_state.clone(),
+                    Type::SumCtor(vec![
+                        (
+                            ".Some".into(),
+                            vec![Type::Ctor {
+                                tag: ".,".into(),
+                                payload: vec![Type::Char, scan_state.clone()],
+                            }],
+                        ),
+                        (".None".into(), vec![]),
+                    ]),
+                ),
+            ),
+            // take_if : (Char -> Bool-like) -> ScanState -> (.Some (., Char Scan) | .None)
+            (
+                "take_if",
+                Type::fun(
+                    Type::fun(Type::Char, bool_t.clone()),
+                    Type::fun(
+                        scan_state.clone(),
+                        Type::SumCtor(vec![
+                            (
+                                ".Some".into(),
+                                vec![Type::Ctor {
+                                    tag: ".,".into(),
+                                    payload: vec![Type::Char, scan_state.clone()],
+                                }],
+                            ),
+                            (".None".into(), vec![]),
+                        ]),
+                    ),
+                ),
+            ),
+            // take_while : (Char -> Bool-like) -> ScanState -> (., Str Scan)
+            (
+                "take_while",
+                Type::fun(
+                    Type::fun(Type::Char, bool_t.clone()),
+                    Type::fun(
+                        scan_state.clone(),
+                        Type::Ctor {
+                            tag: ".,".into(),
+                            payload: vec![Type::Str, scan_state.clone()],
+                        },
+                    ),
+                ),
+            ),
+            // take_while1 : (Char -> Bool-like) -> ScanState -> (.Some (., Str Scan) | .None)
+            (
+                "take_while1",
+                Type::fun(
+                    Type::fun(Type::Char, bool_t.clone()),
+                    Type::fun(
+                        scan_state.clone(),
+                        Type::SumCtor(vec![
+                            (
+                                ".Some".into(),
+                                vec![Type::Ctor {
+                                    tag: ".,".into(),
+                                    payload: vec![Type::Str, scan_state.clone()],
+                                }],
+                            ),
+                            (".None".into(), vec![]),
+                        ]),
+                    ),
                 ),
             ),
             (

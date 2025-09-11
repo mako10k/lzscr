@@ -19,6 +19,13 @@ struct SourceRegistry {
     primary_text: String,
     next_base: usize,
     modules: Vec<RegisteredSource>,
+    // Optional mapping for primary buffer segments back to original sources
+    prelude_name: Option<String>,
+    prelude_text: Option<String>,
+    prelude_start: Option<usize>,
+    user_name: Option<String>,
+    user_text: Option<String>,
+    user_start: Option<usize>,
 }
 
 struct RegisteredSource {
@@ -33,7 +40,38 @@ impl SourceRegistry {
         let len = primary_text.len();
         let align = 4096usize;
         let next_base = ((len + align) / align) * align;
-        Self { primary_name, primary_text, next_base, modules: Vec::new() }
+        Self {
+            primary_name,
+            primary_text,
+            next_base,
+            modules: Vec::new(),
+            prelude_name: None,
+            prelude_text: None,
+            prelude_start: None,
+            user_name: None,
+            user_text: None,
+            user_start: None,
+        }
+    }
+
+    fn with_segments(
+        primary_name: String,
+        primary_text: String,
+        prelude: Option<(String, String, usize)>,
+        user: Option<(String, String, usize)>,
+    ) -> Self {
+        let mut s = Self::new(primary_name, primary_text);
+        if let Some((name, text, start)) = prelude {
+            s.prelude_name = Some(name);
+            s.prelude_text = Some(text);
+            s.prelude_start = Some(start);
+        }
+        if let Some((name, text, start)) = user {
+            s.user_name = Some(name);
+            s.user_text = Some(text);
+            s.user_start = Some(start);
+        }
+        s
     }
 
     fn register_module(&mut self, name: String, text: String) -> usize {
@@ -49,6 +87,27 @@ impl SourceRegistry {
     fn format_span_block(&self, offset: usize, len: usize) -> String {
         // Decide which source contains this offset
         if offset < self.primary_text.len() {
+            // Map into prelude or user original sources if configured
+            if let (Some(name), Some(text), Some(start)) =
+                (&self.prelude_name, &self.prelude_text, &self.prelude_start)
+            {
+                let st = *start;
+                let ed = st + text.len();
+                if offset >= st && offset < ed {
+                    let rel = offset - st;
+                    return format_span_caret(text, name, rel, len);
+                }
+            }
+            if let (Some(name), Some(text), Some(start)) =
+                (&self.user_name, &self.user_text, &self.user_start)
+            {
+                let st = *start;
+                let ed = st + text.len();
+                if offset >= st && offset < ed {
+                    let rel = offset - st;
+                    return format_span_caret(text, name, rel, len);
+                }
+            }
             return format_span_caret(&self.primary_text, &self.primary_name, offset, len);
         }
         for m in &self.modules {
@@ -64,6 +123,149 @@ impl SourceRegistry {
             offset.min(self.primary_text.len()),
             len,
         )
+    }
+
+    // Find the first non-comment, non-whitespace character offset starting from `offset`.
+    // Treat lines whose first non-space is '#' as comments and skip them.
+    fn first_non_comment_offset_from(&self, offset: usize) -> usize {
+        // Helper to scan within a given text with base offset
+        fn scan(text: &str, base: usize, rel: usize) -> usize {
+            let bytes = text.as_bytes();
+            let mut i = rel.min(text.len());
+            // Move to start of current line
+            while i > 0 && bytes[i - 1] != b'\n' {
+                i -= 1;
+            }
+            let mut pos = i;
+            while pos < text.len() {
+                // Find end of this line
+                let line_end = match text[pos..].find('\n') {
+                    Some(k) => pos + k,
+                    None => text.len(),
+                };
+                // Find first non-space/tab char in this line
+                let mut j = pos;
+                while j < line_end {
+                    let b = bytes[j];
+                    if b == b' ' || b == b'\t' || b == b'\r' { j += 1; } else { break; }
+                }
+                if j < line_end {
+                    let b0 = bytes[j];
+                    if b0 == b'#' {
+                        // pure comment line; skip it
+                    } else if b0 == b'(' {
+                        // Skip a leading '(' (wrapper) and whitespace to point inside
+                        let mut k = j + 1;
+                        while k < line_end {
+                            let b = bytes[k];
+                            if b == b' ' || b == b'\t' || b == b'\r' { k += 1; } else { break; }
+                        }
+                        if k < line_end {
+                            if bytes[k] == b'#' {
+                                // Line is just "(  #..."; treat as comment wrapper, skip line
+                            } else {
+                                return base + k;
+                            }
+                        }
+                    } else {
+                        return base + j;
+                    }
+                }
+                // Go to next line start
+                pos = if line_end < text.len() { line_end + 1 } else { line_end };
+            }
+            // Fallback: no better position found
+            base + rel
+        }
+        if offset < self.primary_text.len() {
+            return scan(&self.primary_text, 0, offset);
+        }
+        for m in &self.modules {
+            if offset >= m.base && offset < m.base + m.text.len() {
+                let rel = offset - m.base;
+                return scan(&m.text, m.base, rel);
+            }
+        }
+        offset
+    }
+
+    // Heuristic: find the last top-level balanced { ... } block in the same source
+    // as the provided offset (ignoring braces inside strings, chars, and comments).
+    // Returns the absolute span (offset, len) of the block if found.
+    fn last_top_level_brace_block_in_same_source(&self, offset: usize) -> Option<(usize, usize)> {
+        // Helper to scan a text and return the last top-level {..} span
+        fn scan(text: &str) -> Option<(usize, usize)> {
+            let bytes = text.as_bytes();
+            let mut i = 0usize;
+            let mut depth = 0i32;
+            let mut stack: Vec<usize> = Vec::new();
+            let mut pairs: Vec<(usize, usize)> = Vec::new();
+            // comment/string states
+            let mut in_line_comment = false;
+            let mut block_comment_depth = 0i32; // nestable {- -}
+            let mut in_str = false;
+            let mut in_char = false;
+            while i < bytes.len() {
+                let b = bytes[i];
+                // Handle line comment
+                if in_line_comment {
+                    if b == b'\n' { in_line_comment = false; }
+                    i += 1; continue;
+                }
+                // Handle block comment
+                if block_comment_depth > 0 {
+                    if b == b'-' && i + 1 < bytes.len() && bytes[i + 1] == b'}' {
+                        block_comment_depth -= 1; i += 2; continue;
+                    }
+                    if b == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
+                        block_comment_depth += 1; i += 2; continue;
+                    }
+                    i += 1; continue;
+                }
+                // Handle strings
+                if in_str {
+                    if b == b'\\' { i = (i + 2).min(bytes.len()); continue; }
+                    if b == b'"' { in_str = false; }
+                    i += 1; continue;
+                }
+                if in_char {
+                    if b == b'\\' { i = (i + 2).min(bytes.len()); continue; }
+                    if b == b'\'' { in_char = false; }
+                    i += 1; continue;
+                }
+                // Detect comment/string/char starts
+                if b == b'#' { in_line_comment = true; i += 1; continue; }
+                if b == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
+                    block_comment_depth = 1; i += 2; continue;
+                }
+                if b == b'"' { in_str = true; i += 1; continue; }
+                if b == b'\'' { in_char = true; i += 1; continue; }
+                // Track braces
+                if b == b'{' {
+                    depth += 1;
+                    stack.push(i);
+                } else if b == b'}' {
+                    if depth > 0 {
+                        depth -= 1;
+                        if let Some(op) = stack.pop() {
+                            pairs.push((op, i));
+                        }
+                    }
+                }
+                i += 1;
+            }
+            pairs.last().map(|(op, cl)| (*op, *cl))
+        }
+        // Decide which source this offset belongs to and scan there
+        if offset < self.primary_text.len() {
+            return scan(&self.primary_text).map(|(op, cl)| (op, cl - op + 1));
+        }
+        for m in &self.modules {
+            if offset >= m.base && offset < m.base + m.text.len() {
+                return scan(&m.text).map(|(op, cl)| (m.base + op, cl - op + 1));
+            }
+        }
+        None
     }
 } // end impl SourceRegistry
 
@@ -352,7 +554,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         // Build source registry and expand requires while rebasing spans for modules
-        let mut src_reg = SourceRegistry::new(input_name.clone(), code.clone());
+        // Build SourceRegistry with precise segment mapping back to prelude and original user file
+        let (prelude_seg, user_seg) = {
+            // Compute prelude segment if present
+            let prelude_seg = prelude_for_diag.as_ref().map(|(pre_src, pre_name)| {
+                // Combined buffer layout when prelude is enabled:
+                //   '(' + prelude + '\n' + (optional '(') + user + (optional ')') + ' )'
+                let prelude_start = 1usize; // after leading '('
+                (pre_name.clone(), pre_src.clone(), prelude_start)
+            });
+            // Compute user segment start in the combined buffer
+            let user_start = if let Some((pre_src, _)) = prelude_for_diag.as_ref() {
+                let mut s = 1 + pre_src.len() + 1; // '(' + prelude + '\n'
+                if user_wrapped_parens {
+                    s += 1; // the extra '('
+                }
+                s
+            } else {
+                // No prelude; we may still have wrapped parens for file input
+                if user_wrapped_parens { 1 } else { 0 }
+            };
+            let user_seg = Some((input_name.clone(), user_raw.clone(), user_start));
+            (prelude_seg, user_seg)
+        };
+        let mut src_reg = SourceRegistry::with_segments(
+            input_name.clone(),
+            code.clone(),
+            prelude_seg,
+            user_seg,
+        );
         let ast = match expand_requires_in_expr(
             &ast0,
             &module_search_paths,
@@ -645,12 +875,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(e) => {
                         use lzscr_types::TypeError;
                         match e {
+                            TypeError::MismatchBoth {
+                                expected_span_offset,
+                                expected_span_len,
+                                actual_span_offset,
+                                actual_span_len,
+                                ..
+                            } => {
+                                eprintln!("type error: {}", e);
+                                // For dual-caret errors, trust the spans as-is (no nudging).
+                                let (eo, el) = (expected_span_offset, expected_span_len);
+                                let (ao, al) = (actual_span_offset, actual_span_len);
+                                let b1 = src_reg.format_span_block(eo, el);
+                                let b2 = src_reg.format_span_block(ao, al);
+                                eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
+                            }
                             TypeError::Mismatch { span_offset, span_len, .. }
                             | TypeError::EffectNotAllowed { span_offset, span_len }
                             | TypeError::UnboundRef { span_offset, span_len, .. }
                             | TypeError::MixedAltBranches { span_offset, span_len } => {
                                 eprintln!("type error: {}", e);
-                                let block = src_reg.format_span_block(span_offset, span_len);
+                                // Heuristic: if span len is 1 (generic), nudge caret to the first
+                                // non-comment token at/after that offset for better UX.
+                                let (adj_off, adj_len) = if span_len == 1 {
+                                    // Prefer the last top-level { ... } block (e.g., module export record)
+                                    if let Some((op, _len)) = src_reg
+                                        .last_top_level_brace_block_in_same_source(span_offset)
+                                    {
+                                        (src_reg.first_non_comment_offset_from(op), 1)
+                                    } else {
+                                        (src_reg.first_non_comment_offset_from(span_offset), 1)
+                                    }
+                                } else {
+                                    (span_offset, span_len)
+                                };
+                                let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
                             }
                             other => {
@@ -671,12 +930,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => {
                             use lzscr_types::TypeError;
                             match e {
+                                TypeError::MismatchBoth {
+                                    expected_span_offset,
+                                    expected_span_len,
+                                    actual_span_offset,
+                                    actual_span_len,
+                                    ..
+                                } => {
+                                    eprintln!("type error: {}", e);
+                                    // No nudging for dual-caret spans.
+                                    let (eo, el) = (expected_span_offset, expected_span_len);
+                                    let (ao, al) = (actual_span_offset, actual_span_len);
+                                    let b1 = src_reg.format_span_block(eo, el);
+                                    let b2 = src_reg.format_span_block(ao, al);
+                                    eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
+                                }
                                 TypeError::Mismatch { span_offset, span_len, .. }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
                                 | TypeError::UnboundRef { span_offset, span_len, .. }
                                 | TypeError::MixedAltBranches { span_offset, span_len } => {
                                     eprintln!("type error: {}", e);
-                                    let block = src_reg.format_span_block(span_offset, span_len);
+                                    let (adj_off, adj_len) = if span_len == 1 {
+                                        if let Some((op, _len)) = src_reg
+                                            .last_top_level_brace_block_in_same_source(span_offset)
+                                        {
+                                            (src_reg.first_non_comment_offset_from(op), 1)
+                                        } else {
+                                            (src_reg.first_non_comment_offset_from(span_offset), 1)
+                                        }
+                                    } else { (span_offset, span_len) };
+                                    let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                 }
                                 TypeError::AnnotMismatch {
@@ -720,12 +1003,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => {
                             use lzscr_types::TypeError;
                             match e {
+                                TypeError::MismatchBoth {
+                                    expected_span_offset,
+                                    expected_span_len,
+                                    actual_span_offset,
+                                    actual_span_len,
+                                    ..
+                                } => {
+                                    eprintln!("type error: {}", e);
+                                    // No nudging for dual-caret spans.
+                                    let (eo, el) = (expected_span_offset, expected_span_len);
+                                    let (ao, al) = (actual_span_offset, actual_span_len);
+                                    let b1 = src_reg.format_span_block(eo, el);
+                                    let b2 = src_reg.format_span_block(ao, al);
+                                    eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
+                                }
                                 TypeError::Mismatch { span_offset, span_len, .. }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
                                 | TypeError::UnboundRef { span_offset, span_len, .. }
                                 | TypeError::MixedAltBranches { span_offset, span_len } => {
                                     eprintln!("type error: {}", e);
-                                    let block = src_reg.format_span_block(span_offset, span_len);
+                                    let (adj_off, adj_len) = if span_len == 1 {
+                                        if let Some((op, _len)) = src_reg
+                                            .last_top_level_brace_block_in_same_source(span_offset)
+                                        {
+                                            (src_reg.first_non_comment_offset_from(op), 1)
+                                        } else {
+                                            (src_reg.first_non_comment_offset_from(span_offset), 1)
+                                        }
+                                    } else { (span_offset, span_len) };
+                                    let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                 }
                                 TypeError::AnnotMismatch {

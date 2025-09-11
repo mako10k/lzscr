@@ -53,6 +53,18 @@ Shebang example (when the binary is installed as `lzscr`):
 ~add 1 2;
 ```
 
+## ゴールデンテスト (tokenizer)
+
+CLI 経由で self-hosted tokenizer を検証するゴールデンテストを追加しました。
+
+実行:
+
+```bash
+cargo test -p lzscr-cli --tests tokenize_golden
+```
+
+期待値ファイルは `goldens/*.golden` にあります。仕様変更で出力が変わった場合は、差分を確認し、意図した変更であれば golden を更新してください。
+
 ## Type checking (Hindley–Milner inference)
 
 The CLI performs simple type inference ahead of evaluation. If it fails, execution aborts. You can print types as pretty or JSON.
