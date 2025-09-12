@@ -8,9 +8,8 @@ use lzscr_ast::span::Span;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-// ---------- Type Core ----------
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy, Serialize, Deserialize)]
+// Core type representation (was accidentally removed during patching)
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
 pub struct TvId(pub u32);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -20,31 +19,15 @@ pub enum Type {
     Float,
     Str,
     Char,
-    /// Meta-type for type values (e.g., `%{Int}` has type `Type`).
-    Type,
+    Type, // first-class type value
     Var(TvId),
     Fun(Box<Type>, Box<Type>),
     List(Box<Type>),
     Tuple(Vec<Type>),
-    // Record with per-field origin span (if available) for precise diagnostics.
-    // Span is stored alongside each field's Type as Option<Span> so we can keep
-    // type operations (unify, ftv, apply, zonk) oblivious when span not needed.
     Record(BTreeMap<String, (Type, Option<Span>)>),
-    Ctor {
-        tag: String,
-        payload: Vec<Type>,
-    },
-    // Named ADT (from % type declarations), e.g., Option a
-    Named {
-        name: String,
-        args: Vec<Type>,
-    },
-    // Limited union for constructor tags used by AltLambda chains.
-    // Invariants (after construction):
-    //  * Variants sorted lexicographically by tag
-    //  * No duplicate tags
-    //  * Only used when there are >= 2 variants (single variant collapses to Ctor form)
-    SumCtor(Vec<(String, Vec<Type>)>),
+    Ctor { tag: String, payload: Vec<Type> },
+    Named { name: String, args: Vec<Type> }, // syntactic sugar for unfolding during unify
+    SumCtor(Vec<(String, Vec<Type>)>),       // union of constructors
 }
 
 impl Type {
@@ -53,14 +36,17 @@ impl Type {
     }
 }
 
-// Human-friendly Display for Type: %{ ... } style via user_pretty_type
-impl std::fmt::Display for Type {
+impl std::fmt::Display for TvId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", user_pretty_type(self))
+        write!(f, "%t{}", self.0)
     }
 }
 
-// Canonical Bool representation as a sum of two zero-arity constructors.
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", pp_type(self))
+    }
+}
 fn bool_sum_type() -> Type {
     Type::SumCtor(vec![(".False".into(), vec![]), (".True".into(), vec![])])
 }
@@ -403,10 +389,12 @@ pub enum TypeError {
         expr_span_offset: usize,
         expr_span_len: usize,
     },
-    #[error("occurs check failed: {var:?} in {ty}")]
+    #[error("cannot construct infinite type: {var_pretty} occurs in {pretty}")]
     Occurs {
         var: TvId,
+        var_pretty: String, // normalized pretty name for the variable (e.g. %a)
         ty: Type,
+        pretty: String, // normalized pretty name for the type (%{ ... })
         var_span_offset: usize,
         var_span_len: usize,
         ty_span_offset: usize,
@@ -815,27 +803,32 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
         TypeError::Occurs {
             var,
             ty,
+            var_pretty: _,
+            pretty: _,
             var_span_offset,
             var_span_len,
             ty_span_offset,
             ty_span_len,
         } => {
-            // Only patch when spans are zero.
+            let (norm, mapping) = normalize_type_and_map(&ty);
+            let vp = mapping.get(&var).cloned().unwrap_or_else(|| format!("{}", var));
             if (var_span_offset, var_span_len, ty_span_offset, ty_span_len) == (0, 0, 0, 0) {
                 if let Some(spv) = ctx.tv_origins.get(&var) {
-                    // Try to find a representative span for ty: pick first contained var origin.
-                    // Fallback to same as var if none.
                     let mut ty_sp = None;
                     for tv in ty.ftv() {
-                        if let Some(sp) = ctx.tv_origins.get(&tv) {
-                            ty_sp = Some(*sp);
-                            break;
+                        if tv != var {
+                            if let Some(sp) = ctx.tv_origins.get(&tv) {
+                                ty_sp = Some(*sp);
+                                break;
+                            }
                         }
                     }
                     let ty_sp = ty_sp.unwrap_or(*spv);
                     TypeError::Occurs {
                         var,
-                        ty,
+                        var_pretty: vp,
+                        ty: ty.clone(),
+                        pretty: norm,
                         var_span_offset: spv.offset,
                         var_span_len: spv.len,
                         ty_span_offset: ty_sp.offset,
@@ -844,7 +837,9 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
                 } else {
                     TypeError::Occurs {
                         var,
-                        ty,
+                        var_pretty: vp,
+                        ty: ty.clone(),
+                        pretty: norm,
                         var_span_offset,
                         var_span_len,
                         ty_span_offset,
@@ -854,7 +849,9 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
             } else {
                 TypeError::Occurs {
                     var,
-                    ty,
+                    var_pretty: vp,
+                    ty: ty.clone(),
+                    pretty: norm,
                     var_span_offset,
                     var_span_len,
                     ty_span_offset,
@@ -899,14 +896,20 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
 fn bind(v: TvId, t: Type) -> Result<Subst, TypeError> {
     match t {
         Type::Var(v2) if v == v2 => Ok(Subst::new()),
-        _ if occurs(v, &t) => Err(TypeError::Occurs {
-            var: v,
-            ty: t,
-            var_span_offset: 0,
-            var_span_len: 0,
-            ty_span_offset: 0,
-            ty_span_len: 0,
-        }),
+        _ if occurs(v, &t) => {
+            let (norm, mapping) = normalize_type_and_map(&t);
+            let vp = mapping.get(&v).cloned().unwrap_or_else(|| format!("{}", v));
+            Err(TypeError::Occurs {
+                var: v,
+                var_pretty: vp,
+                ty: t.clone(),
+                pretty: norm,
+                var_span_offset: 0,
+                var_span_len: 0,
+                ty_span_offset: 0,
+                ty_span_len: 0,
+            })
+        }
         _ => Ok(Subst::singleton(v, t)),
     }
 }
@@ -1827,7 +1830,9 @@ fn infer_expr(
                 }
                 TypeError::Occurs {
                     var,
+                    var_pretty: _,
                     ty,
+                    pretty: _,
                     var_span_offset,
                     var_span_len,
                     ty_span_offset,
@@ -1841,9 +1846,14 @@ fn infer_expr(
                     while let ExprKind::Block(ref bx) = inner.kind {
                         inner = bx.as_ref();
                     }
+                    // Re-normalize to keep variable mapping consistent inside this error scope
+                    let (norm, mapping) = normalize_type_and_map(&ty);
+                    let vp = mapping.get(&var).cloned().unwrap_or_else(|| format!("{}", var));
                     TypeError::Occurs {
                         var,
-                        ty,
+                        var_pretty: vp,
+                        ty: ty.clone(),
+                        pretty: norm,
                         var_span_offset: inner.span.offset,
                         var_span_len: 1,
                         ty_span_offset: inner.span.offset,
@@ -2453,6 +2463,176 @@ fn user_pretty_type(t: &Type) -> String {
     let core = go(t, &m, &mut seen, &mut out_defs);
     // 期待仕様: 外部表示は %{ ... } ラッピング
     format!("%{{{}}}", core)
+}
+
+// Normalize a type to user_pretty_type form AND return the mapping from TvId -> pretty name used.
+// This lets callers pick out the pretty name for a specific variable (e.g. occurs variable) while
+// using the same consistent normalization for the full type shown in the error.
+fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
+    use std::collections::{HashMap, HashSet};
+    fn collect_order(t: &Type, order: &mut Vec<TvId>, seen: &mut HashSet<TvId>) {
+        match t {
+            Type::Var(v) => {
+                if seen.insert(*v) {
+                    order.push(*v);
+                }
+            }
+            Type::Fun(a, b) => {
+                collect_order(a, order, seen);
+                collect_order(b, order, seen);
+            }
+            Type::List(x) => collect_order(x, order, seen),
+            Type::Tuple(xs) => {
+                for x in xs {
+                    collect_order(x, order, seen);
+                }
+            }
+            Type::Record(fs) => {
+                for v in fs.values() {
+                    collect_order(&v.0, order, seen);
+                }
+            }
+            Type::Ctor { payload, .. } => {
+                for x in payload {
+                    collect_order(x, order, seen);
+                }
+            }
+            Type::Named { args, .. } => {
+                for x in args {
+                    collect_order(x, order, seen);
+                }
+            }
+            Type::SumCtor(vs) => {
+                for (_, ps) in vs {
+                    for x in ps {
+                        collect_order(x, order, seen);
+                    }
+                }
+            }
+            Type::Unit | Type::Int | Type::Float | Type::Str | Type::Char | Type::Type => {}
+        }
+    }
+    fn name_of(i: usize) -> String {
+        if i < 26 {
+            format!("%{}", (b'a' + i as u8) as char)
+        } else {
+            format!("%{}{}", (b'a' + (i % 26) as u8) as char, i / 26)
+        }
+    }
+    let mut order = Vec::new();
+    collect_order(t, &mut order, &mut HashSet::new());
+    let mut mapping: HashMap<TvId, String> = HashMap::new();
+    for (idx, v) in order.iter().enumerate() {
+        mapping.insert(*v, name_of(idx));
+    }
+    use std::ptr::addr_of;
+    fn go(t: &Type, m: &HashMap<TvId, String>, seen: &mut HashMap<usize, String>) -> String {
+        let id_addr = addr_of!(*t) as usize;
+        if let Some(l) = seen.get(&id_addr) {
+            return format!("@{l}");
+        }
+        match t {
+            Type::Var(v) => m.get(v).cloned().unwrap_or_else(|| "_".into()),
+            Type::Unit => "Unit".into(),
+            Type::Int => "Int".into(),
+            Type::Float => "Float".into(),
+            Type::Str => "Str".into(),
+            Type::Char => "Char".into(),
+            Type::Type => "Type".into(),
+            Type::List(x) => format!("[{}]", go(x, m, seen)),
+            Type::Tuple(xs) => {
+                format!("({})", xs.iter().map(|x| go(x, m, seen)).collect::<Vec<_>>().join(", "))
+            }
+            Type::Record(fs) => {
+                let mut items: Vec<_> =
+                    fs.iter().map(|(k, (v, _))| format!("{}: {}", k, go(v, m, seen))).collect();
+                items.sort();
+                format!("{{{}}}", items.join(", "))
+            }
+            Type::Fun(a, b) => {
+                let pa = match **a {
+                    Type::Fun(_, _) => format!("({})", go(a, m, seen)),
+                    _ => go(a, m, seen),
+                };
+                let pb = go(b, m, seen);
+                format!("{} -> {}", pa, pb)
+            }
+            Type::Ctor { tag, payload } => {
+                if payload.is_empty() {
+                    tag.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        tag,
+                        payload
+                            .iter()
+                            .map(|x| {
+                                let s = go(x, m, seen);
+                                if matches!(x, Type::Fun(_, _)) {
+                                    format!("({})", s)
+                                } else {
+                                    s
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                }
+            }
+            Type::Named { name, args } => {
+                if args.is_empty() {
+                    name.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        name,
+                        args.iter()
+                            .map(|x| {
+                                let s = go(x, m, seen);
+                                if matches!(x, Type::Fun(_, _)) {
+                                    format!("({})", s)
+                                } else {
+                                    s
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                }
+            }
+            Type::SumCtor(vs) => {
+                let inner = vs
+                    .iter()
+                    .map(|(tag, ps)| {
+                        if ps.is_empty() {
+                            tag.clone()
+                        } else {
+                            format!(
+                                "{} {}",
+                                tag,
+                                ps.iter()
+                                    .map(|x| {
+                                        let s = go(x, m, seen);
+                                        if matches!(x, Type::Fun(_, _)) {
+                                            format!("({})", s)
+                                        } else {
+                                            s
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            )
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                format!("({})", inner)
+            }
+        }
+    }
+    let mut seen = HashMap::new();
+    let core = go(t, &mapping, &mut seen);
+    (format!("%{{{}}}", core), mapping)
 }
 
 // ---------- Public API ----------

@@ -1052,12 +1052,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ..
                             } => {
                                 eprintln!("type error: {}", e);
-                                // For dual-caret errors, trust the spans as-is (no nudging).
                                 let (eo, el) = (expected_span_offset, expected_span_len);
                                 let (ao, al) = (actual_span_offset, actual_span_len);
                                 let b1 = src_reg.format_span_block(eo, el);
                                 let b2 = src_reg.format_span_block(ao, al);
-                                eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
+                                eprintln!(
+                                    "type variable defined here:\n{}\noccurs inside here:\n{}",
+                                    b1, b2
+                                );
                             }
                             TypeError::Mismatch { span_offset, span_len, .. }
                             | TypeError::RecordFieldMismatch { span_offset, span_len, .. }
@@ -1126,12 +1128,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     ..
                                 } => {
                                     eprintln!("type error: {}", e);
-                                    // No nudging for dual-caret spans.
                                     let (eo, el) = (expected_span_offset, expected_span_len);
                                     let (ao, al) = (actual_span_offset, actual_span_len);
                                     let b1 = src_reg.format_span_block(eo, el);
                                     let b2 = src_reg.format_span_block(ao, al);
-                                    eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
+                                    eprintln!(
+                                        "type variable defined here:\n{}\noccurs inside here:\n{}",
+                                        b1, b2
+                                    );
                                 }
                                 TypeError::Mismatch { span_offset, span_len, .. }
                                 | TypeError::RecordFieldMismatch {
@@ -1224,12 +1228,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     ..
                                 } => {
                                     eprintln!("type error: {}", e);
-                                    // No nudging for dual-caret spans.
                                     let (eo, el) = (expected_span_offset, expected_span_len);
                                     let (ao, al) = (actual_span_offset, actual_span_len);
                                     let b1 = src_reg.format_span_block(eo, el);
                                     let b2 = src_reg.format_span_block(ao, al);
-                                    eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
+                                    eprintln!(
+                                        "type variable defined here:\n{}\noccurs inside here:\n{}",
+                                        b1, b2
+                                    );
                                 }
                                 TypeError::Mismatch { span_offset, span_len, .. }
                                 | TypeError::RecordFieldMismatch {
