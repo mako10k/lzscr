@@ -284,18 +284,30 @@ pub fn lex(input: &str) -> Vec<Lexed<'_>> {
     let mut out = Vec::new();
     let mut l = Tok::lexer(input);
     let mut line_starts: Vec<usize> = vec![0];
-    for (i, b) in input.bytes().enumerate() { if b == b'\n' { line_starts.push(i + 1); } }
-    let line_col = |off: usize| {
-        match line_starts.binary_search(&off) {
-            Ok(li) => (li + 1, 1),
-            Err(ins) => { let line = ins; let start = line_starts.get(ins - 1).copied().unwrap_or(0); (line, off - start + 1) }
+    for (i, b) in input.bytes().enumerate() {
+        if b == b'\n' {
+            line_starts.push(i + 1);
+        }
+    }
+    let line_col = |off: usize| match line_starts.binary_search(&off) {
+        Ok(li) => (li + 1, 1),
+        Err(ins) => {
+            let line = ins;
+            let start = line_starts.get(ins - 1).copied().unwrap_or(0);
+            (line, off - start + 1)
         }
     };
     while let Some(res) = l.next() {
         let range = l.span();
         if let Ok(tok) = res {
             let (line, col) = line_col(range.start);
-            out.push(Lexed { tok, span: Span::new(range.start, range.len()), text: &input[range.clone()], line, col });
+            out.push(Lexed {
+                tok,
+                span: Span::new(range.start, range.len()),
+                text: &input[range.clone()],
+                line,
+                col,
+            });
         }
     }
     out

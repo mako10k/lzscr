@@ -192,7 +192,7 @@ Type hints below are informal (to be aligned with the HM type inference). Bool n
 
 - Builtins.char (`~Builtins .char`)
   - `is_alpha : Char -> Bool-like`, `is_digit : Char -> Bool-like`, `is_alnum : Char -> Bool-like`, `is_space : Char -> Bool-like`
-  - `between : Char -> Int -> Int -> Bool-like` (code point range)
+  - `between : Char -> Char -> Char -> Bool-like` (code point range)
 
 - Builtins.math (`~Builtins .math`)
   - Re-exports arithmetic/comparison in a namespace

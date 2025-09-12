@@ -5,8 +5,8 @@ use lzscr_analyzer::{
 };
 use lzscr_ast::ast::*;
 use lzscr_coreir::{eval_term, lower_expr_to_core, print_ir_value, print_term};
-use lzscr_parser::parse_expr;
 use lzscr_lexer as _lexer_for_caret; // for re-lexing to correct line/col in secondary caret block
+use lzscr_parser::parse_expr;
 use lzscr_runtime::{eval, Env, Value};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -566,15 +566,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // Parse numbers manually
                             let mut lchars = tail.chars();
                             let mut line_s = String::new();
-                            while let Some(ch) = lchars.next() { if ch.is_ascii_digit() { line_s.push(ch); } else { if ch == ':' { break; } else { line_s.clear(); break; } } }
+                            while let Some(ch) = lchars.next() {
+                                if ch.is_ascii_digit() {
+                                    line_s.push(ch);
+                                } else {
+                                    if ch == ':' {
+                                        break;
+                                    } else {
+                                        line_s.clear();
+                                        break;
+                                    }
+                                }
+                            }
                             let mut col_s = String::new();
-                            while let Some(ch) = lchars.next() { if ch.is_ascii_digit() { col_s.push(ch); } else { if ch == ' ' { break; } else { col_s.clear(); break; } } }
+                            while let Some(ch) = lchars.next() {
+                                if ch.is_ascii_digit() {
+                                    col_s.push(ch);
+                                } else {
+                                    if ch == ' ' {
+                                        break;
+                                    } else {
+                                        col_s.clear();
+                                        break;
+                                    }
+                                }
+                            }
                             let mut off_s = String::new();
                             if let Some(pos_off) = tail.find("(offset ") {
                                 let after = &tail[pos_off + "(offset ".len()..];
-                                for ch in after.chars() { if ch.is_ascii_digit() { off_s.push(ch); } else { break; } }
+                                for ch in after.chars() {
+                                    if ch.is_ascii_digit() {
+                                        off_s.push(ch);
+                                    } else {
+                                        break;
+                                    }
+                                }
                             }
-                            if let (Ok(_line_no), Ok(_col_no), Ok(off_no)) = (line_s.parse::<usize>(), col_s.parse::<usize>(), off_s.parse::<usize>()) {
+                            if let (Ok(_line_no), Ok(_col_no), Ok(off_no)) = (
+                                line_s.parse::<usize>(),
+                                col_s.parse::<usize>(),
+                                off_s.parse::<usize>(),
+                            ) {
                                 // Build caret block for the opening paren (length 1)
                                 let raw_block = format_span_caret(&code, &input_name, off_no, 1);
                                 // Re-lex to get authoritative line/col from token (accounts for any wrapper adjustments later)
@@ -584,8 +616,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if let Some(first) = lines.next() {
                                         // Replace header line with token's recorded line/col
                                         let _orig_header = first; // keep for potential future debugging
-                                        let new_first = format!("at {}:{}:{}", input_name, tok.line, tok.col);
-                                        let rest: String = lines.map(|l| format!("\n{}", l)).collect();
+                                        let new_first =
+                                            format!("at {}:{}:{}", input_name, tok.line, tok.col);
+                                        let rest: String =
+                                            lines.map(|l| format!("\n{}", l)).collect();
                                         open_paren_block = Some(format!("{}{}", new_first, rest));
                                     } else {
                                         open_paren_block = Some(raw_block);
@@ -627,9 +661,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 format_span_caret(&code, &input_name, span_offset, span_len)
                             );
                         }
-                        if let Some(block) = open_paren_block { eprintln!("\n{}", block); }
+                        if let Some(block) = open_paren_block {
+                            eprintln!("\n{}", block);
+                        }
                     }
-                    ParseError::WithSpan2 { msg, span1_offset, span1_len, span2_offset, span2_len } => {
+                    ParseError::WithSpan2 {
+                        msg,
+                        span1_offset,
+                        span1_len,
+                        span2_offset,
+                        span2_len,
+                    } => {
                         eprintln!("parse error: {}", msg);
                         // Always print both spans with proper source segmentation handling (reuse logic for first span)
                         let print_block = |off: usize, len: usize| {
@@ -643,9 +685,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 } else {
                                     let mut user_start = 0usize;
                                     user_start += 1 + pre_src.len() + 1;
-                                    if user_wrapped_parens { user_start += 1; }
+                                    if user_wrapped_parens {
+                                        user_start += 1;
+                                    }
                                     let rel = off.saturating_sub(user_start);
-                                    eprintln!("{}", format_span_caret(&user_raw, &input_name, rel, len));
+                                    eprintln!(
+                                        "{}",
+                                        format_span_caret(&user_raw, &input_name, rel, len)
+                                    );
                                     return;
                                 }
                             }
@@ -983,13 +1030,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(e) => {
                         use lzscr_types::TypeError;
                         match e {
-                            TypeError::MismatchBoth {
-                                expected_span_offset,
-                                expected_span_len,
-                                actual_span_offset,
-                                actual_span_len,
-                                ..
-                            } => {
+                            TypeError::MismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
+                            | TypeError::RecordFieldMismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
+                            | TypeError::Occurs { var_span_offset: expected_span_offset, var_span_len: expected_span_len, ty_span_offset: actual_span_offset, ty_span_len: actual_span_len, .. } => {
                                 eprintln!("type error: {}", e);
                                 // For dual-caret errors, trust the spans as-is (no nudging).
                                 let (eo, el) = (expected_span_offset, expected_span_len);
@@ -999,6 +1042,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
                             }
                             TypeError::Mismatch { span_offset, span_len, .. }
+                            | TypeError::RecordFieldMismatch { span_offset, span_len, .. }
                             | TypeError::EffectNotAllowed { span_offset, span_len }
                             | TypeError::UnboundRef { span_offset, span_len, .. }
                             | TypeError::MixedAltBranches { span_offset, span_len }
@@ -1042,13 +1086,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => {
                             use lzscr_types::TypeError;
                             match e {
-                                TypeError::MismatchBoth {
-                                    expected_span_offset,
-                                    expected_span_len,
-                                    actual_span_offset,
-                                    actual_span_len,
-                                    ..
-                                } => {
+                                TypeError::MismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
+                                | TypeError::RecordFieldMismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
+                                | TypeError::Occurs { var_span_offset: expected_span_offset, var_span_len: expected_span_len, ty_span_offset: actual_span_offset, ty_span_len: actual_span_len, .. } => {
                                     eprintln!("type error: {}", e);
                                     // No nudging for dual-caret spans.
                                     let (eo, el) = (expected_span_offset, expected_span_len);
@@ -1058,6 +1098,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
                                 }
                                 TypeError::Mismatch { span_offset, span_len, .. }
+                                | TypeError::RecordFieldMismatch { span_offset, span_len, .. }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
                                 | TypeError::UnboundRef { span_offset, span_len, .. }
                                 | TypeError::MixedAltBranches { span_offset, span_len }
@@ -1123,13 +1164,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => {
                             use lzscr_types::TypeError;
                             match e {
-                                TypeError::MismatchBoth {
-                                    expected_span_offset,
-                                    expected_span_len,
-                                    actual_span_offset,
-                                    actual_span_len,
-                                    ..
-                                } => {
+                                TypeError::MismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
+                                | TypeError::RecordFieldMismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
+                                | TypeError::Occurs { var_span_offset: expected_span_offset, var_span_len: expected_span_len, ty_span_offset: actual_span_offset, ty_span_len: actual_span_len, .. } => {
                                     eprintln!("type error: {}", e);
                                     // No nudging for dual-caret spans.
                                     let (eo, el) = (expected_span_offset, expected_span_len);
@@ -1139,6 +1176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
                                 }
                                 TypeError::Mismatch { span_offset, span_len, .. }
+                                | TypeError::RecordFieldMismatch { span_offset, span_len, .. }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
                                 | TypeError::UnboundRef { span_offset, span_len, .. }
                                 | TypeError::MixedAltBranches { span_offset, span_len }

@@ -714,9 +714,11 @@ impl Env {
                 arity: 3,
                 args: vec![],
                 f: |_env, args| match (&args[0], &args[1], &args[2]) {
-                    (Value::Char(c), Value::Int(lo), Value::Int(hi)) => {
-                        let code = *c as i64;
-                        Ok(bool_val(code >= *lo && code <= *hi))
+                    (Value::Char(c), Value::Char(lo), Value::Char(hi)) => {
+                        let code = *c as u32;
+                        let lo_c = *lo as u32;
+                        let hi_c = *hi as u32;
+                        Ok(bool_val(code >= lo_c && code <= hi_c))
                     }
                     _ => Err(EvalError::TypeError),
                 },

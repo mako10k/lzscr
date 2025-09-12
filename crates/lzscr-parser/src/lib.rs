@@ -8,8 +8,16 @@ pub enum ParseError {
     Generic(String),
     #[error("parse error: {msg} at ({span_offset}, {span_len})")]
     WithSpan { msg: String, span_offset: usize, span_len: usize },
-    #[error("parse error: {msg} at1 ({span1_offset}, {span1_len}); at2 ({span2_offset}, {span2_len})")]
-    WithSpan2 { msg: String, span1_offset: usize, span1_len: usize, span2_offset: usize, span2_len: usize },
+    #[error(
+        "parse error: {msg} at1 ({span1_offset}, {span1_len}); at2 ({span2_offset}, {span2_len})"
+    )]
+    WithSpan2 {
+        msg: String,
+        span1_offset: usize,
+        span1_len: usize,
+        span2_offset: usize,
+        span2_len: usize,
+    },
 }
 
 pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {

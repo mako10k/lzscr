@@ -9,7 +9,7 @@ Goal: prepare a standard foundation for string scanning and character classifica
   - `is_digit : Char -> Bool` (ASCII)
   - `is_alnum : Char -> Bool` (ASCII)
   - `is_space : Char -> Bool` (Unicode whitespace)
-  - `between : Char -> Int -> Int -> Bool` (code-point range)
+  - `between : Char -> Char -> Char -> Bool` (code-point range)
 - additions under `Builtins.string`
   - `slice : Str -> Int -> Int -> Str` (character index)
   - `char_at : Str -> Int -> Option(Char)`
