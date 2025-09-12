@@ -441,15 +441,7 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
             Ok(s2.compose(s1))
         }
         (Type::List(x), Type::List(y)) => unify(x, y),
-        (Type::Tuple(xs), Type::Tuple(ys)) if xs.len() == ys.len() => {
-            let mut s = Subst::new();
-            let it = xs.iter().zip(ys.iter());
-            for (x, y) in it {
-                let s1 = unify(&x.apply(&s), &y.apply(&s))?;
-                s = s1.compose(s);
-            }
-            Ok(s)
-        }
+    (Type::Tuple(xs), Type::Tuple(ys)) if xs.len() == ys.len() => unify_slices(xs, ys),
         (Type::Record(rx), Type::Record(ry)) if rx.len() == ry.len() => {
             // Compare by keys first
             let mut s = Subst::new();
@@ -544,15 +536,7 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
             Ok(s)
         }
         (Type::Ctor { tag: ta, payload: pa }, Type::Ctor { tag: tb, payload: pb })
-            if ta == tb && pa.len() == pb.len() =>
-        {
-            let mut s = Subst::new();
-            for (x, y) in pa.iter().zip(pb.iter()) {
-                let s1 = unify(&x.apply(&s), &y.apply(&s))?;
-                s = s1.compose(s);
-            }
-            Ok(s)
-        }
+            if ta == tb && pa.len() == pb.len() => unify_slices(pa, pb),
         (Type::SumCtor(a), Type::SumCtor(b)) => {
             // Require exact same variant set (MVP). Unify payloads by tag.
             if a.len() != b.len() {
@@ -583,10 +567,8 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
                         span_len: 0,
                     });
                 }
-                for (x, y) in psa.iter().zip(psb.iter()) {
-                    let s1 = unify(&x.apply(&s), &y.apply(&s))?;
-                    s = s1.compose(s);
-                }
+                let s_payload = unify_slices(psa, psb)?; // compose after slice unify
+                s = s_payload.compose(s);
             }
             Ok(s)
         }
@@ -602,12 +584,7 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
                         span_len: 0,
                     });
                 }
-                let mut s = Subst::new();
-                for (x, y) in payload.iter().zip(ps_other.iter()) {
-                    let s1 = unify(&x.apply(&s), &y.apply(&s))?;
-                    s = s1.compose(s);
-                }
-                Ok(s)
+                Ok(unify_slices(payload, ps_other)?)
             } else {
                 Err(TypeError::Mismatch {
                     expected: a.clone(),
@@ -624,6 +601,18 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
             span_len: 0,
         }),
     }
+}
+
+// Small helper: unify two equally-sized slices element-wise, composing substitutions left-to-right.
+// (Used for Tuple, Ctor payloads, and SumCtor payload lists.)
+fn unify_slices(xs: &[Type], ys: &[Type]) -> Result<Subst, TypeError> {
+    debug_assert_eq!(xs.len(), ys.len());
+    let mut s = Subst::new();
+    for (x, y) in xs.iter().zip(ys.iter()) {
+        let s1 = unify(&x.apply(&s), &y.apply(&s))?;
+        s = s1.compose(s);
+    }
+    Ok(s)
 }
 
 // Positivity (no negative occurrence) check for a type declaration body
