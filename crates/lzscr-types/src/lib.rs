@@ -810,7 +810,7 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
             ty_span_offset,
             ty_span_len,
         } => {
-            let (norm, mapping) = normalize_type_and_map(&ty);
+            let (norm, mapping) = user_pretty_type_and_map(&ty);
             let vp = mapping.get(&var).cloned().unwrap_or_else(|| format!("{}", var));
             if (var_span_offset, var_span_len, ty_span_offset, ty_span_len) == (0, 0, 0, 0) {
                 if let Some(spv) = ctx.tv_origins.get(&var) {
@@ -1847,7 +1847,7 @@ fn infer_expr(
                         inner = bx.as_ref();
                     }
                     // Re-normalize to keep variable mapping consistent inside this error scope
-                    let (norm, mapping) = normalize_type_and_map(&ty);
+                    let (norm, mapping) = user_pretty_type_and_map(&ty);
                     let vp = mapping.get(&var).cloned().unwrap_or_else(|| format!("{}", var));
                     TypeError::Occurs {
                         var,
@@ -2468,6 +2468,8 @@ fn user_pretty_type(t: &Type) -> String {
 // Normalize a type to user_pretty_type form AND return the mapping from TvId -> pretty name used.
 // This lets callers pick out the pretty name for a specific variable (e.g. occurs variable) while
 // using the same consistent normalization for the full type shown in the error.
+// Internal normalization returning both pretty string and TvId->name mapping.
+// (Legacy name normalize_type_and_map kept; new unified entry also exposed for future refactors.)
 fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
     use std::collections::{HashMap, HashSet};
     fn collect_order(t: &Type, order: &mut Vec<TvId>, seen: &mut HashSet<TvId>) {
@@ -2633,6 +2635,10 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
     let mut seen = HashMap::new();
     let core = go(t, &mapping, &mut seen);
     (format!("%{{{}}}", core), mapping)
+}
+
+fn user_pretty_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
+    normalize_type_and_map(t)
 }
 
 // ---------- Public API ----------
