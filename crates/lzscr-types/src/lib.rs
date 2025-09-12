@@ -82,6 +82,38 @@ impl Subst {
     }
 }
 
+// -----------------------------------------------------------------------------
+// Traversal helpers: zonk_type vs .apply() vs .ftv()
+// -----------------------------------------------------------------------------
+//  zonk_type:
+//    - Fully normalises a type by repeatedly following substitution mappings.
+//    - It aggressively chases Var chains (v -> T, where T may again contain Vars)
+//      until it reaches a fixed point of concrete structure or an unbound Var.
+//    - Use when producing a final, user-facing or serialization-stable form, or
+//      right before pretty-printing for error messages where lingering indirections
+//      (%tN bound to another %tM) would be confusing.
+//
+//  Type::apply / Scheme::apply / Subst::apply:
+//    - Perform a single structural pass replacing any directly mapped Vars with
+//      their images, WITHOUT recursively re-zonking what those images themselves
+//      might reference (except through further recursive descent of structure).
+//    - This preserves sharing opportunities and avoids quadratic blow‑ups during
+//      repeated unification steps. Unifier composes substitutions instead of
+//      eagerly normalising; later a zonk pass can collapse chains.
+//
+//  ftv (free type variables):
+//    - Collects all unbound Vars reachable in the current (possibly still indirect)
+//      representation. Because we do not zonk during collection, a Var that is
+//      mapped inside the substitution but not yet structurally applied will not
+//      appear spuriously (the calling site usually applies first where needed).
+//
+// Practical guideline:
+//    * During inference/unify: prefer .apply() to keep cost low.
+//    * When exporting a Scheme or reporting an error: zonk_type() then pass to
+//      user_pretty_type (which internally performs its own normalisation step).
+//    * If adding new traversals, keep them non-recursive over substitution chains
+//      unless the intent is explicit finalisation (like zonk_type).
+// -----------------------------------------------------------------------------
 // Deeply resolve (zonk) a type under a substitution: recursively chase Var chains.
 fn zonk_type(t: &Type, s: &Subst) -> Type {
     match t {
