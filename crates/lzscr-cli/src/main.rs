@@ -1030,9 +1030,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(e) => {
                         use lzscr_types::TypeError;
                         match e {
-                            TypeError::MismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
-                            | TypeError::RecordFieldMismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
-                            | TypeError::Occurs { var_span_offset: expected_span_offset, var_span_len: expected_span_len, ty_span_offset: actual_span_offset, ty_span_len: actual_span_len, .. } => {
+                            TypeError::MismatchBoth {
+                                expected_span_offset,
+                                expected_span_len,
+                                actual_span_offset,
+                                actual_span_len,
+                                ..
+                            }
+                            | TypeError::RecordFieldMismatchBoth {
+                                expected_span_offset,
+                                expected_span_len,
+                                actual_span_offset,
+                                actual_span_len,
+                                ..
+                            }
+                            | TypeError::Occurs {
+                                var_span_offset: expected_span_offset,
+                                var_span_len: expected_span_len,
+                                ty_span_offset: actual_span_offset,
+                                ty_span_len: actual_span_len,
+                                ..
+                            } => {
                                 eprintln!("type error: {}", e);
                                 // For dual-caret errors, trust the spans as-is (no nudging).
                                 let (eo, el) = (expected_span_offset, expected_span_len);
@@ -1086,9 +1104,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => {
                             use lzscr_types::TypeError;
                             match e {
-                                TypeError::MismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
-                                | TypeError::RecordFieldMismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
-                                | TypeError::Occurs { var_span_offset: expected_span_offset, var_span_len: expected_span_len, ty_span_offset: actual_span_offset, ty_span_len: actual_span_len, .. } => {
+                                TypeError::MismatchBoth {
+                                    expected_span_offset,
+                                    expected_span_len,
+                                    actual_span_offset,
+                                    actual_span_len,
+                                    ..
+                                }
+                                | TypeError::RecordFieldMismatchBoth {
+                                    expected_span_offset,
+                                    expected_span_len,
+                                    actual_span_offset,
+                                    actual_span_len,
+                                    ..
+                                }
+                                | TypeError::Occurs {
+                                    var_span_offset: expected_span_offset,
+                                    var_span_len: expected_span_len,
+                                    ty_span_offset: actual_span_offset,
+                                    ty_span_len: actual_span_len,
+                                    ..
+                                } => {
                                     eprintln!("type error: {}", e);
                                     // No nudging for dual-caret spans.
                                     let (eo, el) = (expected_span_offset, expected_span_len);
@@ -1098,7 +1134,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
                                 }
                                 TypeError::Mismatch { span_offset, span_len, .. }
-                                | TypeError::RecordFieldMismatch { span_offset, span_len, .. }
+                                | TypeError::RecordFieldMismatch {
+                                    span_offset, span_len, ..
+                                }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
                                 | TypeError::UnboundRef { span_offset, span_len, .. }
                                 | TypeError::MixedAltBranches { span_offset, span_len }
@@ -1164,9 +1202,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => {
                             use lzscr_types::TypeError;
                             match e {
-                                TypeError::MismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
-                                | TypeError::RecordFieldMismatchBoth { expected_span_offset, expected_span_len, actual_span_offset, actual_span_len, .. }
-                                | TypeError::Occurs { var_span_offset: expected_span_offset, var_span_len: expected_span_len, ty_span_offset: actual_span_offset, ty_span_len: actual_span_len, .. } => {
+                                TypeError::MismatchBoth {
+                                    expected_span_offset,
+                                    expected_span_len,
+                                    actual_span_offset,
+                                    actual_span_len,
+                                    ..
+                                }
+                                | TypeError::RecordFieldMismatchBoth {
+                                    expected_span_offset,
+                                    expected_span_len,
+                                    actual_span_offset,
+                                    actual_span_len,
+                                    ..
+                                }
+                                | TypeError::Occurs {
+                                    var_span_offset: expected_span_offset,
+                                    var_span_len: expected_span_len,
+                                    ty_span_offset: actual_span_offset,
+                                    ty_span_len: actual_span_len,
+                                    ..
+                                } => {
                                     eprintln!("type error: {}", e);
                                     // No nudging for dual-caret spans.
                                     let (eo, el) = (expected_span_offset, expected_span_len);
@@ -1176,7 +1232,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("expected here:\n{}\nactual here:\n{}", b1, b2);
                                 }
                                 TypeError::Mismatch { span_offset, span_len, .. }
-                                | TypeError::RecordFieldMismatch { span_offset, span_len, .. }
+                                | TypeError::RecordFieldMismatch {
+                                    span_offset, span_len, ..
+                                }
                                 | TypeError::EffectNotAllowed { span_offset, span_len }
                                 | TypeError::UnboundRef { span_offset, span_len, .. }
                                 | TypeError::MixedAltBranches { span_offset, span_len }

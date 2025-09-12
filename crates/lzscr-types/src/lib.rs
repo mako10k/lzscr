@@ -365,17 +365,27 @@ fn typedefs_lookup_typename<'a>(ctx: &'a InferCtx, name: &str) -> Option<&'a Typ
 
 #[derive(thiserror::Error, Debug)]
 pub enum TypeError {
-    #[error(
-        "type mismatch: expected {expected} vs actual {actual} at ({span_offset},{span_len})"
-    )]
+    #[error("type mismatch: expected {expected} vs actual {actual} at ({span_offset},{span_len})")]
     Mismatch { expected: Type, actual: Type, span_offset: usize, span_len: usize },
     #[error("record field type mismatch: field '{field}' expected {expected} vs actual {actual} at ({span_offset},{span_len})")]
-    RecordFieldMismatch { field: String, expected: Type, actual: Type, span_offset: usize, span_len: usize },
+    RecordFieldMismatch {
+        field: String,
+        expected: Type,
+        actual: Type,
+        span_offset: usize,
+        span_len: usize,
+    },
     #[error("record field '{field}' type mismatch: expected %{expected} vs actual %{actual}")]
-    RecordFieldMismatchBoth { field: String, expected: Type, actual: Type, expected_span_offset: usize, expected_span_len: usize, actual_span_offset: usize, actual_span_len: usize },
-    #[error(
-        "type mismatch: expected {expected} vs actual {actual}"
-    )]
+    RecordFieldMismatchBoth {
+        field: String,
+        expected: Type,
+        actual: Type,
+        expected_span_offset: usize,
+        expected_span_len: usize,
+        actual_span_offset: usize,
+        actual_span_len: usize,
+    },
+    #[error("type mismatch: expected {expected} vs actual {actual}")]
     MismatchBoth {
         expected: Type,
         actual: Type,
@@ -394,7 +404,14 @@ pub enum TypeError {
         expr_span_len: usize,
     },
     #[error("occurs check failed: {var:?} in {ty}")]
-    Occurs { var: TvId, ty: Type, var_span_offset: usize, var_span_len: usize, ty_span_offset: usize, ty_span_len: usize },
+    Occurs {
+        var: TvId,
+        ty: Type,
+        var_span_offset: usize,
+        var_span_len: usize,
+        ty_span_offset: usize,
+        ty_span_len: usize,
+    },
     #[error("constructor union duplicate tag: {tag} at ({span_offset},{span_len})")]
     DuplicateCtorTag { tag: String, span_offset: usize, span_len: usize },
     #[error("AltLambda branches mixed: expected all Ctor patterns or wildcard/default only at ({span_offset},{span_len})")]
@@ -456,29 +473,82 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
                     span_len: 0,
                 })?;
                 match unify(&vx_ty.apply(&s), &vy_ty.apply(&s)) {
-                    Ok(s1) => { s = s1.compose(s); }
+                    Ok(s1) => {
+                        s = s1.compose(s);
+                    }
                     Err(TypeError::Mismatch { expected, actual, .. }) => {
                         // If both sides have spans, emit dual-span variant.
                         match (vx_sp, vy_sp) {
                             (Some(es), Some(as_)) => {
-                                return Err(TypeError::RecordFieldMismatchBoth { field: k.clone(), expected, actual, expected_span_offset: es.offset, expected_span_len: es.len, actual_span_offset: as_.offset, actual_span_len: as_.len });
+                                return Err(TypeError::RecordFieldMismatchBoth {
+                                    field: k.clone(),
+                                    expected,
+                                    actual,
+                                    expected_span_offset: es.offset,
+                                    expected_span_len: es.len,
+                                    actual_span_offset: as_.offset,
+                                    actual_span_len: as_.len,
+                                });
                             }
                             _ => {
                                 let use_span = vy_sp.or(*vx_sp);
-                                let (span_offset, span_len) = use_span.map(|sp| (sp.offset, sp.len)).unwrap_or((0,0));
-                                return Err(TypeError::RecordFieldMismatch { field: k.clone(), expected, actual, span_offset, span_len });
+                                let (span_offset, span_len) =
+                                    use_span.map(|sp| (sp.offset, sp.len)).unwrap_or((0, 0));
+                                return Err(TypeError::RecordFieldMismatch {
+                                    field: k.clone(),
+                                    expected,
+                                    actual,
+                                    span_offset,
+                                    span_len,
+                                });
                             }
                         }
                     }
-                    Err(TypeError::RecordFieldMismatchBoth { field, expected, actual, expected_span_offset, expected_span_len, actual_span_offset, actual_span_len }) => {
+                    Err(TypeError::RecordFieldMismatchBoth {
+                        field,
+                        expected,
+                        actual,
+                        expected_span_offset,
+                        expected_span_len,
+                        actual_span_offset,
+                        actual_span_len,
+                    }) => {
                         // Prepend parent field path
-                        let new_field = if field.contains('.') { format!("{}.{field}", k) } else { format!("{k}.{field}") };
-                        return Err(TypeError::RecordFieldMismatchBoth { field: new_field, expected, actual, expected_span_offset, expected_span_len, actual_span_offset, actual_span_len });
+                        let new_field = if field.contains('.') {
+                            format!("{}.{field}", k)
+                        } else {
+                            format!("{k}.{field}")
+                        };
+                        return Err(TypeError::RecordFieldMismatchBoth {
+                            field: new_field,
+                            expected,
+                            actual,
+                            expected_span_offset,
+                            expected_span_len,
+                            actual_span_offset,
+                            actual_span_len,
+                        });
                     }
-                    Err(TypeError::RecordFieldMismatch { field, expected, actual, span_offset, span_len }) => {
+                    Err(TypeError::RecordFieldMismatch {
+                        field,
+                        expected,
+                        actual,
+                        span_offset,
+                        span_len,
+                    }) => {
                         // Nested field mismatch; optionally qualify path
-                        let new_field = if field.contains('.') { format!("{}.{field}", k) } else { format!("{k}.{field}") };
-                        return Err(TypeError::RecordFieldMismatch { field: new_field, expected, actual, span_offset, span_len });
+                        let new_field = if field.contains('.') {
+                            format!("{}.{field}", k)
+                        } else {
+                            format!("{k}.{field}")
+                        };
+                        return Err(TypeError::RecordFieldMismatch {
+                            field: new_field,
+                            expected,
+                            actual,
+                            span_offset,
+                            span_len,
+                        });
                     }
                     Err(e) => return Err(e),
                 }
@@ -729,7 +799,7 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
     // Normalize tuple-like constructors before actual unification
     let na = normalize_tuples(a);
     let nb = normalize_tuples(b);
-    let res = match (&na, &nb) {
+    let res_raw = match (&na, &nb) {
         (Type::Named { name: na, args: aa }, _) => {
             let sa = instantiate_named_sum(ctx, na, aa)?;
             ctx_unify(ctx, &Type::SumCtor(sa), &nb)
@@ -740,6 +810,60 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
         }
         _ => unify(&na, &nb),
     };
+    // Post-process occurs errors to enrich spans from origins if missing.
+    let res = res_raw.map_err(|e| match e {
+        TypeError::Occurs {
+            var,
+            ty,
+            var_span_offset,
+            var_span_len,
+            ty_span_offset,
+            ty_span_len,
+        } => {
+            // Only patch when spans are zero.
+            if (var_span_offset, var_span_len, ty_span_offset, ty_span_len) == (0, 0, 0, 0) {
+                if let Some(spv) = ctx.tv_origins.get(&var) {
+                    // Try to find a representative span for ty: pick first contained var origin.
+                    // Fallback to same as var if none.
+                    let mut ty_sp = None;
+                    for tv in ty.ftv() {
+                        if let Some(sp) = ctx.tv_origins.get(&tv) {
+                            ty_sp = Some(*sp);
+                            break;
+                        }
+                    }
+                    let ty_sp = ty_sp.unwrap_or(*spv);
+                    TypeError::Occurs {
+                        var,
+                        ty,
+                        var_span_offset: spv.offset,
+                        var_span_len: spv.len,
+                        ty_span_offset: ty_sp.offset,
+                        ty_span_len: ty_sp.len,
+                    }
+                } else {
+                    TypeError::Occurs {
+                        var,
+                        ty,
+                        var_span_offset,
+                        var_span_len,
+                        ty_span_offset,
+                        ty_span_len,
+                    }
+                }
+            } else {
+                TypeError::Occurs {
+                    var,
+                    ty,
+                    var_span_offset,
+                    var_span_len,
+                    ty_span_offset,
+                    ty_span_len,
+                }
+            }
+        }
+        other => other,
+    });
     if let Some(dbg) = &ctx.debug {
         if dbg.borrow().log_unify {
             match &res {
@@ -775,7 +899,14 @@ fn ctx_unify(ctx: &InferCtx, a: &Type, b: &Type) -> Result<Subst, TypeError> {
 fn bind(v: TvId, t: Type) -> Result<Subst, TypeError> {
     match t {
         Type::Var(v2) if v == v2 => Ok(Subst::new()),
-    _ if occurs(v, &t) => Err(TypeError::Occurs { var: v, ty: t, var_span_offset: 0, var_span_len: 0, ty_span_offset: 0, ty_span_len: 0 }),
+        _ if occurs(v, &t) => Err(TypeError::Occurs {
+            var: v,
+            ty: t,
+            var_span_offset: 0,
+            var_span_len: 0,
+            ty_span_offset: 0,
+            ty_span_len: 0,
+        }),
         _ => Ok(Subst::singleton(v, t)),
     }
 }
@@ -851,7 +982,7 @@ fn infer_pattern(
             let mut s = Subst::new();
             let mut tys = Vec::with_capacity(xs.len());
             for _ in xs {
-                tys.push(ctx.tv.fresh());
+                tys.push(ctx.fresh_tv());
             }
             let tup = Type::Tuple(tys.clone());
             let s0 = ctx_unify(ctx, &scrutinee.apply(&s), &tup)?;
@@ -865,7 +996,7 @@ fn infer_pattern(
             Ok(PatInfo { bindings: binds, subst: s })
         }
         PatternKind::List(items) => {
-            let a = ctx.tv.fresh();
+            let a = ctx.fresh_tv();
             let mut s = ctx_unify(ctx, scrutinee, &Type::List(Box::new(a.clone())))?;
             let mut binds = vec![];
             for p in items {
@@ -876,7 +1007,7 @@ fn infer_pattern(
             Ok(PatInfo { bindings: binds, subst: s })
         }
         PatternKind::Cons(h, t) => {
-            let a = ctx.tv.fresh();
+            let a = ctx.fresh_tv();
             let s0 = ctx_unify(ctx, scrutinee, &Type::List(Box::new(a.clone())))?;
             let mut s = s0;
             let ph = infer_pattern(ctx, h, &a.apply(&s))?;
@@ -890,9 +1021,10 @@ fn infer_pattern(
         PatternKind::Record(fields) => {
             let mut want = BTreeMap::new();
             for (k, _) in fields {
-                want.insert(k.clone(), ctx.tv.fresh());
+                want.insert(k.clone(), ctx.fresh_tv());
             }
-            let want_spanned = Type::Record(want.iter().map(|(k,v)| (k.clone(), (v.clone(), None))).collect());
+            let want_spanned =
+                Type::Record(want.iter().map(|(k, v)| (k.clone(), (v.clone(), None))).collect());
             let s0 = ctx_unify(ctx, scrutinee, &want_spanned)?;
             let mut s = s0;
             let mut binds = vec![];
@@ -935,10 +1067,10 @@ fn infer_pattern(
                     }
                     out
                 } else {
-                    (0..eff_args.len()).map(|_| ctx.tv.fresh()).collect()
+                    (0..eff_args.len()).map(|_| ctx.fresh_tv()).collect()
                 }
             } else {
-                (0..eff_args.len()).map(|_| ctx.tv.fresh()).collect()
+                (0..eff_args.len()).map(|_| ctx.fresh_tv()).collect()
             };
             let want = Type::Ctor { tag: eff_name.clone(), payload: payload.clone() };
             let mut s = ctx_unify(ctx, scrutinee, &want)?;
@@ -979,6 +1111,8 @@ struct InferCtx {
     typedef_types: Vec<TypeNameDefsFrame>, // stack of named type defs (μ-types)
     debug: Option<std::rc::Rc<std::cell::RefCell<DebugConfig>>>, // optional debugging
     depth: usize,                       // current AST depth for logging
+    tv_origins: HashMap<TvId, Span>,    // origin span for each generated type variable
+    span_stack: Vec<Span>,              // expression span context stack
 }
 
 #[derive(Clone)]
@@ -1022,6 +1156,29 @@ fn lookup_tyvar(ctx: &InferCtx, name: &str) -> Option<TvId> {
     None
 }
 
+impl InferCtx {
+    fn push_span(&mut self, sp: Span) {
+        self.span_stack.push(sp);
+    }
+    fn pop_span(&mut self) {
+        self.span_stack.pop();
+    }
+    fn current_span(&self) -> Option<Span> {
+        self.span_stack.last().copied()
+    }
+    fn fresh_tv(&mut self) -> Type {
+        let t = self.tv.fresh();
+        if let Type::Var(id) = t {
+            if let Some(sp) = self.current_span() {
+                self.tv_origins.insert(id, sp);
+            }
+        }
+        t
+    }
+}
+
+// (Removed SpanGuard due to borrow conflicts; using explicit push/pop in infer_expr)
+
 fn push_tyvars_from_pattern<'a>(ctx: &mut InferCtx, p: &'a Pattern) -> (&'a Pattern, usize) {
     let mut cur = p;
     let mut pushed = 0usize;
@@ -1032,7 +1189,7 @@ fn push_tyvars_from_pattern<'a>(ctx: &mut InferCtx, p: &'a Pattern) -> (&'a Patt
             if nm.is_empty() {
                 continue;
             }
-            let Type::Var(id) = ctx.tv.fresh() else { unreachable!() };
+            let Type::Var(id) = ctx.tv.fresh() else { unreachable!() }; // keep raw fresh: type bind generics shouldn't inherit expr span
             frame.insert(nm.clone(), id);
         }
         ctx.tyvars.push(frame);
@@ -1065,7 +1222,7 @@ fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
             for (k, v) in fs {
                 m.insert(k.clone(), conv_typeexpr_fresh(tv, v));
             }
-            Type::Record(m.into_iter().map(|(k,v)| (k,(v,None))).collect())
+            Type::Record(m.into_iter().map(|(k, v)| (k, (v, None))).collect())
         }
         TypeExpr::Fun(a, b) => Type::fun(conv_typeexpr_fresh(tv, a), conv_typeexpr_fresh(tv, b)),
         TypeExpr::Ctor { tag, args } => {
@@ -1087,6 +1244,8 @@ fn infer_expr(
     if let Some(dbg) = &ctx.debug {
         dbg.borrow_mut().log(ctx.depth, 1, format!("enter {}", short_expr_kind(&e.kind)));
     }
+    // Push current expression span so any fresh type variables generated within acquire an origin.
+    ctx.push_span(e.span);
     ctx.depth += 1;
     // Helper: convert TypeExpr to Type using ctx.tyvars and a local holes table for '?'
     // Helper: try to find the span of a constructor symbol (e.g., .Some/.None) in an expression.
@@ -1128,8 +1287,7 @@ fn infer_expr(
                 None
             }
             PatternKind::Cons(a, b) | PatternKind::As(a, b) => {
-                find_ctor_symbol_span_in_pattern(a)
-                    .or_else(|| find_ctor_symbol_span_in_pattern(b))
+                find_ctor_symbol_span_in_pattern(a).or_else(|| find_ctor_symbol_span_in_pattern(b))
             }
             PatternKind::TypeBind { pat, .. } => find_ctor_symbol_span_in_pattern(pat),
             _ => None,
@@ -1152,7 +1310,7 @@ fn infer_expr(
                 for (k, v) in fs {
                     m.insert(k.clone(), conv_typeexpr(ctx, v, holes));
                 }
-                Type::Record(m.into_iter().map(|(k,v)| (k,(v,None))).collect())
+                Type::Record(m.into_iter().map(|(k, v)| (k, (v, None))).collect())
             }
             TypeExpr::Fun(a, b) => {
                 Type::fun(conv_typeexpr(ctx, a, holes), conv_typeexpr(ctx, b, holes))
@@ -1173,7 +1331,7 @@ fn infer_expr(
                     // Unbound type var in annotation: treat as a shared hole keyed by the name
                     let key = format!("'{}", name);
                     let id = holes.entry(key).or_insert_with(|| {
-                        let Type::Var(v) = ctx.tv.fresh() else { unreachable!() };
+                        let Type::Var(v) = ctx.fresh_tv() else { unreachable!() };
                         v
                     });
                     Type::Var(*id)
@@ -1183,12 +1341,12 @@ fn infer_expr(
                 if let Some(n) = opt.as_ref() {
                     let key = format!("?{}", n);
                     let id = holes.entry(key).or_insert_with(|| {
-                        let Type::Var(v) = ctx.tv.fresh() else { unreachable!() };
+                        let Type::Var(v) = ctx.fresh_tv() else { unreachable!() };
                         v
                     });
                     Type::Var(*id)
                 } else {
-                    let Type::Var(v) = ctx.tv.fresh() else { unreachable!() };
+                    let Type::Var(v) = ctx.fresh_tv() else { unreachable!() };
                     Type::Var(v)
                 }
             }
@@ -1246,7 +1404,7 @@ fn infer_expr(
         ExprKind::Lambda { param, body } => {
             // Handle pattern-level type binders: push frames while inferring param and body
             let (p_core, pushed) = push_tyvars_from_pattern(ctx, param);
-            let a = ctx.tv.fresh();
+            let a = ctx.fresh_tv();
             let pi = infer_pattern(ctx, p_core, &a)?;
             let mut env2 = ctx.env.clone();
             for (n, t) in &pi.bindings {
@@ -1334,30 +1492,28 @@ fn infer_expr(
                                 return Ok((ret.apply(&s), s));
                             }
                             // Fallback to regular if typing: unify branch types to a common var
-                            let r = ctx.tv.fresh();
+                            let r = ctx.fresh_tv();
                             let s1 = ctx_unify(ctx, &tt.apply(&se).apply(&s_acc), &r)?;
                             // 2回目の unify 失敗時に then/else のスパン（可能なら .Some/.None の記号位置）を添えて返す
-                            let s2 = match ctx_unify(
-                                ctx,
-                                &te.apply(&s1).apply(&se).apply(&s_acc),
-                                &r,
-                            ) {
-                                Ok(s) => s,
-                                Err(TypeError::Mismatch { expected, actual, .. }) => {
-                                    let exp_sp = find_ctor_symbol_span_in_expr(then_branch)
-                                        .unwrap_or(then_branch.span);
-                                    let act_sp = find_ctor_symbol_span_in_expr(arg).unwrap_or(arg.span);
-                                    return Err(TypeError::MismatchBoth {
-                                        expected,
-                                        actual,
-                                        expected_span_offset: exp_sp.offset,
-                                        expected_span_len: exp_sp.len,
-                                        actual_span_offset: act_sp.offset,
-                                        actual_span_len: act_sp.len,
-                                    });
-                                }
-                                Err(e) => return Err(e),
-                            };
+                            let s2 =
+                                match ctx_unify(ctx, &te.apply(&s1).apply(&se).apply(&s_acc), &r) {
+                                    Ok(s) => s,
+                                    Err(TypeError::Mismatch { expected, actual, .. }) => {
+                                        let exp_sp = find_ctor_symbol_span_in_expr(then_branch)
+                                            .unwrap_or(then_branch.span);
+                                        let act_sp =
+                                            find_ctor_symbol_span_in_expr(arg).unwrap_or(arg.span);
+                                        return Err(TypeError::MismatchBoth {
+                                            expected,
+                                            actual,
+                                            expected_span_offset: exp_sp.offset,
+                                            expected_span_len: exp_sp.len,
+                                            actual_span_offset: act_sp.offset,
+                                            actual_span_len: act_sp.len,
+                                        });
+                                    }
+                                    Err(e) => return Err(e),
+                                };
                             let s = s2.compose(s1).compose(se).compose(s_acc);
                             return Ok((r.apply(&s), s));
                         }
@@ -1380,7 +1536,7 @@ fn infer_expr(
                             payload.push(ta.apply(&sa));
                             let mut params: Vec<Type> = Vec::new();
                             for _ in 1..total_arity {
-                                params.push(ctx.tv.fresh());
+                                params.push(ctx.fresh_tv());
                             }
                             payload.extend(params.iter().cloned());
                             let ret = Type::Ctor { tag: tag.clone(), payload };
@@ -1441,7 +1597,7 @@ fn infer_expr(
                         // (~bind e k): allow effects in both e and k; unify k : te -> r
                         let (te, se) = infer_expr(ctx, first, true)?;
                         let (tk, sk) = infer_expr(ctx, arg, true)?;
-                        let r = ctx.tv.fresh();
+                        let r = ctx.fresh_tv();
                         let s1 = unify(
                             &tk.apply(&sk).apply(&se),
                             &Type::fun(te.apply(&sk).apply(&se), r.clone()),
@@ -1453,7 +1609,7 @@ fn infer_expr(
             }
             let (tf, sf) = infer_expr(ctx, func, allow_effects)?;
             let (ta, sa) = infer_expr(ctx, arg, allow_effects)?;
-            let r = ctx.tv.fresh();
+            let r = ctx.fresh_tv();
             let lhs_fun = tf.apply(&sa).apply(&sf);
             let rhs_fun = Type::fun(ta.apply(&sa), r.clone());
             let s1 = match ctx_unify(ctx, &lhs_fun, &rhs_fun) {
@@ -1492,7 +1648,7 @@ fn infer_expr(
         }
         ExprKind::Block(inner) => infer_expr(ctx, inner, allow_effects),
         ExprKind::List(items) => {
-            let a = ctx.tv.fresh();
+            let a = ctx.fresh_tv();
             let mut s = Subst::new();
             for it in items {
                 let (ti, si) = infer_expr(ctx, it, allow_effects)?;
@@ -1555,7 +1711,7 @@ fn infer_expr(
             let mut env_assume = env0.clone();
             for (p, _ex) in bindings.iter() {
                 let (p_core, pushed) = push_tyvars_from_pattern(ctx, p);
-                let a = ctx.tv.fresh();
+                let a = ctx.fresh_tv();
                 let pi = infer_pattern(ctx, p_core, &a)?;
                 // Insert monomorphic placeholders for each bound name
                 for (n, t) in &pi.bindings {
@@ -1623,24 +1779,76 @@ fn infer_expr(
                         span_len: 1, // point at body start with a single caret
                     }
                 }
-                TypeError::RecordFieldMismatch { field, expected, actual, span_offset, span_len }
-                    if span_offset == 0 && span_len == 0 => {
+                TypeError::RecordFieldMismatch {
+                    field,
+                    expected,
+                    actual,
+                    span_offset,
+                    span_len,
+                } if span_offset == 0 && span_len == 0 => {
                     let mut inner = body.as_ref();
                     while let ExprKind::Block(ref bx) = inner.kind {
                         inner = bx.as_ref();
                     }
-                    TypeError::RecordFieldMismatch { field, expected, actual, span_offset: inner.span.offset, span_len: 1 }
+                    TypeError::RecordFieldMismatch {
+                        field,
+                        expected,
+                        actual,
+                        span_offset: inner.span.offset,
+                        span_len: 1,
+                    }
                 }
-                TypeError::RecordFieldMismatchBoth { field, expected, actual, expected_span_offset, expected_span_len, actual_span_offset, actual_span_len }
-                    if expected_span_offset == 0 && expected_span_len == 0 && actual_span_offset == 0 && actual_span_len == 0 => {
+                TypeError::RecordFieldMismatchBoth {
+                    field,
+                    expected,
+                    actual,
+                    expected_span_offset,
+                    expected_span_len,
+                    actual_span_offset,
+                    actual_span_len,
+                } if expected_span_offset == 0
+                    && expected_span_len == 0
+                    && actual_span_offset == 0
+                    && actual_span_len == 0 =>
+                {
                     let mut inner = body.as_ref();
-                    while let ExprKind::Block(ref bx) = inner.kind { inner = bx.as_ref(); }
-                    TypeError::RecordFieldMismatchBoth { field, expected, actual, expected_span_offset: inner.span.offset, expected_span_len: 1, actual_span_offset: inner.span.offset, actual_span_len: 1 }
+                    while let ExprKind::Block(ref bx) = inner.kind {
+                        inner = bx.as_ref();
+                    }
+                    TypeError::RecordFieldMismatchBoth {
+                        field,
+                        expected,
+                        actual,
+                        expected_span_offset: inner.span.offset,
+                        expected_span_len: 1,
+                        actual_span_offset: inner.span.offset,
+                        actual_span_len: 1,
+                    }
                 }
-                TypeError::Occurs { var, ty, var_span_offset, var_span_len, ty_span_offset, ty_span_len } if var_span_offset==0 && var_span_len==0 && ty_span_offset==0 && ty_span_len==0 => {
+                TypeError::Occurs {
+                    var,
+                    ty,
+                    var_span_offset,
+                    var_span_len,
+                    ty_span_offset,
+                    ty_span_len,
+                } if var_span_offset == 0
+                    && var_span_len == 0
+                    && ty_span_offset == 0
+                    && ty_span_len == 0 =>
+                {
                     let mut inner = body.as_ref();
-                    while let ExprKind::Block(ref bx) = inner.kind { inner = bx.as_ref(); }
-                    TypeError::Occurs { var, ty, var_span_offset: inner.span.offset, var_span_len: 1, ty_span_offset: inner.span.offset, ty_span_len: 1 }
+                    while let ExprKind::Block(ref bx) = inner.kind {
+                        inner = bx.as_ref();
+                    }
+                    TypeError::Occurs {
+                        var,
+                        ty,
+                        var_span_offset: inner.span.offset,
+                        var_span_len: 1,
+                        ty_span_offset: inner.span.offset,
+                        ty_span_len: 1,
+                    }
                 }
                 other => other,
             });
@@ -1655,7 +1863,7 @@ fn infer_expr(
         }
         ExprKind::Raise(inner) => {
             let (_t, s) = infer_expr(ctx, inner, allow_effects)?;
-            let r = ctx.tv.fresh();
+            let r = ctx.fresh_tv();
             Ok((r, s))
         }
         ExprKind::OrElse { left, right } => {
@@ -1683,8 +1891,8 @@ fn infer_expr(
         }
         ExprKind::Catch { left, right } => {
             let (tl, sl) = infer_expr(ctx, left, allow_effects)?;
-            let a = ctx.tv.fresh();
-            let r = ctx.tv.fresh();
+            let a = ctx.fresh_tv();
+            let r = ctx.fresh_tv();
             let (tr, sr) = infer_expr(ctx, right, allow_effects)?;
             let s1 = ctx_unify(ctx, &tr.apply(&sr).apply(&sl), &Type::fun(a, r.clone()))?;
             let s2 = ctx_unify(ctx, &tl.apply(&s1).apply(&sr).apply(&sl), &r)?;
@@ -1739,13 +1947,21 @@ fn infer_expr(
                 if let Some(v) = peel_lambda_chain(b) {
                     views.push(v);
                 } else {
-                    return Err(TypeError::MixedAltBranches { span_offset: b.span.offset, span_len: b.span.len });
+                    return Err(TypeError::MixedAltBranches {
+                        span_offset: b.span.offset,
+                        span_len: b.span.len,
+                    });
                 }
             }
             let arity = views[0].params.len();
             for v in &views {
                 if v.params.len() != arity {
-                    return Err(TypeError::AltLambdaArityMismatch { expected: arity, got: v.params.len(), span_offset: v.span.offset, span_len: v.span.len });
+                    return Err(TypeError::AltLambdaArityMismatch {
+                        expected: arity,
+                        got: v.params.len(),
+                        span_offset: v.span.offset,
+                        span_len: v.span.len,
+                    });
                 }
             }
 
@@ -1762,14 +1978,21 @@ fn infer_expr(
                 }
                 if any_ctor && any_struct {
                     // pick span of first offending pattern
-                    let p = views.iter().map(|v| &v.params[i]).find(|p| !matches!(p.kind, PatternKind::Wildcard)).unwrap();
-                    return Err(TypeError::MixedAltBranches { span_offset: p.span.offset, span_len: p.span.len });
+                    let p = views
+                        .iter()
+                        .map(|v| &v.params[i])
+                        .find(|p| !matches!(p.kind, PatternKind::Wildcard))
+                        .unwrap();
+                    return Err(TypeError::MixedAltBranches {
+                        span_offset: p.span.offset,
+                        span_len: p.span.len,
+                    });
                 }
             }
 
             // Build param types vector t0..tn-1 and return type accumulator
             let mut s_all = Subst::new();
-            let mut param_tys: Vec<Type> = (0..arity).map(|_| ctx.tv.fresh()).collect();
+            let mut param_tys: Vec<Type> = (0..arity).map(|_| ctx.fresh_tv()).collect();
             use std::collections::BTreeMap;
             let mut ctor_payloads_per_param: Vec<BTreeMap<String, Vec<Type>>> =
                 (0..arity).map(|_| BTreeMap::new()).collect();
@@ -1778,13 +2001,26 @@ fn infer_expr(
             let mut ret_variants: Vec<(String, Vec<Type>)> = vec![];
             let mut ret_seen = HashSet::<String>::new();
             let mut ret_other: Option<(Type, Option<Span>)> = None;
-            fn merge_ret(acc: &mut Vec<(String, Vec<Type>)>, seen: &mut HashSet<String>, t: &Type) -> bool {
+            fn merge_ret(
+                acc: &mut Vec<(String, Vec<Type>)>,
+                seen: &mut HashSet<String>,
+                t: &Type,
+            ) -> bool {
                 match t {
                     Type::Ctor { tag, payload } => {
-                        if seen.insert(tag.clone()) { acc.push((tag.clone(), payload.clone())); }
+                        if seen.insert(tag.clone()) {
+                            acc.push((tag.clone(), payload.clone()));
+                        }
                         true
                     }
-                    Type::SumCtor(vs) => { for (tg, ps) in vs { if seen.insert(tg.clone()) { acc.push((tg.clone(), ps.clone())); } } true }
+                    Type::SumCtor(vs) => {
+                        for (tg, ps) in vs {
+                            if seen.insert(tg.clone()) {
+                                acc.push((tg.clone(), ps.clone()));
+                            }
+                        }
+                        true
+                    }
                     _ => false,
                 }
             }
@@ -1800,23 +2036,35 @@ fn infer_expr(
                     let pushed;
                     {
                         let (c, k) = push_tyvars_from_pattern(ctx, p);
-                        p_core = c; pushed = k;
+                        p_core = c;
+                        pushed = k;
                     }
                     // Decide scrutinee for this pattern and update ctor maps
                     let (scrut, is_ctor_like) = match &p_core.kind {
                         PatternKind::Ctor { name, args } => {
-                            let ent = ctor_payloads_per_param[i].entry(name.clone()).or_insert_with(|| {
-                                (0..args.len()).map(|_| ctx.tv.fresh()).collect::<Vec<_>>()
-                            });
+                            let ent =
+                                ctor_payloads_per_param[i].entry(name.clone()).or_insert_with(
+                                    || (0..args.len()).map(|_| ctx.fresh_tv()).collect::<Vec<_>>(),
+                                );
                             if ent.len() != args.len() {
-                                return Err(TypeError::DuplicateCtorTag { tag: name.clone(), span_offset: p_core.span.offset, span_len: p_core.span.len });
+                                return Err(TypeError::DuplicateCtorTag {
+                                    tag: name.clone(),
+                                    span_offset: p_core.span.offset,
+                                    span_len: p_core.span.len,
+                                });
                             }
                             (Type::Ctor { tag: name.clone(), payload: ent.clone() }, true)
                         }
                         PatternKind::Symbol(name) => {
-                            let ent = ctor_payloads_per_param[i].entry(name.clone()).or_insert_with(|| Vec::new());
+                            let ent = ctor_payloads_per_param[i]
+                                .entry(name.clone())
+                                .or_insert_with(|| Vec::new());
                             if !ent.is_empty() {
-                                return Err(TypeError::DuplicateCtorTag { tag: name.clone(), span_offset: p_core.span.offset, span_len: p_core.span.len });
+                                return Err(TypeError::DuplicateCtorTag {
+                                    tag: name.clone(),
+                                    span_offset: p_core.span.offset,
+                                    span_len: p_core.span.len,
+                                });
                             }
                             (Type::Ctor { tag: name.clone(), payload: vec![] }, true)
                         }
@@ -1824,7 +2072,9 @@ fn infer_expr(
                     };
                     // Infer pattern and merge
                     let pi = infer_pattern(ctx, p_core, &scrut.apply(&s_all))?;
-                    for (n, t) in &pi.bindings { env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() }); }
+                    for (n, t) in &pi.bindings {
+                        env2.insert(n.clone(), Scheme { vars: vec![], ty: t.clone() });
+                    }
                     s_all = pi.subst.compose(s_all);
                     // For ctor-like patterns, defer building union; do not force unify with scrut
                     if !is_ctor_like {
@@ -1840,14 +2090,25 @@ fn infer_expr(
                 let tbf = tb.apply(&sb);
                 if !merge_ret(&mut ret_variants, &mut ret_seen, &tbf) {
                     match &mut ret_other {
-                        None => ret_other = Some((tbf.clone(), find_ctor_symbol_span_in_expr(v.body))),
+                        None => {
+                            ret_other = Some((tbf.clone(), find_ctor_symbol_span_in_expr(v.body)))
+                        }
                         Some((existing, pref_span)) => {
                             let s1 = match unify(&existing.clone(), &tbf) {
                                 Ok(s) => s,
                                 Err(TypeError::Mismatch { expected, actual, .. }) => {
-                                    let cur_sp = find_ctor_symbol_span_in_expr(v.body).or(*pref_span).unwrap_or(v.span);
+                                    let cur_sp = find_ctor_symbol_span_in_expr(v.body)
+                                        .or(*pref_span)
+                                        .unwrap_or(v.span);
                                     let ex_sp = pref_span.unwrap_or(v.span);
-                                    return Err(TypeError::MismatchBoth { expected, actual, expected_span_offset: ex_sp.offset, expected_span_len: ex_sp.len, actual_span_offset: cur_sp.offset, actual_span_len: cur_sp.len });
+                                    return Err(TypeError::MismatchBoth {
+                                        expected,
+                                        actual,
+                                        expected_span_offset: ex_sp.offset,
+                                        expected_span_len: ex_sp.len,
+                                        actual_span_offset: cur_sp.offset,
+                                        actual_span_len: cur_sp.len,
+                                    });
                                 }
                                 Err(e) => return Err(e),
                             };
@@ -1858,14 +2119,25 @@ fn infer_expr(
                 }
                 s_all = sb.compose(s_all);
                 // Update params with latest substitution
-                for i in 0..arity { param_tys[i] = param_tys[i].apply(&s_all); }
+                for i in 0..arity {
+                    param_tys[i] = param_tys[i].apply(&s_all);
+                }
             }
 
             // Finalize return type
             let ret_ty = if !ret_variants.is_empty() && ret_other.is_none() {
-                if ret_variants.len() == 1 { let (tag, payload) = ret_variants.pop().unwrap(); Type::Ctor { tag, payload } }
-                else { ret_variants.sort_by(|a,b| a.0.cmp(&b.0)); Type::SumCtor(ret_variants) }
-            } else if let Some((t,_)) = ret_other { t } else { ctx.tv.fresh() };
+                if ret_variants.len() == 1 {
+                    let (tag, payload) = ret_variants.pop().unwrap();
+                    Type::Ctor { tag, payload }
+                } else {
+                    ret_variants.sort_by(|a, b| a.0.cmp(&b.0));
+                    Type::SumCtor(ret_variants)
+                }
+            } else if let Some((t, _)) = ret_other {
+                t
+            } else {
+                ctx.fresh_tv()
+            };
 
             // Finalize parameter types: build union per position if ctor variants were collected
             for i in 0..arity {
@@ -1887,7 +2159,10 @@ fn infer_expr(
             }
 
             // Compose final function type a1 -> a2 -> ... -> ret
-            let fun_ty = param_tys.into_iter().rev().fold(ret_ty.apply(&s_all), |acc, a| Type::fun(a.apply(&s_all), acc));
+            let fun_ty = param_tys
+                .into_iter()
+                .rev()
+                .fold(ret_ty.apply(&s_all), |acc, a| Type::fun(a.apply(&s_all), acc));
             Ok((fun_ty, s_all))
         }
     };
@@ -1901,7 +2176,9 @@ fn infer_expr(
             );
         }
     }
-    result
+    let out = result;
+    ctx.pop_span();
+    out
 }
 
 fn short_expr_kind(k: &ExprKind) -> &'static str {
@@ -1949,7 +2226,7 @@ fn pp_type(t: &Type) -> String {
         Type::Tuple(xs) => format!("({})", xs.iter().map(pp_type).collect::<Vec<_>>().join(", ")),
         Type::Record(fs) => {
             let mut items: Vec<_> =
-                fs.iter().map(|(k, (v,_))| format!("{}: {}", k, pp_type(v))).collect();
+                fs.iter().map(|(k, (v, _))| format!("{}: {}", k, pp_type(v))).collect();
             items.sort();
             format!("{{{}}}", items.join(", "))
         }
@@ -2085,7 +2362,7 @@ fn user_pretty_type(t: &Type) -> String {
             Type::Record(fs) => {
                 let mut items: Vec<_> = fs
                     .iter()
-                    .map(|(k, (v,_))| format!("{}: {}", k, go(v, m, seen, _out_defs)))
+                    .map(|(k, (v, _))| format!("{}: {}", k, go(v, m, seen, _out_defs)))
                     .collect();
                 items.sort();
                 format!("{{{}}}", items.join(", "))
@@ -2207,6 +2484,8 @@ pub mod api {
             typedef_types: vec![],
             debug: None,
             depth: 0,
+            tv_origins: HashMap::new(),
+            span_stack: Vec::new(),
         };
         match infer_expr(&mut ctx, &ast, false) {
             Ok((t, s)) => {
@@ -2238,6 +2517,8 @@ pub mod api {
             typedef_types: vec![],
             debug: None,
             depth: 0,
+            tv_origins: HashMap::new(),
+            span_stack: Vec::new(),
         };
         let (t, s) = infer_expr(&mut ctx, ast, false)?;
         let zonked = zonk_type(&t.apply(&s), &s);
@@ -2271,6 +2552,8 @@ pub mod api {
             typedef_types: vec![],
             debug: Some(std::rc::Rc::new(std::cell::RefCell::new(dbg))),
             depth: 0,
+            tv_origins: HashMap::new(),
+            span_stack: Vec::new(),
         };
         // Log initial environment keys only if env logging enabled
         if let Some(dbg) = &ctx.debug {
@@ -2306,6 +2589,8 @@ pub mod api {
             typedef_types: vec![],
             debug: Some(std::rc::Rc::new(std::cell::RefCell::new(dbg))),
             depth: 0,
+            tv_origins: HashMap::new(),
+            span_stack: Vec::new(),
         };
         let (t, s) = infer_expr(&mut ctx, ast, false)?;
         let ty = user_pretty_type(&t.apply(&s));
@@ -2482,7 +2767,7 @@ pub mod api {
             for (k, v) in fields {
                 m.insert(k.to_string(), v);
             }
-            Type::Record(m.into_iter().map(|(k,v)| (k,(v,None))).collect())
+            Type::Record(m.into_iter().map(|(k, v)| (k, (v, None))).collect())
         }
         // String namespace
         let string_ns = record(vec![
@@ -2515,10 +2800,7 @@ pub mod api {
             // between : Char -> Char -> Char -> Bool-like (code point range using chars)
             (
                 "between",
-                Type::fun(
-                    Type::Char,
-                    Type::fun(Type::Char, Type::fun(Type::Char, bool_t.clone())),
-                ),
+                Type::fun(Type::Char, Type::fun(Type::Char, Type::fun(Type::Char, bool_t.clone()))),
             ),
         ]);
         // Unicode namespace
