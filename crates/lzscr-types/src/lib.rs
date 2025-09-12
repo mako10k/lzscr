@@ -2217,6 +2217,17 @@ fn short_expr_kind(k: &ExprKind) -> &'static str {
 }
 
 // ---------- Pretty Printing ----------
+// pp_type: low-level, stable, developer-oriented printer.
+//   - Raw type variables shown as %tN (internal ids) for debugging / legacy tests.
+//   - No %{ } wrapper, no variable renaming, no cycle guard beyond recursion.
+// user_pretty_type (below): user-facing normalized printer.
+//   - Performs zonk beforehand at call sites.
+//   - Deterministic renaming %a, %b, ... and wraps in "%{ ... }" for visual distinction.
+//   - Keeps mapping (via user_pretty_type_and_map) for consistent occurs diagnostics.
+// Guidelines:
+//   * Use pp_type inside logs / debug output / legacy mode.
+//   * Use user_pretty_type for CLI surface and error messages exposed to end users (pretty mode).
+//   * Do not mix both in one diagnostic line to avoid confusing two naming domains.
 
 fn pp_type(t: &Type) -> String {
     fn rename_var(id: i64) -> String {
