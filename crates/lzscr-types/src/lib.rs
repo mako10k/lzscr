@@ -458,7 +458,13 @@ fn occurs(v: TvId, t: &Type) -> bool {
 
 #[inline]
 fn format_field_path(parent: &str, child: &str) -> String {
-    if child.is_empty() { parent.to_string() } else if child.contains('.') { format!("{parent}.{child}") } else { format!("{parent}.{child}") }
+    if child.is_empty() {
+        parent.to_string()
+    } else if child.contains('.') {
+        format!("{parent}.{child}")
+    } else {
+        format!("{parent}.{child}")
+    }
 }
 
 #[allow(clippy::result_large_err)]
@@ -478,8 +484,8 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
             Ok(s2.compose(s1))
         }
         (Type::List(x), Type::List(y)) => unify(x, y),
-    (Type::Tuple(xs), Type::Tuple(ys)) if xs.len() == ys.len() => unify_slices(xs, ys),
-    (Type::Record(rx), Type::Record(ry)) if rx.len() == ry.len() => {
+        (Type::Tuple(xs), Type::Tuple(ys)) if xs.len() == ys.len() => unify_slices(xs, ys),
+        (Type::Record(rx), Type::Record(ry)) if rx.len() == ry.len() => {
             // Compare by keys first
             let mut s = Subst::new();
             for (k, (vx_ty, vx_sp)) in rx.iter() {
@@ -521,7 +527,15 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
                             }
                         }
                     }
-                    Err(TypeError::RecordFieldMismatchBoth { field, expected, actual, expected_span_offset, expected_span_len, actual_span_offset, actual_span_len }) => {
+                    Err(TypeError::RecordFieldMismatchBoth {
+                        field,
+                        expected,
+                        actual,
+                        expected_span_offset,
+                        expected_span_len,
+                        actual_span_offset,
+                        actual_span_len,
+                    }) => {
                         return Err(TypeError::RecordFieldMismatchBoth {
                             field: format_field_path(k, &field),
                             expected,
@@ -553,7 +567,10 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
             Ok(s)
         }
         (Type::Ctor { tag: ta, payload: pa }, Type::Ctor { tag: tb, payload: pb })
-            if ta == tb && pa.len() == pb.len() => unify_slices(pa, pb),
+            if ta == tb && pa.len() == pb.len() =>
+        {
+            unify_slices(pa, pb)
+        }
         (Type::SumCtor(a), Type::SumCtor(b)) => {
             // Require exact same variant set (MVP). Unify payloads by tag.
             if a.len() != b.len() {
