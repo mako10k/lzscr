@@ -424,6 +424,11 @@ fn occurs(v: TvId, t: &Type) -> bool {
     t.ftv().contains(&v)
 }
 
+#[inline]
+fn format_field_path(parent: &str, child: &str) -> String {
+    if child.is_empty() { parent.to_string() } else if child.contains('.') { format!("{parent}.{child}") } else { format!("{parent}.{child}") }
+}
+
 #[allow(clippy::result_large_err)]
 fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
     match (a, b) {
@@ -442,7 +447,7 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
         }
         (Type::List(x), Type::List(y)) => unify(x, y),
     (Type::Tuple(xs), Type::Tuple(ys)) if xs.len() == ys.len() => unify_slices(xs, ys),
-        (Type::Record(rx), Type::Record(ry)) if rx.len() == ry.len() => {
+    (Type::Record(rx), Type::Record(ry)) if rx.len() == ry.len() => {
             // Compare by keys first
             let mut s = Subst::new();
             for (k, (vx_ty, vx_sp)) in rx.iter() {
@@ -484,23 +489,9 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
                             }
                         }
                     }
-                    Err(TypeError::RecordFieldMismatchBoth {
-                        field,
-                        expected,
-                        actual,
-                        expected_span_offset,
-                        expected_span_len,
-                        actual_span_offset,
-                        actual_span_len,
-                    }) => {
-                        // Prepend parent field path
-                        let new_field = if field.contains('.') {
-                            format!("{}.{field}", k)
-                        } else {
-                            format!("{k}.{field}")
-                        };
+                    Err(TypeError::RecordFieldMismatchBoth { field, expected, actual, expected_span_offset, expected_span_len, actual_span_offset, actual_span_len }) => {
                         return Err(TypeError::RecordFieldMismatchBoth {
-                            field: new_field,
+                            field: format_field_path(k, &field),
                             expected,
                             actual,
                             expected_span_offset,
@@ -516,14 +507,8 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
                         span_offset,
                         span_len,
                     }) => {
-                        // Nested field mismatch; optionally qualify path
-                        let new_field = if field.contains('.') {
-                            format!("{}.{field}", k)
-                        } else {
-                            format!("{k}.{field}")
-                        };
                         return Err(TypeError::RecordFieldMismatch {
-                            field: new_field,
+                            field: format_field_path(k, &field),
                             expected,
                             actual,
                             span_offset,
