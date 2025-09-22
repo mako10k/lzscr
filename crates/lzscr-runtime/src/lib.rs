@@ -725,10 +725,98 @@ impl Env {
             },
         );
 
+        // list namespace: safe utilities (length/map/filter/fold)
+        let mut list_ns: BTreeMap<String, Value> = BTreeMap::new();
+        // length : [a] -> Int
+        list_ns.insert(
+            "length".into(),
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |_env, args| match &args[0] {
+                    Value::List(xs) => Ok(Value::Int(xs.len() as i64)),
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+        // map : (a -> b) -> [a] -> [b]
+        list_ns.insert(
+            "map".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |env, args| match (&args[0], &args[1]) {
+                    (fval, Value::List(xs)) => {
+                        let mut out: Vec<Value> = Vec::with_capacity(xs.len());
+                        for x in xs {
+                            let r = apply_value(env, fval.clone(), x.clone())?;
+                            if let Value::Raised(_) = r {
+                                return Ok(r);
+                            }
+                            out.push(r);
+                        }
+                        Ok(Value::List(out))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+        // filter : (a -> Bool) -> [a] -> [a]
+        list_ns.insert(
+            "filter".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |env, args| match (&args[0], &args[1]) {
+                    (pred, Value::List(xs)) => {
+                        let mut out: Vec<Value> = Vec::with_capacity(xs.len());
+                        for x in xs {
+                            let r = apply_value(env, pred.clone(), x.clone())?;
+                            if let Value::Raised(_) = r {
+                                return Ok(r);
+                            }
+                            if as_bool(env, &r)? {
+                                out.push(x.clone());
+                            }
+                        }
+                        Ok(Value::List(out))
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+        // fold : (b -> a -> b) -> b -> [a] -> b (left fold)
+        list_ns.insert(
+            "fold".into(),
+            Value::Native {
+                arity: 3,
+                args: vec![],
+                f: |env, args| match (&args[0], &args[1], &args[2]) {
+                    (fval, init, Value::List(xs)) => {
+                        let mut acc = init.clone();
+                        for x in xs {
+                            let step1 = apply_value(env, fval.clone(), acc)?;
+                            if let Value::Raised(_) = step1 {
+                                return Ok(step1);
+                            }
+                            let step2 = apply_value(env, step1, x.clone())?;
+                            if let Value::Raised(_) = step2 {
+                                return Ok(step2);
+                            }
+                            acc = step2;
+                        }
+                        Ok(acc)
+                    }
+                    _ => Err(EvalError::TypeError),
+                },
+            },
+        );
+
         let mut builtins: BTreeMap<String, Value> = BTreeMap::new();
         builtins.insert("string".into(), Value::Record(string_ns));
         builtins.insert("math".into(), Value::Record(math_ns));
         builtins.insert("char".into(), Value::Record(char_ns));
+        builtins.insert("list".into(), Value::Record(list_ns));
 
         // scan namespace: functional scanner over UTF-8 string (char-index based)
         let mut scan_ns: BTreeMap<String, Value> = BTreeMap::new();
@@ -2567,5 +2655,129 @@ mod tests {
             }
             _ => panic!("expected List"),
         }
+    }
+
+    #[test]
+    fn list_namespace_basics() {
+        let env = Env::with_builtins();
+        let builtins = match env.vars.get("Builtins").cloned().unwrap() {
+            Value::Record(m) => m,
+            _ => panic!("Builtins missing"),
+        };
+        let list_ns = match builtins.get("list").cloned().unwrap() {
+            Value::Record(m) => m,
+            _ => panic!("list ns missing"),
+        };
+        let len_f = list_ns.get("length").cloned().unwrap();
+        let map_f = list_ns.get("map").cloned().unwrap();
+        let filter_f = list_ns.get("filter").cloned().unwrap();
+        let fold_f = list_ns.get("fold").cloned().unwrap();
+
+        // length
+        let v = apply_value(&env, len_f, Value::List(vec![Value::Int(1), Value::Int(2)])).unwrap();
+        match v { Value::Int(n) => assert_eq!(n, 2), _ => panic!() }
+
+        // map ((\x -> ~add ~x 1) [1,2]) -> [2,3]
+        // Build lambda: \x -> (~add ~x 1)
+        let lam = Expr::new(
+            ExprKind::Lambda {
+                param: Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
+                body: Box::new(Expr::new(
+                    ExprKind::Apply {
+                        func: Box::new(Expr::new(
+                            ExprKind::Apply {
+                                func: Box::new(ref_expr("add")),
+                                arg: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+                            },
+                            Span::new(0, 0),
+                        )),
+                        arg: Box::new(int_expr(1)),
+                    },
+                    Span::new(0, 0),
+                )),
+            },
+            Span::new(0, 0),
+        );
+        let lam_v = eval(&env, &lam).unwrap();
+        let list_arg = Value::List(vec![Value::Int(1), Value::Int(2)]);
+        let mapped = apply_value(&env, map_f, lam_v).and_then(|f| apply_value(&env, f, list_arg)).unwrap();
+        match mapped {
+            Value::List(xs) => {
+                assert_eq!(xs.len(), 2);
+                assert!(matches!(xs[0], Value::Int(2)));
+                assert!(matches!(xs[1], Value::Int(3)));
+            }
+            _ => panic!("expected List"),
+        }
+
+        // filter ((\x -> ~gt ~x 1) [1,2,3]) -> [2,3]
+        let lam2 = Expr::new(
+            ExprKind::Lambda {
+                param: Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
+                body: Box::new(Expr::new(
+                    ExprKind::Apply {
+                        func: Box::new(Expr::new(
+                            ExprKind::Apply {
+                                func: Box::new(ref_expr("gt")),
+                                arg: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+                            },
+                            Span::new(0, 0),
+                        )),
+                        arg: Box::new(int_expr(1)),
+                    },
+                    Span::new(0, 0),
+                )),
+            },
+            Span::new(0, 0),
+        );
+        let lam2_v = eval(&env, &lam2).unwrap();
+        let list_arg2 = Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+        let filtered = apply_value(&env, filter_f, lam2_v)
+            .and_then(|f| apply_value(&env, f, list_arg2))
+            .unwrap();
+        match filtered {
+            Value::List(xs) => {
+                assert_eq!(xs.len(), 2);
+                assert!(matches!(xs[0], Value::Int(2)));
+                assert!(matches!(xs[1], Value::Int(3)));
+            }
+            _ => panic!("expected List"),
+        }
+
+        // fold ((\acc -> (\x -> ~add ~acc ~x)) 0 [1,2,3]) -> 6
+        // Build curried: \acc -> (\x -> add acc x)
+        let inner = Expr::new(
+            ExprKind::Lambda {
+                param: Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
+                body: Box::new(Expr::new(
+                    ExprKind::Apply {
+                        func: Box::new(Expr::new(
+                            ExprKind::Apply {
+                                func: Box::new(ref_expr("add")),
+                                arg: Box::new(Expr::new(ExprKind::Ref("acc".into()), Span::new(0, 0))),
+                            },
+                            Span::new(0, 0),
+                        )),
+                        arg: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+                    },
+                    Span::new(0, 0),
+                )),
+            },
+            Span::new(0, 0),
+        );
+        let fold_lam = Expr::new(
+            ExprKind::Lambda {
+                param: Pattern { kind: PatternKind::Var("acc".into()), span: Span::new(0, 0) },
+                body: Box::new(inner),
+            },
+            Span::new(0, 0),
+        );
+        let fold_fun_v = eval(&env, &fold_lam).unwrap();
+        let list_arg3 = Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+        let folded = apply_value(&env, fold_f, fold_fun_v)
+            .and_then(|f| apply_value(&env, f, Value::Int(0)))
+            .and_then(|f| apply_value(&env, f, list_arg3))
+            .unwrap();
+        match folded { Value::Int(n) => assert_eq!(n, 6), _ => panic!("expected Int 6") }
     }
 }
