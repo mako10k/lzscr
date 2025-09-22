@@ -2588,15 +2588,12 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
             Type::Type => "Type".into(),
             Type::List(x) => format!("[{}]", go(x, m, seen)),
             Type::Tuple(xs) => {
-                let inner =
-                    xs.iter().map(|x| go(x, m, seen)).collect::<Vec<_>>().join(", ");
+                let inner = xs.iter().map(|x| go(x, m, seen)).collect::<Vec<_>>().join(", ");
                 format!("({})", inner)
             }
             Type::Record(fs) => {
-                let mut items: Vec<_> = fs
-                    .iter()
-                    .map(|(k, (v, _))| format!("{}: {}", k, go(v, m, seen)))
-                    .collect();
+                let mut items: Vec<_> =
+                    fs.iter().map(|(k, (v, _))| format!("{}: {}", k, go(v, m, seen))).collect();
                 items.sort();
                 format!("{{{}}}", items.join(", "))
             }

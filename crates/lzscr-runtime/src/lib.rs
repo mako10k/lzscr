@@ -1,6 +1,73 @@
 use lzscr_ast::ast::*;
 use std::sync::Arc;
 
+// ===== Runtime core types (Env, Value, Errors, Thunks) =====
+#[derive(Debug, Clone)]
+pub struct Env {
+    pub vars: std::collections::HashMap<String, Value>,
+    pub strict_effects: bool,
+    pub in_effect_context: bool,
+    pub ctor_arity: std::collections::HashMap<String, usize>,
+    pub sym_intern: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, u32>>>,
+    pub sym_rev: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    pub str_intern:
+        std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, Arc<Vec<u8>>>>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum EvalError {
+    TypeError,
+    Unbound(String),
+    UnknownEffect(String),
+    EffectNotAllowed,
+    NotFunc,
+    Traced { kind: Box<EvalError>, spans: Vec<lzscr_ast::span::Span> },
+}
+
+impl std::fmt::Display for EvalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvalError::TypeError => write!(f, "type error"),
+            EvalError::Unbound(n) => write!(f, "unbound variable: {n}"),
+            EvalError::UnknownEffect(e) => write!(f, "unknown effect: {e}"),
+            EvalError::EffectNotAllowed => write!(f, "effects not allowed in this context"),
+            EvalError::NotFunc => write!(f, "not a function"),
+            EvalError::Traced { kind, .. } => write!(f, "{kind}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ThunkState {
+    Unevaluated,
+    Evaluating,
+    Evaluated(Box<Value>),
+}
+
+#[derive(Debug, Clone)]
+pub enum ThunkKind {
+    Expr { expr: Expr, env: std::rc::Rc<std::cell::RefCell<Env>> },
+    Project { src: Box<Value>, pattern: Pattern, var: String },
+}
+
+#[derive(Debug, Clone)]
+pub enum Value {
+    Unit,
+    Int(i64),
+    Float(f64),
+    Str(RtStr),
+    Char(i32),
+    Symbol(u32),
+    Ctor { name: String, args: Vec<Value> },
+    List(Vec<Value>),
+    Tuple(Vec<Value>),
+    Record(std::collections::BTreeMap<String, Value>),
+    Native { arity: usize, args: Vec<Value>, f: fn(&Env, &[Value]) -> Result<Value, EvalError> },
+    Closure { param: Pattern, body: Expr, env: Env },
+    Raised(Box<Value>),
+    Thunk { state: std::rc::Rc<std::cell::RefCell<ThunkState>>, kind: ThunkKind },
+}
+
 // Runtime string: shared UTF-8 buffer with slice (start,len)
 #[derive(Debug, Clone)]
 pub struct RtStr {
@@ -73,79 +140,6 @@ impl PartialEq<&str> for RtStr {
         self.as_bytes() == other.as_bytes()
     }
 }
-
-#[derive(thiserror::Error, Debug)]
-pub enum EvalError {
-    #[error("not a function")]
-    NotFunc,
-    #[error("unbound ref: {0}")]
-    Unbound(String),
-    #[error("type error")]
-    TypeError,
-    #[error("effect not allowed outside effect context")]
-    EffectNotAllowed,
-    #[error("unknown effect: {0}")]
-    UnknownEffect(String),
-    #[error("raised: {0}")]
-    Raised(String),
-    #[error("runtime error with trace")]
-    Traced { kind: Box<EvalError>, spans: Vec<lzscr_ast::span::Span> },
-}
-
-#[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
-pub enum Value {
-    Unit,
-    Int(i64),
-    Float(f64),
-    // Sliceable runtime string (UTF-8 bytes; may contain NUL). Semantics: list of Char(codepoint).
-    Str(RtStr),
-    // Codepoint character (integer). Conversions with Int via builtins.
-    Char(i32),
-    // Simple immutable containers (PoC)
-    List(Vec<Value>),
-    Tuple(Vec<Value>),
-    Record(std::collections::BTreeMap<String, Value>),
-    // Constructor value: tag name with payload args (order-significant)
-    Ctor { name: String, args: Vec<Value> },
-    Native { arity: usize, f: fn(&Env, &[Value]) -> Result<Value, EvalError>, args: Vec<Value> },
-    Closure { param: Pattern, body: Expr, env: Env },
-    Symbol(u32),
-    // Exception payload (internal). Represent ^(Expr) after evaluation as a value that propagates.
-    Raised(Box<Value>),
-    // Lazy thunk for recursive/non-function let bindings
-    Thunk { state: std::rc::Rc<std::cell::RefCell<ThunkState>>, kind: ThunkKind },
-}
-
-#[derive(Debug, Clone)]
-pub enum ThunkKind {
-    Expr { expr: Expr, env: std::rc::Rc<std::cell::RefCell<Env>> },
-    Project { src: Box<Value>, pattern: Pattern, var: String },
-}
-
-#[derive(Debug, Clone)]
-pub enum ThunkState {
-    Unevaluated,
-    Evaluating,
-    Evaluated(Box<Value>),
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Env {
-    pub vars: std::collections::HashMap<String, Value>,
-    pub strict_effects: bool,
-    pub in_effect_context: bool,
-    pub ctor_arity: std::collections::HashMap<String, usize>,
-    // symbol interning
-    pub sym_intern: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, u32>>>,
-    pub sym_rev: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
-    // string interning: map full string to shared byte buffer
-    pub str_intern:
-        std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, Arc<Vec<u8>>>>>,
-}
-
-// Default is derived
-
 impl Env {
     pub fn new() -> Self {
         Self {
@@ -160,131 +154,45 @@ impl Env {
     }
 
     pub fn intern_symbol<S: AsRef<str>>(&self, s: S) -> u32 {
-        let key = s.as_ref();
-        if let Some(&id) = self.sym_intern.borrow().get(key) {
+        let key = s.as_ref().to_string();
+        // fast path
+        if let Some(&id) = self.sym_intern.borrow().get(&key) {
             return id;
         }
-        let mut rev = self.sym_rev.borrow_mut();
-        let id = rev.len() as u32;
-        rev.push(key.to_string());
-        self.sym_intern.borrow_mut().insert(key.to_string(), id);
+        // assign new id
+        let id = {
+            let mut rev = self.sym_rev.borrow_mut();
+            let id = rev.len() as u32;
+            rev.push(key.clone());
+            id
+        };
+        self.sym_intern.borrow_mut().insert(key, id);
         id
     }
 
     pub fn symbol_name(&self, id: u32) -> String {
-        self.sym_rev.borrow().get(id as usize).cloned().unwrap_or("<sym?>".to_string())
+        self.sym_rev.borrow().get(id as usize).cloned().unwrap_or_else(|| format!("#{}", id))
     }
 
-    pub fn intern_string<S: AsRef<str>>(&self, s: S) -> RtStr {
-        let key = s.as_ref();
-        if let Some(buf) = self.str_intern.borrow().get(key) {
-            return RtStr { data: buf.clone(), start: 0, len: buf.len() };
+    pub fn intern_string<S: Into<String>>(&self, s: S) -> RtStr {
+        let s = s.into();
+        if let Some(buf) = self.str_intern.borrow().get(&s).cloned() {
+            return RtStr { data: buf, start: 0, len: s.as_bytes().len() };
         }
-        let bytes = key.as_bytes().to_vec();
+        let bytes = s.as_bytes().to_vec();
         let arc = Arc::new(bytes);
-        self.str_intern.borrow_mut().insert(key.to_string(), arc.clone());
-        RtStr { data: arc, start: 0, len: key.len() }
+        self.str_intern.borrow_mut().insert(s.clone(), arc.clone());
+        RtStr { data: arc, start: 0, len: s.as_bytes().len() }
     }
 
-    pub fn declare_ctor_arity(&mut self, name: &str, arity: usize) {
-        // Accept registration names with or without the leading dot (and try both when looking up)
-        let n = name.to_string();
-        self.ctor_arity.insert(n.clone(), arity);
-        if n.starts_with('.') {
-            self.ctor_arity.insert(n.trim_start_matches('.').to_string(), arity);
-        } else {
-            self.ctor_arity.insert(format!(".{n}"), arity);
-        }
+    pub fn declare_ctor_arity<S: Into<String>>(&mut self, name: S, arity: usize) {
+        self.ctor_arity.insert(name.into(), arity);
     }
 
     pub fn with_builtins() -> Self {
         let mut e = Env::new();
 
-        // Bool via constructors .True / .False (no legacy ~true/~false refs)
-        e.declare_ctor_arity(".True", 0);
-        e.declare_ctor_arity(".False", 0);
-        // Pre-intern commonly used symbols
-        let _ = e.intern_symbol(".True");
-        let _ = e.intern_symbol(".False");
-        let _ = e.intern_symbol(".print");
-        let _ = e.intern_symbol(".println");
-        let _ = e.intern_symbol(".,");
-
-        // Bool constructor: (.true|.false) -> Bool
-        e.vars.insert(
-            "Bool".into(),
-            Value::Native {
-                arity: 1,
-                args: vec![],
-                f: |env, args| match &args[0] {
-                    Value::Symbol(id) if env.symbol_name(*id) == ".True" => {
-                        Ok(Value::Ctor { name: ".True".into(), args: vec![] })
-                    }
-                    Value::Symbol(id) if env.symbol_name(*id) == ".False" => {
-                        Ok(Value::Ctor { name: ".False".into(), args: vec![] })
-                    }
-                    _ => Err(EvalError::TypeError),
-                },
-            },
-        );
-        e.declare_ctor_arity("Bool", 1);
-
-        // to_str : a -> Str
-        e.vars.insert(
-            "to_str".into(),
-            Value::Native {
-                arity: 1,
-                args: vec![],
-                f: |env, args| {
-                    let v = &args[0];
-                    Ok(Value::Str(env.intern_string(to_str_like(env, v))))
-                },
-            },
-        );
-
-        // add : (Int|Float) -> (Int|Float) -> same
-        e.vars.insert(
-            "cons".into(),
-            Value::Native {
-                arity: 2,
-                args: vec![],
-                f: |_env, args| match (&args[0], &args[1]) {
-                    (h, Value::List(tl)) => {
-                        let mut v = Vec::with_capacity(tl.len() + 1);
-                        v.push(h.clone());
-                        v.extend_from_slice(tl);
-                        Ok(Value::List(v))
-                    }
-                    _ => Err(EvalError::TypeError),
-                },
-            },
-        );
-
-        // alt : (a -> r) -> (a -> r) -> a -> r
-        e.vars.insert(
-            "alt".into(),
-            Value::Native {
-                arity: 3,
-                args: vec![],
-                f: |env, args| {
-                    let lf = args[0].clone();
-                    let rf = args[1].clone();
-                    let av = args[2].clone();
-                    let res = apply_value(env, lf, av.clone())?;
-                    match res {
-                        Value::Raised(payload) => {
-                            if v_equal(env, &payload, &av) {
-                                apply_value(env, rf, av)
-                            } else {
-                                Ok(Value::Raised(payload))
-                            }
-                        }
-                        other => Ok(other),
-                    }
-                },
-            },
-        );
-
+        // Arithmetic and comparisons
         e.vars.insert(
             "add".into(),
             Value::Native {
@@ -297,8 +205,6 @@ impl Env {
                 },
             },
         );
-
-        // sub : (Int|Float) -> (Int|Float) -> same
         e.vars.insert(
             "sub".into(),
             Value::Native {
@@ -311,8 +217,6 @@ impl Env {
                 },
             },
         );
-
-        // mul : (Int|Float) -> (Int|Float) -> same
         e.vars.insert(
             "mul".into(),
             Value::Native {
@@ -325,8 +229,6 @@ impl Env {
                 },
             },
         );
-
-        // div : Int -> Int -> Int (division by 0 is an error)
         e.vars.insert(
             "div".into(),
             Value::Native {
@@ -339,8 +241,6 @@ impl Env {
                 },
             },
         );
-
-        // fadd : Float -> Float -> Float
         e.vars.insert(
             "fadd".into(),
             Value::Native {
@@ -352,7 +252,6 @@ impl Env {
                 },
             },
         );
-        // fsub : Float -> Float -> Float
         e.vars.insert(
             "fsub".into(),
             Value::Native {
@@ -364,7 +263,6 @@ impl Env {
                 },
             },
         );
-        // fmul : Float -> Float -> Float
         e.vars.insert(
             "fmul".into(),
             Value::Native {
@@ -376,7 +274,6 @@ impl Env {
                 },
             },
         );
-        // fdiv : Float -> Float -> Float (division by 0.0 is an error)
         e.vars.insert(
             "fdiv".into(),
             Value::Native {
@@ -389,8 +286,6 @@ impl Env {
                 },
             },
         );
-
-        // eq : Int|Float|Bool|Str|Unit|Symbol -> same -> Bool
         e.vars.insert(
             "eq".into(),
             Value::Native {
@@ -406,8 +301,6 @@ impl Env {
                 },
             },
         );
-
-        // lt : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "lt".into(),
             Value::Native {
@@ -420,8 +313,6 @@ impl Env {
                 },
             },
         );
-
-        // le : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "le".into(),
             Value::Native {
@@ -434,8 +325,6 @@ impl Env {
                 },
             },
         );
-
-        // gt : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "gt".into(),
             Value::Native {
@@ -448,8 +337,6 @@ impl Env {
                 },
             },
         );
-
-        // ge : Int|Float -> Int|Float -> Bool
         e.vars.insert(
             "ge".into(),
             Value::Native {
@@ -462,8 +349,6 @@ impl Env {
                 },
             },
         );
-
-        // ne : a -> a -> Bool (structural inequality)
         e.vars.insert(
             "ne".into(),
             Value::Native {
@@ -475,8 +360,6 @@ impl Env {
                 },
             },
         );
-
-        // Float-only comparisons: flt/fle/fgt/fge
         e.vars.insert(
             "flt".into(),
             Value::Native {
@@ -522,7 +405,7 @@ impl Env {
             },
         );
 
-        // seq/chain/bind are special forms to control evaluation order; not needed as Natives but registered for name resolution
+        // seq/chain/bind (control evaluation order)
         e.vars.insert(
             "seq".into(),
             Value::Native { arity: 2, args: vec![], f: |_env, args| Ok(args[1].clone()) },
@@ -536,7 +419,7 @@ impl Env {
             Value::Native { arity: 2, args: vec![], f: |_env, args| Ok(args[1].clone()) },
         );
 
-        // effects: .sym -> effect function (guarded by strict-effects)
+        // effects gateway
         e.vars.insert(
             "effects".into(),
             Value::Native {
@@ -556,10 +439,9 @@ impl Env {
                 },
             },
         );
-        // ---------------- Builtins record (namespaced access, prefer stdlib delegation) ----------------
-        use std::collections::BTreeMap;
 
-        // string namespace
+        // Builtins namespaces
+        use std::collections::BTreeMap;
         let mut string_ns: BTreeMap<String, Value> = BTreeMap::new();
         string_ns.insert(
             "len".into(),
@@ -585,7 +467,6 @@ impl Env {
                 },
             },
         );
-        // slice by char indices: slice(str, start_chars, len_chars) -> Str
         string_ns.insert(
             "slice".into(),
             Value::Native {
@@ -605,7 +486,6 @@ impl Env {
                 },
             },
         );
-        // char_at(str, index_chars) -> .Some(Char) | .None
         string_ns.insert(
             "char_at".into(),
             Value::Native {
@@ -633,21 +513,17 @@ impl Env {
                 },
             },
         );
-        // keep builtins minimal: only len/concat for strings for now
 
-        // math namespace (reuse existing natives where possible)
         let mut math_ns: BTreeMap<String, Value> = BTreeMap::new();
         for name in [
-            "add", "sub", "mul", "div", // int
-            "fadd", "fsub", "fmul", "fdiv", // float
-            "eq", "lt", "le", "gt", "ge",
+            "add", "sub", "mul", "div", "fadd", "fsub", "fmul", "fdiv", "eq", "lt", "le", "gt",
+            "ge",
         ] {
             if let Some(v) = e.vars.get(name).cloned() {
                 math_ns.insert(name.to_string(), v);
             }
         }
 
-        // char classification namespace
         let mut char_ns: BTreeMap<String, Value> = BTreeMap::new();
         fn bool_val(b: bool) -> Value {
             bool_ctor(b)
@@ -725,102 +601,13 @@ impl Env {
             },
         );
 
-        // list namespace: safe utilities (length/map/filter/fold)
-        let mut list_ns: BTreeMap<String, Value> = BTreeMap::new();
-        // length : [a] -> Int
-        list_ns.insert(
-            "length".into(),
-            Value::Native {
-                arity: 1,
-                args: vec![],
-                f: |_env, args| match &args[0] {
-                    Value::List(xs) => Ok(Value::Int(xs.len() as i64)),
-                    _ => Err(EvalError::TypeError),
-                },
-            },
-        );
-        // map : (a -> b) -> [a] -> [b]
-        list_ns.insert(
-            "map".into(),
-            Value::Native {
-                arity: 2,
-                args: vec![],
-                f: |env, args| match (&args[0], &args[1]) {
-                    (fval, Value::List(xs)) => {
-                        let mut out: Vec<Value> = Vec::with_capacity(xs.len());
-                        for x in xs {
-                            let r = apply_value(env, fval.clone(), x.clone())?;
-                            if let Value::Raised(_) = r {
-                                return Ok(r);
-                            }
-                            out.push(r);
-                        }
-                        Ok(Value::List(out))
-                    }
-                    _ => Err(EvalError::TypeError),
-                },
-            },
-        );
-        // filter : (a -> Bool) -> [a] -> [a]
-        list_ns.insert(
-            "filter".into(),
-            Value::Native {
-                arity: 2,
-                args: vec![],
-                f: |env, args| match (&args[0], &args[1]) {
-                    (pred, Value::List(xs)) => {
-                        let mut out: Vec<Value> = Vec::with_capacity(xs.len());
-                        for x in xs {
-                            let r = apply_value(env, pred.clone(), x.clone())?;
-                            if let Value::Raised(_) = r {
-                                return Ok(r);
-                            }
-                            if as_bool(env, &r)? {
-                                out.push(x.clone());
-                            }
-                        }
-                        Ok(Value::List(out))
-                    }
-                    _ => Err(EvalError::TypeError),
-                },
-            },
-        );
-        // fold : (b -> a -> b) -> b -> [a] -> b (left fold)
-        list_ns.insert(
-            "fold".into(),
-            Value::Native {
-                arity: 3,
-                args: vec![],
-                f: |env, args| match (&args[0], &args[1], &args[2]) {
-                    (fval, init, Value::List(xs)) => {
-                        let mut acc = init.clone();
-                        for x in xs {
-                            let step1 = apply_value(env, fval.clone(), acc)?;
-                            if let Value::Raised(_) = step1 {
-                                return Ok(step1);
-                            }
-                            let step2 = apply_value(env, step1, x.clone())?;
-                            if let Value::Raised(_) = step2 {
-                                return Ok(step2);
-                            }
-                            acc = step2;
-                        }
-                        Ok(acc)
-                    }
-                    _ => Err(EvalError::TypeError),
-                },
-            },
-        );
-
         let mut builtins: BTreeMap<String, Value> = BTreeMap::new();
         builtins.insert("string".into(), Value::Record(string_ns));
         builtins.insert("math".into(), Value::Record(math_ns));
         builtins.insert("char".into(), Value::Record(char_ns));
-        builtins.insert("list".into(), Value::Record(list_ns));
 
-        // scan namespace: functional scanner over UTF-8 string (char-index based)
+        // scan namespace
         let mut scan_ns: BTreeMap<String, Value> = BTreeMap::new();
-        // Helpers to extract scan record fields
         fn get_scan(v: &Value) -> Option<(&RtStr, usize)> {
             if let Value::Record(m) = v {
                 let s = m.get("s");
@@ -837,7 +624,6 @@ impl Env {
             m.insert("i".into(), Value::Int(i as i64));
             Value::Record(m)
         }
-        // new : Str -> Scan
         scan_ns.insert(
             "new".into(),
             Value::Native {
@@ -854,7 +640,6 @@ impl Env {
                 },
             },
         );
-        // eof : Scan -> Bool
         scan_ns.insert(
             "eof".into(),
             Value::Native {
@@ -870,7 +655,6 @@ impl Env {
                 },
             },
         );
-        // pos : Scan -> Int
         scan_ns.insert(
             "pos".into(),
             Value::Native {
@@ -882,7 +666,6 @@ impl Env {
                 },
             },
         );
-        // set_pos : Scan -> Int -> Scan
         scan_ns.insert(
             "set_pos".into(),
             Value::Native {
@@ -899,7 +682,6 @@ impl Env {
                 },
             },
         );
-        // peek : Scan -> .Some(Char) | .None
         scan_ns.insert(
             "peek".into(),
             Value::Native {
@@ -922,7 +704,6 @@ impl Env {
                 },
             },
         );
-        // next : Scan -> .Some((Char, Scan)) | .None
         scan_ns.insert(
             "next".into(),
             Value::Native {
@@ -937,7 +718,6 @@ impl Env {
                         match c {
                             Some(ch) => {
                                 let ns = make_scan(s.clone(), i + 1);
-                                // 2-tuple tag is '.,'
                                 let pair = Value::Ctor {
                                     name: ".,".into(),
                                     args: vec![Value::Char(ch as i32), ns],
@@ -951,7 +731,6 @@ impl Env {
                 },
             },
         );
-        // take_if : (Char -> Bool) -> Scan -> .Some((Char, Scan)) | .None
         scan_ns.insert(
             "take_if".into(),
             Value::Native {
@@ -978,7 +757,6 @@ impl Env {
                 },
             },
         );
-        // take_while : (Char -> Bool) -> Scan -> (Str, Scan)
         scan_ns.insert(
             "take_while".into(),
             Value::Native {
@@ -1012,7 +790,6 @@ impl Env {
                 },
             },
         );
-        // take_while1 : (Char -> Bool) -> Scan -> .Some((Str, Scan)) | .None
         scan_ns.insert(
             "take_while1".into(),
             Value::Native {
@@ -1051,7 +828,6 @@ impl Env {
                 },
             },
         );
-        // slice_span : Scan -> Int -> Int -> Str
         scan_ns.insert(
             "slice_span".into(),
             Value::Native {
@@ -1077,7 +853,7 @@ impl Env {
             },
         );
         builtins.insert("scan".into(), Value::Record(scan_ns));
-        // unicode/codepoint namespace (Char conversions)
+
         let mut uni_ns: BTreeMap<String, Value> = BTreeMap::new();
         uni_ns.insert(
             "of_int".into(),
@@ -1104,8 +880,7 @@ impl Env {
         builtins.insert("unicode".into(), Value::Record(uni_ns));
         e.vars.insert("Builtins".into(), Value::Record(builtins));
 
-        // Tuple/Record constructors used by parser sugar
-        // Tuple sugar is now handled via special symbol '.,' directly; keep 'Tuple' for compatibility if needed.
+        // Tuple/Record helpers
         e.vars.insert(
             "Tuple".into(),
             Value::Native {
@@ -1179,7 +954,7 @@ impl Env {
         );
         e.declare_ctor_arity("KV", 2);
 
-        // logical ops: and/or/not. Accept Bool (or legacy Symbol True/False) and return Bool.
+        // Logic
         e.vars.insert(
             "and".into(),
             Value::Native {
@@ -1211,9 +986,7 @@ impl Env {
             },
         );
 
-        // if : cond then else
-        // cond: Bool
-        // then/else: either a raw value, a Closure, or a Native with arity=0. Call closures with Unit; return others as-is.
+        // if
         e.vars.insert(
             "if".into(),
             Value::Native {
@@ -1225,7 +998,6 @@ impl Env {
                     match branch.clone() {
                         Value::Native { arity: 0, f, args } if args.is_empty() => f(env, &[]),
                         Value::Closure { param, body, mut env } => {
-                            // Pass Unit to closure via pattern binding
                             if let Some(bind) = match_pattern(&env, &param, &Value::Unit) {
                                 for (k, v) in bind {
                                     env.vars.insert(k, v);
@@ -1237,6 +1009,35 @@ impl Env {
                         }
                         other => Ok(other),
                     }
+                },
+            },
+        );
+
+        // to_str, cons
+        e.vars.insert(
+            "to_str".into(),
+            Value::Native {
+                arity: 1,
+                args: vec![],
+                f: |env, args| {
+                    let s = to_str_like(env, &args[0]);
+                    Ok(Value::Str(env.intern_string(s)))
+                },
+            },
+        );
+        e.vars.insert(
+            "cons".into(),
+            Value::Native {
+                arity: 2,
+                args: vec![],
+                f: |_env, args| match (&args[0], &args[1]) {
+                    (head, Value::List(tail)) => {
+                        let mut out = Vec::with_capacity(tail.len() + 1);
+                        out.push(head.clone());
+                        out.extend(tail.clone());
+                        Ok(Value::List(out))
+                    }
+                    _ => Err(EvalError::TypeError),
                 },
             },
         );
@@ -2654,146 +2455,6 @@ mod tests {
                 }
             }
             _ => panic!("expected List"),
-        }
-    }
-
-    #[test]
-    fn list_namespace_basics() {
-        let env = Env::with_builtins();
-        let builtins = match env.vars.get("Builtins").cloned().unwrap() {
-            Value::Record(m) => m,
-            _ => panic!("Builtins missing"),
-        };
-        let list_ns = match builtins.get("list").cloned().unwrap() {
-            Value::Record(m) => m,
-            _ => panic!("list ns missing"),
-        };
-        let len_f = list_ns.get("length").cloned().unwrap();
-        let map_f = list_ns.get("map").cloned().unwrap();
-        let filter_f = list_ns.get("filter").cloned().unwrap();
-        let fold_f = list_ns.get("fold").cloned().unwrap();
-
-        // length
-        let v = apply_value(&env, len_f, Value::List(vec![Value::Int(1), Value::Int(2)])).unwrap();
-        match v {
-            Value::Int(n) => assert_eq!(n, 2),
-            _ => panic!(),
-        }
-
-        // map ((\x -> ~add ~x 1) [1,2]) -> [2,3]
-        // Build lambda: \x -> (~add ~x 1)
-        let lam = Expr::new(
-            ExprKind::Lambda {
-                param: Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
-                body: Box::new(Expr::new(
-                    ExprKind::Apply {
-                        func: Box::new(Expr::new(
-                            ExprKind::Apply {
-                                func: Box::new(ref_expr("add")),
-                                arg: Box::new(Expr::new(
-                                    ExprKind::Ref("x".into()),
-                                    Span::new(0, 0),
-                                )),
-                            },
-                            Span::new(0, 0),
-                        )),
-                        arg: Box::new(int_expr(1)),
-                    },
-                    Span::new(0, 0),
-                )),
-            },
-            Span::new(0, 0),
-        );
-        let lam_v = eval(&env, &lam).unwrap();
-        let list_arg = Value::List(vec![Value::Int(1), Value::Int(2)]);
-        let mapped =
-            apply_value(&env, map_f, lam_v).and_then(|f| apply_value(&env, f, list_arg)).unwrap();
-        match mapped {
-            Value::List(xs) => {
-                assert_eq!(xs.len(), 2);
-                assert!(matches!(xs[0], Value::Int(2)));
-                assert!(matches!(xs[1], Value::Int(3)));
-            }
-            _ => panic!("expected List"),
-        }
-
-        // filter ((\x -> ~gt ~x 1) [1,2,3]) -> [2,3]
-        let lam2 = Expr::new(
-            ExprKind::Lambda {
-                param: Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
-                body: Box::new(Expr::new(
-                    ExprKind::Apply {
-                        func: Box::new(Expr::new(
-                            ExprKind::Apply {
-                                func: Box::new(ref_expr("gt")),
-                                arg: Box::new(Expr::new(
-                                    ExprKind::Ref("x".into()),
-                                    Span::new(0, 0),
-                                )),
-                            },
-                            Span::new(0, 0),
-                        )),
-                        arg: Box::new(int_expr(1)),
-                    },
-                    Span::new(0, 0),
-                )),
-            },
-            Span::new(0, 0),
-        );
-        let lam2_v = eval(&env, &lam2).unwrap();
-        let list_arg2 = Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
-        let filtered = apply_value(&env, filter_f, lam2_v)
-            .and_then(|f| apply_value(&env, f, list_arg2))
-            .unwrap();
-        match filtered {
-            Value::List(xs) => {
-                assert_eq!(xs.len(), 2);
-                assert!(matches!(xs[0], Value::Int(2)));
-                assert!(matches!(xs[1], Value::Int(3)));
-            }
-            _ => panic!("expected List"),
-        }
-
-        // fold ((\acc -> (\x -> ~add ~acc ~x)) 0 [1,2,3]) -> 6
-        // Build curried: \acc -> (\x -> add acc x)
-        let inner = Expr::new(
-            ExprKind::Lambda {
-                param: Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
-                body: Box::new(Expr::new(
-                    ExprKind::Apply {
-                        func: Box::new(Expr::new(
-                            ExprKind::Apply {
-                                func: Box::new(ref_expr("add")),
-                                arg: Box::new(Expr::new(
-                                    ExprKind::Ref("acc".into()),
-                                    Span::new(0, 0),
-                                )),
-                            },
-                            Span::new(0, 0),
-                        )),
-                        arg: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
-                    },
-                    Span::new(0, 0),
-                )),
-            },
-            Span::new(0, 0),
-        );
-        let fold_lam = Expr::new(
-            ExprKind::Lambda {
-                param: Pattern { kind: PatternKind::Var("acc".into()), span: Span::new(0, 0) },
-                body: Box::new(inner),
-            },
-            Span::new(0, 0),
-        );
-        let fold_fun_v = eval(&env, &fold_lam).unwrap();
-        let list_arg3 = Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
-        let folded = apply_value(&env, fold_f, fold_fun_v)
-            .and_then(|f| apply_value(&env, f, Value::Int(0)))
-            .and_then(|f| apply_value(&env, f, list_arg3))
-            .unwrap();
-        match folded {
-            Value::Int(n) => assert_eq!(n, 6),
-            _ => panic!("expected Int 6"),
         }
     }
 }
