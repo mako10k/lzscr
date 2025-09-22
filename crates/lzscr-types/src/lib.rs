@@ -1,4 +1,15 @@
-//! lzscr-types: HM type inference (MVP)
+//! lzscr-types: HM type inference, unification, schemes, diagnostics (occurs/mismatch).
+//!
+//! Status:
+//! - Stable: unify/instantiate/generalize, occurs-check, basic pretty print
+//! - Improving: dual-caret errors (MismatchBoth/RecordField…), occurs normalization
+//!
+//! Notes:
+//! - apply(): single-pass structural substitution（安価）
+//! - zonk(): 置換連鎖を固定点まで展開（最終出力/表示前に使用）
+//! - ftv(): 自由型変数の収集（必要に応じて apply/zonk 後に）
+//!
+//! Source of truth: docs/ROADMAP.md
 //!
 //! Implements a minimal rank-1 HM inference over lzscr AST, including AltLambda
 //! typing with Ctor-limited union (SumCtor) for lambda chains.
@@ -2577,11 +2588,15 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
             Type::Type => "Type".into(),
             Type::List(x) => format!("[{}]", go(x, m, seen)),
             Type::Tuple(xs) => {
-                format!("({})", xs.iter().map(|x| go(x, m, seen)).collect::<Vec<_>>().join(", "))
+                let inner =
+                    xs.iter().map(|x| go(x, m, seen)).collect::<Vec<_>>().join(", ");
+                format!("({})", inner)
             }
             Type::Record(fs) => {
-                let mut items: Vec<_> =
-                    fs.iter().map(|(k, (v, _))| format!("{}: {}", k, go(v, m, seen))).collect();
+                let mut items: Vec<_> = fs
+                    .iter()
+                    .map(|(k, (v, _))| format!("{}: {}", k, go(v, m, seen)))
+                    .collect();
                 items.sort();
                 format!("{{{}}}", items.join(", "))
             }

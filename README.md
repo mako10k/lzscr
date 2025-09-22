@@ -1,8 +1,10 @@
 # lzscr (work in progress)
 
 An experimental re-implementation skeleton of LazyScript with a minimal, pragmatic subset.
+
+Roadmap/source of truth: see `docs/ROADMAP.md`. If README and ROADMAP conflict, prefer ROADMAP.
 - Values and core syntax: Int/Float/Bool/Str, `~ref`, bare symbols (constructors), lambdas, application, blocks.
-- Sugar: tuples `(a,b,...)`, records `{k:v,...}`, `true()`/`false()`.
+- Sugar: tuples `(a,b,...)`, records `{k:v,...}`.
 - Infix operators: `+ - * /` (Int), `.+ .- .* ./` (Float), comparisons `< <= > >=` and `== !=` (Float comparisons use `. < .<= .> .>=`).
 - Simple runtime evaluator with selected built-ins: `to_str`, `add/sub/mul/div`, `fadd/fsub/fmul/fdiv`, `lt/le/gt/ge`, `flt/fle/fgt/fge`, `eq/ne`, `and/or/not`, `if`, `seq`, `effects.print/println`, `Tuple/Record/KV`, `Bool`.
 
@@ -30,7 +32,8 @@ cargo run -p lzscr-cli -- -e '(1, 2, 3)'
 cargo run -p lzscr-cli -- -e '{a: 1, b: 2}'
 # => equivalent to {"a": 1, "b": 2} (rendering order may vary)
 
-cargo run -p lzscr-cli -- -e 'if true() 10 20'
+# Booleans use constructor form: .True() / .False()
+cargo run -p lzscr-cli -- -e 'if .True() 10 20'
 # => 10
 
 ## File extension / MIME / running from file (--file)

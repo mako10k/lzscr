@@ -1,3 +1,11 @@
+//! Core IR lowering and evaluation (PoC).
+//!
+//! - Lowering: stable for basic constructs; exceptions/alt/catch are evolving
+//! - Evaluation: small-step PoC; not feature-complete
+//!
+//! Roadmap: firm up exception/alt/catch representation, improve evaluator coverage.
+//! Source of truth: docs/ROADMAP.md
+
 use lzscr_ast::ast::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
