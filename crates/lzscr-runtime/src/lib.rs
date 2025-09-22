@@ -2675,7 +2675,10 @@ mod tests {
 
         // length
         let v = apply_value(&env, len_f, Value::List(vec![Value::Int(1), Value::Int(2)])).unwrap();
-        match v { Value::Int(n) => assert_eq!(n, 2), _ => panic!() }
+        match v {
+            Value::Int(n) => assert_eq!(n, 2),
+            _ => panic!(),
+        }
 
         // map ((\x -> ~add ~x 1) [1,2]) -> [2,3]
         // Build lambda: \x -> (~add ~x 1)
@@ -2687,7 +2690,10 @@ mod tests {
                         func: Box::new(Expr::new(
                             ExprKind::Apply {
                                 func: Box::new(ref_expr("add")),
-                                arg: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+                                arg: Box::new(Expr::new(
+                                    ExprKind::Ref("x".into()),
+                                    Span::new(0, 0),
+                                )),
                             },
                             Span::new(0, 0),
                         )),
@@ -2700,7 +2706,8 @@ mod tests {
         );
         let lam_v = eval(&env, &lam).unwrap();
         let list_arg = Value::List(vec![Value::Int(1), Value::Int(2)]);
-        let mapped = apply_value(&env, map_f, lam_v).and_then(|f| apply_value(&env, f, list_arg)).unwrap();
+        let mapped =
+            apply_value(&env, map_f, lam_v).and_then(|f| apply_value(&env, f, list_arg)).unwrap();
         match mapped {
             Value::List(xs) => {
                 assert_eq!(xs.len(), 2);
@@ -2719,7 +2726,10 @@ mod tests {
                         func: Box::new(Expr::new(
                             ExprKind::Apply {
                                 func: Box::new(ref_expr("gt")),
-                                arg: Box::new(Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0))),
+                                arg: Box::new(Expr::new(
+                                    ExprKind::Ref("x".into()),
+                                    Span::new(0, 0),
+                                )),
                             },
                             Span::new(0, 0),
                         )),
@@ -2754,7 +2764,10 @@ mod tests {
                         func: Box::new(Expr::new(
                             ExprKind::Apply {
                                 func: Box::new(ref_expr("add")),
-                                arg: Box::new(Expr::new(ExprKind::Ref("acc".into()), Span::new(0, 0))),
+                                arg: Box::new(Expr::new(
+                                    ExprKind::Ref("acc".into()),
+                                    Span::new(0, 0),
+                                )),
                             },
                             Span::new(0, 0),
                         )),
@@ -2778,6 +2791,9 @@ mod tests {
             .and_then(|f| apply_value(&env, f, Value::Int(0)))
             .and_then(|f| apply_value(&env, f, list_arg3))
             .unwrap();
-        match folded { Value::Int(n) => assert_eq!(n, 6), _ => panic!("expected Int 6") }
+        match folded {
+            Value::Int(n) => assert_eq!(n, 6),
+            _ => panic!("expected Int 6"),
+        }
     }
 }
