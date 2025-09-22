@@ -1596,38 +1596,41 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
 }
 
 fn rebase_pattern_with_minus(p: &Pattern, add: usize, minus: usize) -> Pattern {
-    use PatternKind::*;
     let kind = match &p.kind {
-        Wildcard => Wildcard,
-        Var(s) => Var(s.clone()),
-        Unit => Unit,
-        Tuple(xs) => Tuple(xs.iter().map(|x| rebase_pattern_with_minus(x, add, minus)).collect()),
-        Ctor { name, args } => Ctor {
+        PatternKind::Wildcard => PatternKind::Wildcard,
+        PatternKind::Var(s) => PatternKind::Var(s.clone()),
+        PatternKind::Unit => PatternKind::Unit,
+        PatternKind::Tuple(xs) => PatternKind::Tuple(
+            xs.iter().map(|x| rebase_pattern_with_minus(x, add, minus)).collect(),
+        ),
+        PatternKind::Ctor { name, args } => PatternKind::Ctor {
             name: name.clone(),
             args: args.iter().map(|x| rebase_pattern_with_minus(x, add, minus)).collect(),
         },
-        Symbol(s) => Symbol(s.clone()),
-        Int(n) => Int(*n),
-        Float(f) => Float(*f),
-        Str(s) => Str(s.clone()),
-        Char(c) => Char(*c),
-        Record(fields) => {
+        PatternKind::Symbol(s) => PatternKind::Symbol(s.clone()),
+        PatternKind::Int(n) => PatternKind::Int(*n),
+        PatternKind::Float(f) => PatternKind::Float(*f),
+        PatternKind::Str(s) => PatternKind::Str(s.clone()),
+        PatternKind::Char(c) => PatternKind::Char(*c),
+        PatternKind::Record(fields) => {
             let mut new = Vec::with_capacity(fields.len());
             for (k, v) in fields.iter() {
                 new.push((k.clone(), rebase_pattern_with_minus(v, add, minus)));
             }
-            Record(new)
+            PatternKind::Record(new)
         }
-        As(a, b) => As(
+        PatternKind::As(a, b) => PatternKind::As(
             Box::new(rebase_pattern_with_minus(a, add, minus)),
             Box::new(rebase_pattern_with_minus(b, add, minus)),
         ),
-        List(xs) => List(xs.iter().map(|x| rebase_pattern_with_minus(x, add, minus)).collect()),
-        Cons(h, t) => Cons(
+        PatternKind::List(xs) => {
+            PatternKind::List(xs.iter().map(|x| rebase_pattern_with_minus(x, add, minus)).collect())
+        }
+        PatternKind::Cons(h, t) => PatternKind::Cons(
             Box::new(rebase_pattern_with_minus(h, add, minus)),
             Box::new(rebase_pattern_with_minus(t, add, minus)),
         ),
-        TypeBind { tvars, pat } => TypeBind {
+        PatternKind::TypeBind { tvars, pat } => PatternKind::TypeBind {
             tvars: tvars.clone(),
             pat: Box::new(rebase_pattern_with_minus(pat, add, minus)),
         },
