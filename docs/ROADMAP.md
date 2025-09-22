@@ -1,40 +1,40 @@
 # LazyScript (lzscr) Roadmap
 
-最終更新: 2025-09-22
+Last updated: 2025-09-22
 
-このドキュメントはロードマップの唯一の参照元です。実装コメントやREADMEの簡易記述は本書に従います（差異があれば本書を優先）。
+This document is the single source of truth for the roadmap. Inline code comments and README excerpts must follow this document. If there is any discrepancy, this document wins.
 
-## 現状と前提
-- 対応範囲: 字句/構文/AST/評価器(一部ビルトイン)/型推論(HM rank-1)/Core IR 生成
-- 安定度:
-  - 安定: パーサ、基本評価、型推論の骨格、CLI 実行/ダンプ
-  - 実験的: Core IR の実行、診断の二重ケアット、エフェクト `--strict-effects`
-- 互換性ポリシー: 0.x 期間は内部 API 変更あり。CLI フラグは事前告知のうえ変更する場合があります。
+## Current scope and assumptions
+- Implemented areas: lexer/parser/AST/runtime (selected built-ins)/type inference (HM rank-1)/Core IR lowering
+- Stability:
+  - Stable: parser, basic evaluation, core type inference skeleton, CLI execution/dumps
+  - Experimental: Core IR evaluation, dual-caret diagnostics, `--strict-effects`
+- Compatibility policy: during 0.x, internal APIs may change. CLI flags may change with prior notice.
 
-## 直近の優先項目（Short-term）
-- 診断の改善（継続）
-  - 二重ケアット: 期待/実際・発生元/発見箇所の2点表示を標準化
-  - レコード: フィールド名と値位置を指すスパンの徹底
-  - occurs: 変数生成起点スパンの追跡、正規化表示（%a,%b…）
-  - メッセージ英語化と簡潔化、Fix-it ヒント追加
-- 型システムの整備
-  - zonk の適用タイミングを明文化、最終出力の安定化
-  - unify の重複ロジック整理（安全なヘルパ抽出）
+## Short-term priorities
+- Diagnostics (ongoing)
+  - Dual-caret: standardize two-point highlighting (expected vs actual, cause vs site)
+  - Records: precise spans for field names and value positions
+  - Occurs: track origin spans of generated type variables; normalize display (`%a`, `%b`, ...)
+  - Message style: English, concise; add fix-it hints where applicable
+- Type system
+  - Clarify when to apply `zonk` (finalization) vs lightweight `apply`; stabilize final outputs
+  - De-duplicate unify logic via safe helper extraction (no behavior changes)
 - Core IR
-  - Lower の堅牢化（例外/alt/catch の IR 表現を固定）
-  - 小規模ケースの IR 実行（評価器 PoC）健全性向上
+  - Harden lowering (fix the representation of exceptions/alt/catch)
+  - Improve small-case evaluator correctness (PoC)
 
-## 中期（Mid-term）
-- 例外/代替ラムダの型付けと IR 統合（AltLambda/Catch）
-- 名前解決とアップバリュー解析（静的解析拡充）
-- エフェクトの型側連携（strict-effects を型に取り込む計画策定）
+## Mid-term
+- Type and IR integration for exceptions/alternative lambdas (AltLambda/Catch)
+- Name resolution and upvalue analysis (expand static analysis)
+- Effect typing plan (integrate strict-effects policy into types)
 
-## 長期（Long-term）
-- ADT 宣言とコンストラクタ検査、型クラス/カインド拡張の検討
-- フォーマッタの安定化と VS Code 拡張の最小機能版公開
-- 実行系の高速化（将来の LLVM/最適化は研究枠）
+## Long-term
+- ADT declarations and constructor arity checks; explore kinds/typeclasses extensions
+- Formatter stabilization and minimal VS Code extension release
+- Runtime performance work (future LLVM/optimization remains research)
 
-## 表示/診断ポリシー
-- 可能な限り「原因と影響」を二重スパンで表示
-- 行/列はキャレットヘッダで提示し、本文メッセージは簡潔に
-- 先頭 `{` など曖昧な 1 文字スパンはヒューリスティックで内側の実体へ寄せる
+## Display/diagnostics policy
+- Prefer dual spans (cause and effect) when available
+- Keep message text concise; show line/column via caret headers
+- Heuristically shift ambiguous 1-char spans (like leading `{`) inward to the meaningful token
