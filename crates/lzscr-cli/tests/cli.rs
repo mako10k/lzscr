@@ -2,8 +2,8 @@ use assert_cmd::prelude::*;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use std::io::Write;
-use std::process::Command;
 use std::path::PathBuf;
+use std::process::Command;
 use tempfile::NamedTempFile;
 
 #[test]
@@ -65,10 +65,7 @@ fn stdlib_list_helpers_via_cli() {
     writeln!(tmp, "~folded = (~foldl (\\~acc ~x -> (~acc + ~x)) 0 ~xs);").unwrap();
     writeln!(tmp, "(~length ~xs, ~mapped, ~filtered, ~folded)").unwrap();
 
-    let stdlib_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("stdlib");
+    let stdlib_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("stdlib");
 
     let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
     cmd.args([
