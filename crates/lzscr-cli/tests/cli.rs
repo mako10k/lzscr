@@ -3,6 +3,7 @@ use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use std::io::Write;
 use std::process::Command;
+use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
 #[test]
@@ -53,4 +54,29 @@ fn file_option_executes_program() {
     let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
     cmd.args(["--file", path.to_str().unwrap()]);
     cmd.assert().success().stdout(contains("3\n"));
+}
+
+#[test]
+fn stdlib_list_helpers_via_cli() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "~xs = [1, 2, 3];").unwrap();
+    writeln!(tmp, "~mapped = (~map (\\~x -> (~x + 1)) ~xs);").unwrap();
+    writeln!(tmp, "~filtered = (~filter (\\~x -> (~x > 1)) ~xs);").unwrap();
+    writeln!(tmp, "~folded = (~foldl (\\~acc ~x -> (~acc + ~x)) 0 ~xs);").unwrap();
+    writeln!(tmp, "(~length ~xs, ~mapped, ~filtered, ~folded)").unwrap();
+
+    let stdlib_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("stdlib");
+
+    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    cmd.args([
+        "--file",
+        tmp.path().to_str().unwrap(),
+        "--stdlib-dir",
+        stdlib_dir.to_str().unwrap(),
+    ]);
+
+    cmd.assert().success().stdout(contains("(3, [2, 3, 4], [2, 3], 6)\n"));
 }

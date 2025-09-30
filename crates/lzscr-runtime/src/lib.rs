@@ -1013,6 +1013,30 @@ impl Env {
             },
         );
 
+        // Alt-lambda helper: try left branch, fall back to right on pattern mismatch
+        e.vars.insert(
+            "alt".into(),
+            Value::Native {
+                arity: 3,
+                args: vec![],
+                f: |env, args| {
+                    let left = args[0].clone();
+                    let right = args[1].clone();
+                    let input = args[2].clone();
+                    match apply_value(env, left, input.clone())? {
+                        Value::Raised(payload) => {
+                            if v_equal(env, payload.as_ref(), &input) {
+                                apply_value(env, right, input)
+                            } else {
+                                Ok(Value::Raised(payload))
+                            }
+                        }
+                        other => Ok(other),
+                    }
+                },
+            },
+        );
+
         // to_str, cons
         e.vars.insert(
             "to_str".into(),
