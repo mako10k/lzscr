@@ -135,6 +135,29 @@ cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
 - Formatting: stdlib should be stable under `--format-code`
 - Self-host prep: string slice/char-class invariants and tokenizer PoC acceptance tests
 
+## Self-hosted lexer improvement plan (2025-10-01)
+
+Context: `stdlib/lex.lzscr` implements a tokenizer in LazyScript as part of the self-hosting effort. The implementation currently mirrors the Rust lexer conceptually, but several gaps prevent it from being production ready. The following prioritized tasks bring it to parity and make it maintainable.
+
+1. **Restore decimal integer tokenization**
+  - Implement the missing `~take_number_token` helper so decimal integers emit `.Int` tokens with correct spans/text.
+  - Add a minimal LazyScript-driven smoke test (or CLI golden) that asserts `tokenize "123"` returns an `.Int` token.
+  - Update the README/planning artefacts with the current status once the helper lands.
+2. **Extend numeric literal support**
+  - Reuse the runtime lexer rules to add radix prefixes (`0x`, `0o`, `0b`) and floats (decimal point/exponent).
+  - Ensure the tokenizer falls back gracefully on malformed inputs and surfaces informative errors.
+3. **Harden string/char scanning**
+  - Detect unterminated escapes and `\u{}` sequences and return structured errors (span + message) instead of silently succeeding.
+  - Share decoding logic with the runtime where possible to avoid divergent behaviour.
+4. **Refactor whitespace/comment skipping**
+  - Split `~skip_ws_and_comments` into focused helpers (spaces, line comments, block comments) with unit-style tests for nesting and edge cases.
+  - Document the LetGroup-specific semicolon handling inside the file header.
+5. **Add regression tests and automation**
+  - Introduce golden tests comparing `~tokenize` output against the Rust lexer for a representative corpus.
+  - Wire the tests into CI via the CLI runner (e.g. execute `.lzscr` scripts in `tests/stdlib`).
+
+These tasks build on one another: the decimal-integer fix unblocks numerical testing, which in turn allows expanding coverage to floats and radix literals. Error reporting and refactoring work best once the foundational token support is in place.
+
 ## Roadmap (task checklist)
 Note: This is a working checklist. Non-checked items are exploratory and may be reprioritized or dropped.
 - [x] Create stdlib directory: `stdlib/prelude.lzscr` (skeleton and Builtins delegation)

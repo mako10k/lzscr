@@ -181,6 +181,12 @@
 ~is_e ~s = ((~str_eq ~s "e") || (~str_eq ~s "E"));
 # (duplicate ~take_member removed)
 
+~take_number_token ~sc = (
+  ((\ .Some (~txt, ~s1) ->
+    .Some (~Tok (.Int) (~span_between ~sc ~s1) ~txt)
+  ) | (\.None -> .None)) (~take_number ~sc)
+);
+
 # Strings and Chars (returns raw slice text)
 ~take_string ~sc =
   ((\ .Some ~s1 -> (
