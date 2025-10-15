@@ -182,9 +182,81 @@
 # (duplicate ~take_member removed)
 
 ~take_number_token ~sc = (
-  ((\ .Some (~txt, ~s1) ->
-    .Some (~Tok (.Int) (~span_between ~sc ~s1) ~txt)
-  ) | (\.None -> .None)) (~take_number ~sc)
+  # Radix detection: 0x, 0o, 0b
+  ~peek2 = ((\(.Some (~c1, ~s1)) -> (~Scan .peek ~s1)) | (\.None -> .None)) (~Scan .peek ~sc);
+  ~radix = (
+    ((\(.Some ~c2) -> (
+      (~if ((~Scan .peek ~sc) == (.Some ('0')))
+        (
+          (~if ((~c2 == ('x')))
+            (
+              # Hex
+              ((\ .Some (~txt, ~s1) -> .Some (~Tok (.Int) (~span_between ~sc ~s1) ~txt)) | (\.None -> .None)) (~Scan .take_while1 (\c -> (~Char .between ~c ('0') ('9')) || (~Char .between ~c ('a') ('f')) || (~Char .between ~c ('A') ('F'))) ((\(.Some (~_, ~s1)) -> ~s1) (~Scan .next ((\(.Some (~_, ~s1)) -> ~s1) (~Scan .next ~sc))))
+            )
+            (~if ((~c2 == ('o')))
+              (
+                # Octal
+                ((\ .Some (~txt, ~s1) -> .Some (~Tok (.Int) (~span_between ~sc ~s1) ~txt)) | (\.None -> .None)) (~Scan .take_while1 (\c -> (~Char .between ~c ('0') ('7'))) ((\(.Some (~_, ~s1)) -> ~s1) (~Scan .next ((\(.Some (~_, ~s1)) -> ~s1) (~Scan .next ~sc))))
+              )
+              (~if ((~c2 == ('b')))
+                (
+                  # Binary
+                  ((\ .Some (~txt, ~s1) -> .Some (~Tok (.Int) (~span_between ~sc ~s1) ~txt)) | (\.None -> .None)) (~Scan .take_while1 (\c -> (c == ('0')) || (c == ('1'))) ((\(.Some (~_, ~s1)) -> ~s1) (~Scan .next ((\(.Some (~_, ~s1)) -> ~s1) (~Scan .next ~sc))))
+                )
+                .None
+              )
+            )
+          )
+        )
+        .None
+      )
+    )) | (\.None -> .None)) ~peek2
+  );
+  (~if (~radix != .None) ~radix (
+    # Float detection: digits '.' digits, or digits 'e' digits
+    ((\ .Some (~int_txt, ~s1) ->
+      ~peek_dot = (~Scan .peek ~s1);
+      (~if ((~peek_dot == (.Some ('.'))))
+        (
+          ~s2 = ((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s1));
+          ((\ .Some (~frac_txt, ~s3) ->
+            ~peek_e = (~Scan .peek ~s3);
+            (~if ((~peek_e == (.Some ('e'))) || (~peek_e == (.Some ('E'))))
+              (
+                ~s4 = ((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s3));
+                ((\ .Some (~exp_txt, ~s5) ->
+                  ~txt = (~Str .concat (~Str .concat int_txt ".") frac_txt);
+                  ~txt2 = (~Str .concat txt (~Str .concat ((~Str .char_at "eE" 0)) exp_txt));
+                  .Some (~Tok (.Float) (~span_between ~sc ~s5) ~txt2)
+                ) | (\.None -> .None)) (~take_digits ~s4)
+              )
+              (
+                ~txt = (~Str .concat int_txt "." frac_txt);
+                .Some (~Tok (.Float) (~span_between ~sc ~s3) ~txt)
+              )
+            )
+          ) | (\.None -> .None)) (~take_digits ~s2)
+        )
+        (
+          # Exponent only
+          (~peek_e = (~Scan .peek ~s1));
+          (~if ((~peek_e == (.Some ('e'))) || (~peek_e == (.Some ('E'))))
+            (
+              ~s2 = ((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s1));
+              ((\ .Some (~exp_txt, ~s3) ->
+                ~txt = (~Str .concat int_txt ((~Str .char_at "eE" 0)));
+                ~txt2 = (~Str .concat txt exp_txt);
+                .Some (~Tok (.Float) (~span_between ~sc ~s3) ~txt2)
+              ) | (\.None -> .None)) (~take_digits ~s2)
+            )
+            (
+              .Some (~Tok (.Int) (~span_between ~sc ~s1) int_txt)
+            )
+          )
+        )
+      )
+    ) | (\.None -> .None)) (~take_number ~sc)
+  ))
 );
 
 # Strings and Chars (returns raw slice text)

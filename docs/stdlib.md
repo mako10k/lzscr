@@ -1,3 +1,21 @@
+## Self-hosted lexer smoke test (number tokens)
+
+以下は `stdlib/lex.lzscr` の数値トークン化の最小動作確認例です。
+
+```lzscr
+~import = ~Builtins .import;
+~lexer = ~import "stdlib/lex.lzscr";
+~tokens = (~lexer .token .tokenize "123 0x1f 0o77 0b101 3.14 2e10");
+~show = (~Builtins .string .show);
+~map = (~Builtins .list .map);
+~print_tokens = (~map ~show ~tokens);
+~print_tokens
+```
+
+期待される出力:
+
+- `.Int` トークン: "123", "0x1f", "0o77", "0b101"
+- `.Float` トークン: "3.14", "2e10"
 ## Roadmap (implementation tasks)
 
 - [x] Create stdlib directory: `stdlib/prelude.lzscr` (skeleton, start delegating to Builtins)
