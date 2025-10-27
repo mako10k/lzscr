@@ -67,7 +67,7 @@ jobs:
         run: npm run package
         working-directory: extensions/lzscr-vscode
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: ${{ steps.detect.outputs.exists == 'true' }}
         with:
           name: lzscr-vscode-vsix
@@ -116,7 +116,7 @@ jobs:
       - name: Run coverage (tarpaulin)
         run: cargo tarpaulin --workspace --out Xml
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-xml
           path: cobertura.xml
