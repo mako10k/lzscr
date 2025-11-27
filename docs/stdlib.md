@@ -1,3 +1,21 @@
+## Self-hosted lexer smoke test (number tokens)
+
+以下は `stdlib/lex.lzscr` の数値トークン化の最小動作確認例です。
+
+```lzscr
+~import = ~Builtins .import;
+~lexer = ~import "stdlib/lex.lzscr";
+~tokens = (~lexer .token .tokenize "123 0x1f 0o77 0b101 3.14 2e10");
+~show = (~Builtins .string .show);
+~map = (~Builtins .list .map);
+~print_tokens = (~map ~show ~tokens);
+~print_tokens
+```
+
+期待される出力:
+
+- `.Int` トークン: "123", "0x1f", "0o77", "0b101"
+- `.Float` トークン: "3.14", "2e10"
 ## Roadmap (implementation tasks)
 
 - [x] Create stdlib directory: `stdlib/prelude.lzscr` (skeleton, start delegating to Builtins)
@@ -95,6 +113,9 @@ Note: This section outlines potential phases. It is not a commitment. Items may 
   - `len`, `concat`, `slice`, `cmp`, `join`, `split` (simple), `starts_with`, `ends_with`, `find`, `to_int`, `from_int`
 - char
   - `of_int`, `to_int`, `is_alpha`, `is_digit`, `is_alnum`, `is_space`, `is_lower`, `is_upper`, `is_newline`
+  - inspect/debug helpers
+    - `~Inspect` record in the prelude exposes reusable renderers: `int`, `bool`, `str`, `list`, `option`, `result`
+    - Compose them to stringify nested values, e.g. `(~Inspect .list (~Inspect .int)) [1,2,3]` -> `"[1, 2, 3]"`
 - math
   - `abs`, `min`, `max`, `clamp`, `floor`, `ceil`, `pow` (Int/Float variants as needed)
 - record (M2+)

@@ -78,3 +78,26 @@ Mode precedence: `--dump-coreir-json | --dump-coreir | --eval-coreir` > `--analy
 - Constructor arities: `--ctor-arity "Name=Arity,Other=0"` (comma-separated).
 
 For details on analyzer output schema, see `docs/tools/analyzer.md`.
+
+## Running source from stdin
+
+Use `scripts/lzscr-run-stdin.sh` to evaluate scratch programs without manually
+creating temporary files. The script copies stdin into a temporary `.lzscr`
+file, runs `lzscr-cli --file` with the repo stdlib, forwards any additional
+flags, and then removes the file (use `--keep-temp` to inspect it).
+
+```
+cat <<'LZ' | scripts/lzscr-run-stdin.sh -- --fmt-indent 2
+(!println "hi")
+LZ
+```
+
+Options:
+
+- `-s|--stdlib-dir <path>`: override the stdlib search root (defaults to
+  `stdlib/` relative to the repo).
+- `-k|--keep-temp`: prevent cleanup so you can re-run the generated file.
+
+`LZSCR_CLI_BIN=/path/to/lzscr-cli scripts/lzscr-run-stdin.sh ...` forces a
+specific binary; otherwise the script prefers `target/debug/lzscr-cli` and
+falls back to `cargo run -q -p lzscr-cli`.
