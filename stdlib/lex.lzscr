@@ -182,9 +182,82 @@
 # (duplicate ~take_member removed)
 
 ~take_number_token ~sc = (
-  ((\ .Some (~txt, ~s1) ->
-    .Some (~Tok (.Int) (~span_between ~sc ~s1) ~txt)
-  ) | (\.None -> .None)) (~take_number ~sc)
+  ~advance ~s = ((\(.Some (~_, ~n)) -> ~n) (~Scan .next ~s));
+  ~emit_int ~s_end = .Some (~emit (.Int) ~sc ~s_end);
+  ~emit_float ~s_end = .Some (~emit (.Float) ~sc ~s_end);
+
+  ~with_prefix ~lit ~pred = (
+    ((\ .Some ~s_after ->
+        ((\ .Some (~_, ~s_digits) -> (~emit_int ~s_digits)) | (\.None -> .None))
+          (~Scan .take_while1 ~pred ~s_after)
+      ) | (\.None -> .None)) (~match_str ~lit ~sc)
+  );
+
+  ((~with_prefix "0x" (\ ~c -> (~Char .between ~c ('0') ('9')) || (~Char .between ~c ('a') ('f')) || (~Char .between ~c ('A') ('F'))))
+   | (~with_prefix "0o" (\ ~c -> (~Char .between ~c ('0') ('7'))))
+   | (~with_prefix "0b" (\ ~c -> ((~c == ('0')) || (~c == ('1')))))
+   | (
+      ((\ .Some (~_, ~s_digits) -> (
+          ~after_digits = ~s_digits;
+
+          ~consume_exponent = (\ ~s_base -> (
+            ~peek_e = (~Scan .peek ~s_base);
+            (~if (((~peek_e == (.Some ('e'))) || (~peek_e == (.Some ('E'))))
+              (
+                ~s_after_e = (~advance ~s_base);
+                ~sign_info = (~Scan .peek ~s_after_e);
+                ~s_exp_start = (
+                  ((\(.Some ~sign_ch) ->
+                    (~if (((~sign_ch == ('+')) || (~sign_ch == ('-'))))
+                      (~advance ~s_after_e)
+                      ~s_after_e
+                    )) | (\.None -> ~s_after_e)) ~sign_info
+                );
+                ~digits_opt = (~Scan .take_while1 ~is_digit ~s_exp_start);
+                ((\ .Some (~_, ~s_exp_end) -> (~emit_float ~s_exp_end)) | (\.None -> (~emit_float ~s_base))) ~digits_opt
+              )
+              (~emit_float ~s_base)
+            ))
+          ));
+
+          ~fraction_attempt = (
+            (~if ((~Scan .peek ~after_digits) == (.Some ('.')))
+              (
+                ~s_after_dot = (~advance ~after_digits);
+                ((\(.Some ~next_ch) ->
+                  (~if (~is_digit ~next_ch)
+                    (
+                      ((\ .Some (~_, ~s_frac) -> (~consume_exponent ~s_frac)) | (\.None -> .None)) (~Scan .take_while1 ~is_digit ~s_after_dot)
+                    )
+                    .None
+                  )
+                ) | (\.None -> .None)) (~Scan .peek ~s_after_dot)
+              )
+              .None
+            )
+          );
+
+          ((\ .Some ~tok -> .Some ~tok) | (\.None ->
+            (~if (((~Scan .peek ~after_digits) == (.Some ('e'))) || ((~Scan .peek ~after_digits) == (.Some ('E'))))
+              (
+                ~s_after_e = (~advance ~after_digits);
+                ~sign_info = (~Scan .peek ~s_after_e);
+                ~s_exp_start = (
+                  ((\(.Some ~sign_ch) ->
+                    (~if (((~sign_ch == ('+')) || (~sign_ch == ('-'))))
+                      (~advance ~s_after_e)
+                      ~s_after_e
+                    )) | (\.None -> ~s_after_e)) ~sign_info
+                );
+                ~digits_opt = (~Scan .take_while1 ~is_digit ~s_exp_start);
+                ((\ .Some (~_, ~s_exp_end) -> (~emit_float ~s_exp_end)) | (\.None -> (~emit_int ~after_digits))) ~digits_opt
+              )
+              (~emit_int ~after_digits)
+            )
+          )) ~fraction_attempt
+        )) | (\.None -> .None)) (~take_digits ~sc)
+    )
+  )
 );
 
 # Strings and Chars (returns raw slice text)

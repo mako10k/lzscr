@@ -1,0 +1,8 @@
+# Minimal repro: local let inside parentheses + two trailing uses
+~helper ~x = (
+    ~y = ~x;
+    ~y;
+);
+
+~helper 1;
+~helper 2;

@@ -1,0 +1,12 @@
+(
+    ~pre = 1;
+    (
+        ~helper ~x = (
+            ~y = ~x;
+            ~y;
+        );
+        ~helper 1;
+        ~helper 2;
+    );
+    0;
+)

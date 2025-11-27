@@ -1,0 +1,38 @@
+# Prelude basic functionality smoke tests
+# Run with the CLI (from workspace root):
+#   cargo run -p lzscr-cli -- run --stdlib-dir ./stdlib tests/prelude_basic.lzscr
+# or, if you have built the CLI binary:
+#   ./target/debug/lzscr-cli run --stdlib-dir ./stdlib tests/prelude_basic.lzscr
+
+# Each test prints a labelled line; the test program exits normally.
+
+# Exercises stdlib helpers and prints labelled outputs so CLI tests can assert
+# on both successful execution and the rendered results.
+
+~format_line ~label ~value_str = (~Str .concat ~label (~Str .concat " -> " ~value_str));
+
+~render_case ~label ~inspect ~value = (~format_line ~label (~inspect ~value));
+
+~print_line ~msg = (~seq () (!println ~msg));
+
+~print_lines ~lines = (
+  (\[] -> ()
+   | \( ~h : ~t ) -> (~seq (~print_line ~h) (~print_lines ~t)))
+  ~lines
+);
+
+~cases = [
+  ~render_case "length []" (~Inspect .int) (~length []),
+  ~render_case "length [1,2,3]" (~Inspect .int) (~length [1,2,3]),
+  ~render_case "append [] [1]" ((~Inspect .list (~Inspect .int))) (~append [] [1]),
+  ~render_case "append [1] [2,3]" ((~Inspect .list (~Inspect .int))) (~append [1] [2,3]),
+  ~render_case "reverse [1,2,3]" ((~Inspect .list (~Inspect .int))) (~reverse [1,2,3]),
+  ~render_case "map (+1) [1,2]" ((~Inspect .list (~Inspect .int))) (~map (\~x -> (~x + 1)) [1,2]),
+  ~render_case "foldl sum [1..4]" (~Inspect .int) (~foldl (\~acc ~x -> (~acc + ~x)) 0 [1,2,3,4]),
+  ~render_case "foldr product [1..4]" (~Inspect .int) (~foldr (\~x ~acc -> (~x * ~acc)) 1 [1,2,3,4]),
+  ~render_case "split_char 'a,b,c' ','" ((~Inspect .list (~Inspect .str))) (~split_char "a,b,c" ','),
+  ~render_case "str_len 'abc'" (~Inspect .int) (~str_len "abc"),
+  ~render_case "str_len == 3" (~Inspect .bool) ((~str_len "abc") == 3)
+];
+
+~print_lines (~append ~cases ["prelude_basic: done"]);

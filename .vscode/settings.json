@@ -20,7 +20,7 @@
     }
   },
   "chat.mcp.serverSampling": {
-    "lzscr/.vscode/mcp.json: shell-server": {
+    "lzscr/.vscode/mcp.json: rca": {
       "allowedDuringChat": true
     }
   },
