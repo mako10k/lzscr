@@ -113,6 +113,9 @@ Note: This section outlines potential phases. It is not a commitment. Items may 
   - `len`, `concat`, `slice`, `cmp`, `join`, `split` (simple), `starts_with`, `ends_with`, `find`, `to_int`, `from_int`
 - char
   - `of_int`, `to_int`, `is_alpha`, `is_digit`, `is_alnum`, `is_space`, `is_lower`, `is_upper`, `is_newline`
+  - inspect/debug helpers
+    - `~Inspect` record in the prelude exposes reusable renderers: `int`, `bool`, `str`, `list`, `option`, `result`
+    - Compose them to stringify nested values, e.g. `(~Inspect .list (~Inspect .int)) [1,2,3]` -> `"[1, 2, 3]"`
 - math
   - `abs`, `min`, `max`, `clamp`, `floor`, `ceil`, `pow` (Int/Float variants as needed)
 - record (M2+)
