@@ -15,3 +15,4 @@ This folder contains documentation for the lzscr PoC: language specs and tools, 
 
 Notes:
 - docs/lzscr.md is an early design note and contains future ideas (WIP). Do not treat it as a commitment. For the up-to-date, implementation-conformant spec, see the /spec set instead.
+- parser-letgroup-regression.md captures the November 2025 parser RCA (cause, fix, repro commands).

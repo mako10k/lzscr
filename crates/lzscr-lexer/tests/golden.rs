@@ -85,3 +85,11 @@ fn golden_strings_chars_comments() {
     let want = read_golden("strings_chars_comments");
     assert_eq!(got.trim(), want.trim());
 }
+
+#[test]
+fn golden_numbers_radix_float() {
+    let input = "0x1f 0xDEAD 0o77 0b101 3.14 0.5 2e10 6.02e+23 7e-4 1.5E-2";
+    let got = format_tokens(input);
+    let want = read_golden("numbers_radix_float");
+    assert_eq!(got.trim(), want.trim());
+}

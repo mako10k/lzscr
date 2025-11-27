@@ -1504,35 +1504,77 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             }
                             if let Some(h) = toks.get(k) { if matches!(h.tok, Tok::Backslash) { j = before; break; } }
                             // For trailing plain pattern binding, also require a top-level '=' ahead from current k.
+                            let mut plain_binding_possible = false;
                             {
                                 let mut kk = k;
                                 let mut depth = 0i32;
-                                let mut found_eq = false;
                                 while let Some(tok) = toks.get(kk) {
                                     match tok.tok {
                                         Tok::LParen | Tok::LBracket | Tok::LBrace => depth += 1,
-                                        Tok::RParen | Tok::RBracket | Tok::RBrace => { if depth == 0 { break; } depth -= 1; }
-                                        Tok::Eq => { if depth == 0 { found_eq = true; break; } }
+                                        Tok::RParen | Tok::RBracket | Tok::RBrace => {
+                                            if depth == 0 { break; }
+                                            depth -= 1;
+                                        }
+                                        Tok::Eq => {
+                                            if depth == 0 {
+                                                plain_binding_possible = true;
+                                                break;
+                                            }
+                                        }
                                         _ => {}
                                     }
                                     kk += 1;
                                 }
-                                if !found_eq { j = before; break; }
                             }
-                            if let Ok(p2) = parse_pattern(&mut k, toks) {
-                                if let Some(eq) = toks.get(k) { if matches!(eq.tok, Tok::Eq) {
-                                    k += 1;
-                                    let ex2 = parse_expr_bp(&mut k, toks, 0)?;
+                            if plain_binding_possible {
+                                if let Ok(p2) = parse_pattern(&mut k, toks) {
+                                    if let Some(eq) = toks.get(k) { if matches!(eq.tok, Tok::Eq) {
+                                        k += 1;
+                                        let ex2 = parse_expr_bp(&mut k, toks, 0)?;
+                                        match toks.get(k) {
+                                            Some(tok) if matches!(tok.tok, Tok::Semicolon) => { k += 1; }
+                                            Some(tok) if matches!(tok.tok, Tok::RParen) => { /* soft end */ }
+                                            Some(tok) => { return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: tok.span.offset, span_len: tok.span.len }); }
+                                            None => { return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: t.span.offset, span_len: t.span.len }); }
+                                        }
+                                        trailing.push((p2, ex2));
+                                        j = k;
+                                        continue;
+                                    }}
+                                }
+                            }
+                            // Allow pure expression statements (effects) after we already have let entries
+                            let has_let_entries = !leading.is_empty() || !leading_types.is_empty()
+                                || !trailing.is_empty() || !trailing_types.is_empty();
+                            if has_let_entries {
+                                if let Ok(expr_stmt) = parse_expr_bp(&mut k, toks, 0) {
                                     match toks.get(k) {
-                                        Some(tok) if matches!(tok.tok, Tok::Semicolon) => { k += 1; }
-                                        Some(tok) if matches!(tok.tok, Tok::RParen) => { /* soft end */ }
-                                        Some(tok) => { return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: tok.span.offset, span_len: tok.span.len }); }
-                                        None => { return Err(ParseError::WithSpan { msg: "; expected after let binding".into(), span_offset: t.span.offset, span_len: t.span.len }); }
+                                        Some(tok) if matches!(tok.tok, Tok::Semicolon) => {
+                                            k += 1;
+                                        }
+                                        Some(tok) if matches!(tok.tok, Tok::RParen) => {
+                                            // soft end
+                                        }
+                                        Some(tok) => {
+                                            return Err(ParseError::WithSpan {
+                                                msg: "; expected after expression in let group".into(),
+                                                span_offset: tok.span.offset,
+                                                span_len: tok.span.len,
+                                            });
+                                        }
+                                        None => {
+                                            return Err(ParseError::WithSpan {
+                                                msg: "; expected after expression in let group".into(),
+                                                span_offset: t.span.offset,
+                                                span_len: t.span.len,
+                                            });
+                                        }
                                     }
-                                    trailing.push((p2, ex2));
+                                    let wild = Pattern::new(PatternKind::Wildcard, expr_stmt.span);
+                                    trailing.push((wild, expr_stmt));
                                     j = k;
                                     continue;
-                                }}
+                                }
                             }
                             j = before;
                             break;
@@ -2095,6 +2137,29 @@ mod tests {
             }
             _ => panic!("expected LetGroup for value-first with trailing bind"),
         }
+    }
+
+    #[test]
+    fn letgroup_trailing_effect_statements() {
+        let src = "(~helper ~x = (~y = ~x; ~y;); ~helper 1; ~helper 2; ~helper 3;)";
+        let r = parse_expr(src).unwrap();
+        match r.kind {
+            ExprKind::LetGroup { bindings, .. } => {
+                assert_eq!(bindings.len(), 3);
+                match &bindings[0].0.kind {
+                    PatternKind::Var(name) => assert_eq!(name, "helper"),
+                    other => panic!("expected helper binding, got {:?}", other),
+                }
+                assert!(matches!(bindings[1].0.kind, PatternKind::Wildcard));
+                assert!(matches!(bindings[2].0.kind, PatternKind::Wildcard));
+            }
+            other => panic!("expected LetGroup, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn letgroup_still_errors_without_bindings() {
+        assert!(parse_expr("(1; 2)").is_err());
     }
 
     #[test]
