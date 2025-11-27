@@ -120,12 +120,7 @@ fn prelude_basic_smoke() {
         "prelude_basic: done",
     ];
     for needle in expected_lines {
-        assert!(
-            stdout.contains(needle),
-            "stdout missing `{}`\nfull output:\n{}",
-            needle,
-            stdout
-        );
+        assert!(stdout.contains(needle), "stdout missing `{}`\nfull output:\n{}", needle, stdout);
     }
 }
 
