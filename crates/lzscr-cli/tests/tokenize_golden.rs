@@ -9,7 +9,7 @@ fn run_tokenize(input: &str) -> String {
     // lzscr program: use stdlib prelude and lex.lzscr from stdlib via (~require .lex)
     // Build code that maps tokens to a printable line format.
     let code = format!(
-    "(\n  ~Lex = (~require .lex);\n  ~to_line ~t = (\n    ~k = (~t .kind);\n    ~x = (~t .text);\n    (~Str .concat (~Str .concat (~to_str ~k) \":\") ~x)\n  );\n  ~render ~xs = (\n    (\\[] -> \"\")\n    | \\(~h : ~t) -> (\n        ~line = (~to_line ~h);\n        ~rest = (~render ~t);\n        (~Str .concat (~Str .concat ~line \"\\n\") ~rest)\n      )\n  ) ~xs;\n  (~render (((~Lex .token) .tokenize) \"{}\"))\n)\n",
+        "(\n  ~Lex = (~require .lex);\n  ~trim_ctor ~name = (~if ((~starts_with ~name \".\")) (~Str .slice ~name 1 ((~Str .len ~name) - 1)) ~name);\n  ~to_line ~t = (\n    ~k = (~t .kind);\n    ~x = (~t .text);\n    ~kind_text = (~trim_ctor (~to_str ~k));\n    (~Str .concat (~Str .concat ~kind_text \":\") ~x)\n  );\n  ~render ~xs = (\n    (\\[] -> \"\")\n    | \\(~h : ~t) -> (\n        ~line = (~to_line ~h);\n        ~rest = (~render ~t);\n        (~Str .concat (~Str .concat ~line \"\\n\") ~rest)\n      )\n  ) ~xs;\n  (~render (((~Lex .token) .tokenize) \"{}\"))\n)\n",
         input.replace('"', "\\\"")
     );
     // Compute absolute stdlib dir: <workspace_root>/stdlib
@@ -52,5 +52,14 @@ fn golden_strings_chars_comments() {
     let input = "\"hi\\n\" 'x' {- block {- nested -} comment -} # line\nend";
     let got = run_tokenize(input);
     let want = read_golden("strings_chars_comments");
+    assert_eq!(got.trim(), want.trim());
+}
+
+#[test]
+#[ignore]
+fn golden_numbers_radix_float() {
+    let input = "0x1f 0xDEAD 0o77 0b101 3.14 0.5 2e10 6.02e+23 7e-4 1.5E-2";
+    let got = run_tokenize(input);
+    let want = read_golden("numbers_radix_float");
     assert_eq!(got.trim(), want.trim());
 }
