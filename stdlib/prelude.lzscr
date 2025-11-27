@@ -173,6 +173,44 @@
   )
 );
 
+# Inspect/render helpers ---------------------------------------------------
+~inspect_int ~n = (~to_str ~n);
+
+~inspect_bool ~b = (
+  ((\.True -> ".True")
+   | (\.False -> ".False"))
+  ~b
+);
+
+~inspect_str ~s = (~Str .concat "\"" (~Str .concat ~s "\""));
+
+~inspect_list ~elem_inspect ~xs = (
+  ~parts = (~map ~elem_inspect ~xs);
+  ~body = (~join ", " ~parts);
+  (~Str .concat "[" (~Str .concat ~body "]"))
+);
+
+~inspect_option ~elem_inspect ~opt = (
+  (((\.None -> ".None")
+    | (\(.Some ~v) -> (~Str .concat ".Some " (~elem_inspect ~v))))
+   ~opt)
+);
+
+~inspect_result ~ok_inspect ~err_inspect ~res = (
+  (((\(.Ok ~v) -> (~Str .concat ".Ok " (~ok_inspect ~v)))
+    | (\(.Err ~e) -> (~Str .concat ".Err " (~err_inspect ~e))))
+   ~res)
+);
+
+~Inspect = {
+  int: ~inspect_int,
+  bool: ~inspect_bool,
+  str: ~inspect_str,
+  list: ~inspect_list,
+  option: ~inspect_option,
+  result: ~inspect_result
+};
+
 # Codepoint (Int) helpers via Char/Unicode
 ~cp_is_alpha ~c = (~Char .is_alpha (~Unicode .of_int ~c));
 ~cp_is_digit ~c = (~Char .is_digit (~Unicode .of_int ~c));
