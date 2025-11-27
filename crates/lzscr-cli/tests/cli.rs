@@ -65,7 +65,7 @@ fn stdlib_list_helpers_via_cli() {
     writeln!(tmp, "~folded = (~foldl (\\~acc ~x -> (~acc + ~x)) 0 ~xs);").unwrap();
     writeln!(tmp, "(~length ~xs, ~mapped, ~filtered, ~folded)").unwrap();
 
-    let stdlib_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("stdlib");
+    let stdlib_dir = workspace_stdlib_dir();
 
     let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
     cmd.args([
@@ -76,4 +76,60 @@ fn stdlib_list_helpers_via_cli() {
     ]);
 
     cmd.assert().success().stdout(contains("(3, [2, 3, 4], [2, 3], 6)\n"));
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+}
+
+fn workspace_stdlib_dir() -> PathBuf {
+    repo_root().join("stdlib")
+}
+
+fn run_sample(program: &str) {
+    let sample = repo_root().join("tests").join(program);
+    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    cmd.args(["--file", sample.to_str().unwrap(), "--no-stdlib"]);
+    cmd.assert().success();
+}
+
+#[test]
+fn prelude_basic_smoke() {
+    let sample = repo_root().join("tests").join("prelude_basic.lzscr");
+    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    cmd.args([
+        "--file",
+        sample.to_str().unwrap(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+    ]);
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let expected_lines = [
+        "length [] -> 0",
+        "length [1,2,3] -> 3",
+        "append [] [1] -> [1]",
+        "append [1] [2,3] -> [1, 2, 3]",
+        "reverse [1,2,3] -> [3, 2, 1]",
+        "map (+1) [1,2] -> [2, 3]",
+        "foldl sum [1..4] -> 10",
+        "foldr product [1..4] -> 24",
+        "split_char 'a,b,c' ',' -> [\"a\", \"b\", \"c\"]",
+        "str_len 'abc' -> 3",
+        "str_len == 3 -> .True",
+        "prelude_basic: done",
+    ];
+    for needle in expected_lines {
+        assert!(stdout.contains(needle), "stdout missing `{}`\nfull output:\n{}", needle, stdout);
+    }
+}
+
+#[test]
+fn regression_min_repro_executes() {
+    run_sample("min_repro.lzscr");
+}
+
+#[test]
+fn regression_hyp_nested_executes() {
+    run_sample("hyp_nested.lzscr");
 }
