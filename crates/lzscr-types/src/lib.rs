@@ -2099,8 +2099,7 @@ fn infer_expr(
                             (Type::Ctor { tag: name.clone(), payload: ent.clone() }, true)
                         }
                         PatternKind::Symbol(name) => {
-                            let ent =
-                                ctor_payloads_per_param[i].entry(name.clone()).or_default();
+                            let ent = ctor_payloads_per_param[i].entry(name.clone()).or_default();
                             if !ent.is_empty() {
                                 return Err(TypeError::DuplicateCtorTag {
                                     tag: name.clone(),
