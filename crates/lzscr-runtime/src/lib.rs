@@ -2,7 +2,7 @@ use lzscr_ast::ast::*;
 use std::sync::Arc;
 
 // ===== Runtime core types (Env, Value, Errors, Thunks) =====
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Env {
     pub vars: std::collections::HashMap<String, Value>,
     pub strict_effects: bool,
@@ -142,15 +142,7 @@ impl PartialEq<&str> for RtStr {
 }
 impl Env {
     pub fn new() -> Self {
-        Self {
-            vars: std::collections::HashMap::new(),
-            strict_effects: false,
-            in_effect_context: false,
-            ctor_arity: std::collections::HashMap::new(),
-            sym_intern: std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new())),
-            sym_rev: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
-            str_intern: std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new())),
-        }
+        Self::default()
     }
 
     pub fn intern_symbol<S: AsRef<str>>(&self, s: S) -> u32 {
@@ -177,12 +169,12 @@ impl Env {
     pub fn intern_string<S: Into<String>>(&self, s: S) -> RtStr {
         let s = s.into();
         if let Some(buf) = self.str_intern.borrow().get(&s).cloned() {
-            return RtStr { data: buf, start: 0, len: s.as_bytes().len() };
+            return RtStr { data: buf, start: 0, len: s.len() };
         }
         let bytes = s.as_bytes().to_vec();
         let arc = Arc::new(bytes);
         self.str_intern.borrow_mut().insert(s.clone(), arc.clone());
-        RtStr { data: arc, start: 0, len: s.as_bytes().len() }
+        RtStr { data: arc, start: 0, len: s.len() }
     }
 
     pub fn declare_ctor_arity<S: Into<String>>(&mut self, name: S, arity: usize) {

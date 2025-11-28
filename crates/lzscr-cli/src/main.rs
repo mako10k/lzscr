@@ -287,12 +287,10 @@ impl SourceRegistry {
                 if b == b'{' {
                     depth += 1;
                     stack.push(i);
-                } else if b == b'}' {
-                    if depth > 0 {
-                        depth -= 1;
-                        if let Some(op) = stack.pop() {
-                            pairs.push((op, i));
-                        }
+                } else if b == b'}' && depth > 0 {
+                    depth -= 1;
+                    if let Some(op) = stack.pop() {
+                        pairs.push((op, i));
                     }
                 }
                 i += 1;
@@ -566,29 +564,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // Parse numbers manually
                             let mut lchars = tail.chars();
                             let mut line_s = String::new();
-                            while let Some(ch) = lchars.next() {
+                            for ch in lchars.by_ref() {
                                 if ch.is_ascii_digit() {
                                     line_s.push(ch);
+                                } else if ch == ':' {
+                                    break;
                                 } else {
-                                    if ch == ':' {
-                                        break;
-                                    } else {
-                                        line_s.clear();
-                                        break;
-                                    }
+                                    line_s.clear();
+                                    break;
                                 }
                             }
                             let mut col_s = String::new();
-                            while let Some(ch) = lchars.next() {
+                            for ch in lchars.by_ref() {
                                 if ch.is_ascii_digit() {
                                     col_s.push(ch);
+                                } else if ch == ' ' {
+                                    break;
                                 } else {
-                                    if ch == ' ' {
-                                        break;
-                                    } else {
-                                        col_s.clear();
-                                        break;
-                                    }
+                                    col_s.clear();
+                                    break;
                                 }
                             }
                             let mut off_s = String::new();

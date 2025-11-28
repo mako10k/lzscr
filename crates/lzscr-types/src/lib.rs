@@ -471,8 +471,6 @@ fn occurs(v: TvId, t: &Type) -> bool {
 fn format_field_path(parent: &str, child: &str) -> String {
     if child.is_empty() {
         parent.to_string()
-    } else if child.contains('.') {
-        format!("{parent}.{child}")
     } else {
         format!("{parent}.{child}")
     }
@@ -650,6 +648,7 @@ fn unify(a: &Type, b: &Type) -> Result<Subst, TypeError> {
 
 // Small helper: unify two equally-sized slices element-wise, composing substitutions left-to-right.
 // (Used for Tuple, Ctor payloads, and SumCtor payload lists.)
+#[allow(clippy::result_large_err)] // TypeError variants intentionally carry rich span data.
 fn unify_slices(xs: &[Type], ys: &[Type]) -> Result<Subst, TypeError> {
     debug_assert_eq!(xs.len(), ys.len());
     let mut s = Subst::new();
@@ -2100,9 +2099,8 @@ fn infer_expr(
                             (Type::Ctor { tag: name.clone(), payload: ent.clone() }, true)
                         }
                         PatternKind::Symbol(name) => {
-                            let ent = ctor_payloads_per_param[i]
-                                .entry(name.clone())
-                                .or_insert_with(|| Vec::new());
+                            let ent =
+                                ctor_payloads_per_param[i].entry(name.clone()).or_default();
                             if !ent.is_empty() {
                                 return Err(TypeError::DuplicateCtorTag {
                                     tag: name.clone(),
@@ -2163,8 +2161,8 @@ fn infer_expr(
                 }
                 s_all = sb.compose(s_all);
                 // Update params with latest substitution
-                for i in 0..arity {
-                    param_tys[i] = param_tys[i].apply(&s_all);
+                for param_ty in param_tys.iter_mut() {
+                    *param_ty = param_ty.apply(&s_all);
                 }
             }
 
@@ -2184,21 +2182,17 @@ fn infer_expr(
             };
 
             // Finalize parameter types: build union per position if ctor variants were collected
-            for i in 0..arity {
-                if !ctor_payloads_per_param[i].is_empty() {
-                    if ctor_payloads_per_param[i].len() == 1 {
-                        let (tag, payload) = ctor_payloads_per_param[i].iter().next().unwrap();
-                        param_tys[i] = Type::Ctor { tag: tag.clone(), payload: payload.clone() };
-                    } else {
-                        let mut variants: Vec<(String, Vec<Type>)> = ctor_payloads_per_param[i]
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect();
-                        variants.sort_by(|a, b| a.0.cmp(&b.0));
-                        param_tys[i] = Type::SumCtor(variants);
-                    }
+            for (param_ty, payloads) in param_tys.iter_mut().zip(ctor_payloads_per_param.iter()) {
+                if payloads.is_empty() {
+                    *param_ty = param_ty.apply(&s_all);
+                } else if payloads.len() == 1 {
+                    let (tag, payload) = payloads.iter().next().unwrap();
+                    *param_ty = Type::Ctor { tag: tag.clone(), payload: payload.clone() };
                 } else {
-                    param_tys[i] = param_tys[i].apply(&s_all);
+                    let mut variants: Vec<(String, Vec<Type>)> =
+                        payloads.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                    variants.sort_by(|a, b| a.0.cmp(&b.0));
+                    *param_ty = Type::SumCtor(variants);
                 }
             }
 

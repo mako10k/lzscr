@@ -527,8 +527,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         // We reconstruct by stepping back and calling parse_pattern, then slicing span.
                         // Step back index
                         *i -= 1;
-                        let full = parse_pattern(i, toks)?;
-                        full
+                        return parse_pattern(i, toks);
                     }
                 } else {
                     return Err(ParseError::WithSpan {
