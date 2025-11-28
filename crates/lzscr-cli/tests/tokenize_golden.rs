@@ -3,6 +3,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+fn cli_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("lzscr-cli"))
+}
+
 // Helper: run lzscr-cli with an inline program that imports stdlib/lex and tokenizes the given input string,
 // pretty-prints tokens as "kind:text:span(off,len)" one per line. The program is constructed in lzscr syntax.
 fn run_tokenize(input: &str) -> String {
@@ -19,7 +23,7 @@ fn run_tokenize(input: &str) -> String {
     stdlib.push("stdlib");
     let stdlib = stdlib.to_string_lossy().to_string();
 
-    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    let mut cmd = cli_cmd();
     // Tokenization golden shouldn't depend on typechecker; skip it to avoid
     // transient stdlib type mismatches breaking lexing tests.
     cmd.args(["-e", &code, "--stdlib-dir", &stdlib, "--no-typecheck"]);

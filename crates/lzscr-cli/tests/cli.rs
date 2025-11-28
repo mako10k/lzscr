@@ -6,16 +6,20 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
+fn cli_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("lzscr-cli"))
+}
+
 #[test]
 fn eval_add_prints_result() {
-    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    let mut cmd = cli_cmd();
     cmd.args(["-e", "(~add 1 2)"]);
     cmd.assert().success().stdout(contains("3\n"));
 }
 
 #[test]
 fn strict_effects_blocks_effect_outside_seq() {
-    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    let mut cmd = cli_cmd();
     cmd.args(["-e", "!println \"x\"", "-s"]);
     // Runtime prints error to stderr via error formatting in CLI, process still exits 0 for now
     cmd.assert().failure();
@@ -23,14 +27,14 @@ fn strict_effects_blocks_effect_outside_seq() {
 
 #[test]
 fn strict_effects_allows_effect_with_seq() {
-    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    let mut cmd = cli_cmd();
     cmd.args(["-e", "(~seq () (!println \"x\"))", "-s"]);
     cmd.assert().success();
 }
 
 #[test]
 fn dump_coreir_text_outputs_seq() {
-    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    let mut cmd = cli_cmd();
     cmd.args(["-e", "(~seq 1 (~add 2 3))", "--dump-coreir"]);
     // expect a textual (~seq ...) in the output
     cmd.assert().success().stdout(contains("(~seq 1 ((~add 2) 3))\n"));
@@ -38,7 +42,7 @@ fn dump_coreir_text_outputs_seq() {
 
 #[test]
 fn dump_coreir_json_outputs_term() {
-    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    let mut cmd = cli_cmd();
     cmd.args(["-e", "(~seq 1 (~add 2 3))", "--dump-coreir-json"]);
     cmd.assert().success().stdout(contains("{\n").and(contains("\"Seq\"")));
 }
@@ -51,7 +55,7 @@ fn file_option_executes_program() {
     writeln!(tmp, "~x = 1; ~add ~x 2;").unwrap();
     let path = tmp.path();
 
-    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    let mut cmd = cli_cmd();
     cmd.args(["--file", path.to_str().unwrap()]);
     cmd.assert().success().stdout(contains("3\n"));
 }
@@ -67,7 +71,7 @@ fn stdlib_list_helpers_via_cli() {
 
     let stdlib_dir = workspace_stdlib_dir();
 
-    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    let mut cmd = cli_cmd();
     cmd.args([
         "--file",
         tmp.path().to_str().unwrap(),
@@ -88,7 +92,7 @@ fn workspace_stdlib_dir() -> PathBuf {
 
 fn run_sample(program: &str) {
     let sample = repo_root().join("tests").join(program);
-    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    let mut cmd = cli_cmd();
     cmd.args(["--file", sample.to_str().unwrap(), "--no-stdlib"]);
     cmd.assert().success();
 }
@@ -96,7 +100,7 @@ fn run_sample(program: &str) {
 #[test]
 fn prelude_basic_smoke() {
     let sample = repo_root().join("tests").join("prelude_basic.lzscr");
-    let mut cmd = Command::cargo_bin("lzscr-cli").unwrap();
+    let mut cmd = cli_cmd();
     cmd.args([
         "--file",
         sample.to_str().unwrap(),
