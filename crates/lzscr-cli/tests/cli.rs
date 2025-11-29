@@ -100,7 +100,7 @@ fn effect_modules_allowed_with_flag() {
     let mut cmd = cli_cmd();
     cmd.args([
         "-e",
-        "(~Log = (~require .effect .log); (~chain ((~Log .tap_info) \"demo\" 42) ((~Log .info_fields) \"stats\" [{ key: \"count\", value: 2 }, { key: \"status\", value: 1 }])))",
+        "(~Log = (~require .effect .log); (~chain ((~Log .tap_info) \"demo\" 42) ((~Log .info_fields_json) \"stats\" [((~Log .field) \"count\" 2), ((~Log .field) \"status\" 1)])))",
         "--stdlib-dir",
         workspace_stdlib_dir().to_str().unwrap(),
         "--stdlib-mode",
@@ -109,7 +109,10 @@ fn effect_modules_allowed_with_flag() {
 
     cmd.assert()
         .success()
-        .stdout(contains("[INFO] demo: 42\n").and(contains("[INFO] stats: count=2 status=1\n")));
+        .stdout(
+            contains("[INFO] demo: 42\n")
+                .and(contains("[INFO] stats: {\"count\": 2, \"status\": 1}\n")),
+        );
 }
 
 fn repo_root() -> PathBuf {

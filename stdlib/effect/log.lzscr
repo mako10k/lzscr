@@ -42,6 +42,17 @@
 
 # Structured field logging -------------------------------------------------
 
+~field ~key ~value = { key: ~key, value: ~value };
+
+~fields_from_pairs ~pairs = (
+  ~go = (\[] -> [] | \( ~head : ~tail ) -> (
+    ~key = (~head .key);
+    ~value = (~head .value);
+    (~cons (~field ~key ~value) (~go ~tail))
+  ));
+  (~go ~pairs)
+);
+
 ~render_field ~field = (
   ~key = (~field .key);
   ~value = (~field .value);
@@ -72,10 +83,43 @@
 ~trace_fields = (~make_fields_logger "TRACE");
 ~fatal_fields = (~make_fields_logger "FATAL");
 
+~render_field_json ~field = (
+  ~key = (~field .key);
+  ~value = (~to_str (~field .value));
+  ~quoted_key = (~Str .concat "\"" (~Str .concat ~key "\""));
+  (~Str .concat ~quoted_key (~Str .concat ": " ~value))
+);
+
+~render_fields_json ~fields = (
+  ~go = (\[] -> "" | \( ~head : ~tail ) -> (
+    ~current = (~render_field_json ~head);
+    ~rest = (~go ~tail);
+    (~if (~rest == "") ~current (~Str .concat ~current (~Str .concat ", " ~rest)))
+  ));
+  ~body = (~go ~fields);
+  (~Str .concat "{" (~Str .concat ~body "}"))
+);
+
+~log_fields_json ~level ~label ~fields = (
+  ~json = (~render_fields_json ~fields);
+  ~line = (~Str .concat (~decorate_label ~level ~label) ~json);
+  (~chain ((~IO .println) ~line) ())
+);
+
+~make_fields_json_logger ~level = (\~label ~fields -> (~log_fields_json ~level ~label ~fields));
+
+~info_fields_json = (~make_fields_json_logger "INFO");
+~debug_fields_json = (~make_fields_json_logger "DEBUG");
+~warn_fields_json = (~make_fields_json_logger "WARN");
+~error_fields_json = (~make_fields_json_logger "ERROR");
+~trace_fields_json = (~make_fields_json_logger "TRACE");
+~fatal_fields_json = (~make_fields_json_logger "FATAL");
+
 {
   emit: ~emit,
   log_with_level: ~log_with_level,
   log_fields: ~log_fields,
+  log_fields_json: ~log_fields_json,
   tap_with_level: ~tap_with_level,
   tap_via_logger: ~tap_via_logger,
   trace: ~trace,
@@ -90,10 +134,18 @@
   tap_warn: ~tap_warn,
   tap_error: ~tap_error,
   tap_fatal: ~tap_fatal,
+  field: ~field,
+  fields_from_pairs: ~fields_from_pairs,
   trace_fields: ~trace_fields,
   debug_fields: ~debug_fields,
   info_fields: ~info_fields,
   warn_fields: ~warn_fields,
   error_fields: ~error_fields,
-  fatal_fields: ~fatal_fields
+  fatal_fields: ~fatal_fields,
+  trace_fields_json: ~trace_fields_json,
+  debug_fields_json: ~debug_fields_json,
+  info_fields_json: ~info_fields_json,
+  warn_fields_json: ~warn_fields_json,
+  error_fields_json: ~error_fields_json,
+  fatal_fields_json: ~fatal_fields_json
 }
