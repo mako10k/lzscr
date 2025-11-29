@@ -12,6 +12,16 @@ core namespaces from the runtime `Builtins` plus foundational list/string/option
 - `list.lzscr`: Expanded list algorithms (any/all/sum/product/zip/etc.).
 - `lex.lzscr`: Lexer-oriented character + scanning helpers (used by tooling examples).
 
+## Purity Classification (initial pass)
+
+| Module | Status | Notes | Follow-up |
+| --- | --- | --- | --- |
+| `prelude.lzscr` | Mixed / compat | Re-exports helpers and still bundles deprecated aliases; mixes pure namespaces with effectful entry-points. | Split into thin pure prelude + compat shim once purity enforcement lands. |
+| `option.lzscr` | Pure | Functional combinators over `Option`; no IO or mutation. | Move under `stdlib/pure/option.lzscr` and keep API stable. |
+| `result.lzscr` | Pure | Mirrors `option` style—map/and_then/or_else without side effects. | Same relocation to `stdlib/pure/`. |
+| `list.lzscr` | Pure | Collection helpers over in-memory lists only. | Relocate to `stdlib/pure/` after dependency graph script exists. |
+| `lex.lzscr` | Pure (tooling) | Helper predicates for characters; current usage is deterministic and effect-free. | Relocate to `stdlib/pure/lex.lzscr`; follow up if scanner APIs grow effects. |
+
 ## Loading Additional Modules
 
 Use the surface form `(~require .stdlib .option)` once module resolution roots include the project `stdlib` directory. Example CLI invocation:
