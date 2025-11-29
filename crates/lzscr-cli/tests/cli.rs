@@ -1,11 +1,10 @@
 use assert_cmd::prelude::*;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
-use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
-use tempfile::{tempdir, NamedTempFile};
+use tempfile::NamedTempFile;
 
 fn cli_cmd() -> Command {
     Command::new(assert_cmd::cargo::cargo_bin!("lzscr-cli"))
@@ -85,18 +84,12 @@ fn stdlib_list_helpers_via_cli() {
 
 #[test]
 fn effect_modules_blocked_in_pure_mode() {
-    let tmp = tempdir().unwrap();
-    let effect_dir = tmp.path().join("effect");
-    fs::create_dir_all(&effect_dir).unwrap();
-    fs::write(effect_dir.join("demo.lzscr"), "{ ping: \\~x -> ~x }\n").unwrap();
-
     let mut cmd = cli_cmd();
     cmd.args([
         "-e",
-        "(~require .effect .demo)",
-        "--no-stdlib",
+        "(~require .effect .log)",
         "--stdlib-dir",
-        tmp.path().to_str().unwrap(),
+        workspace_stdlib_dir().to_str().unwrap(),
     ]);
 
     cmd.assert().failure().stderr(contains("--stdlib-mode=allow-effects"));
@@ -104,23 +97,19 @@ fn effect_modules_blocked_in_pure_mode() {
 
 #[test]
 fn effect_modules_allowed_with_flag() {
-    let tmp = tempdir().unwrap();
-    let effect_dir = tmp.path().join("effect");
-    fs::create_dir_all(&effect_dir).unwrap();
-    fs::write(effect_dir.join("demo.lzscr"), "{ ping: \\~x -> ~x }\n").unwrap();
-
     let mut cmd = cli_cmd();
     cmd.args([
         "-e",
-        "(~require .effect .demo)",
-        "--no-stdlib",
+        "(~Log = (~require .effect .log); (~chain ((~Log .tap_info) \"demo\" 42) ((~Log .info_fields) \"stats\" [{ key: \"count\", value: 2 }, { key: \"status\", value: 1 }])))",
         "--stdlib-dir",
-        tmp.path().to_str().unwrap(),
+        workspace_stdlib_dir().to_str().unwrap(),
         "--stdlib-mode",
         "allow-effects",
     ]);
 
-    cmd.assert().success();
+    cmd.assert()
+        .success()
+        .stdout(contains("[INFO] demo: 42\n").and(contains("[INFO] stats: count=2 status=1\n")));
 }
 
 fn repo_root() -> PathBuf {
