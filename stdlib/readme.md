@@ -22,6 +22,8 @@ core namespaces from the runtime `Builtins` plus foundational list/string/option
 | `list.lzscr` | Pure | Collection helpers over in-memory lists only. | Relocate to `stdlib/pure/` after dependency graph script exists. |
 | `lex.lzscr` | Pure (tooling) | Helper predicates for characters; current usage is deterministic and effect-free. | Relocate to `stdlib/pure/lex.lzscr`; follow up if scanner APIs grow effects. |
 
+Run `python scripts/check_stdlib_classification.py` to ensure every `.lzscr` file listed under `stdlib/` has an up-to-date entry in this table before sending a PR.
+
 ## Loading Additional Modules
 
 Use the surface form `(~require .stdlib .option)` once module resolution roots include the project `stdlib` directory. Example CLI invocation:

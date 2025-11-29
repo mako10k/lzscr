@@ -31,4 +31,4 @@ optimizations.
 
 ## Next Steps
 - After reviewing these goals, draft the migration plan (work breakdown, tooling, CI enforcement).
-- Keep the `stdlib/readme.md` classification table current and fail CI when a stdlib module lacks a declared purity level.
+- Keep the `stdlib/readme.md` classification table current and fail CI when a stdlib module lacks a declared purity level. The helper script `scripts/check_stdlib_classification.py` enforces the coverage locally—add it to CI once the split begins.
