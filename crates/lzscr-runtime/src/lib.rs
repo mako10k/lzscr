@@ -448,6 +448,10 @@ impl Env {
                                 "remove_file".into(),
                                 Value::Native { arity: 1, args: vec![], f: eff_fs_remove_file },
                             );
+                            fs_fields.insert(
+                                "create_dir".into(),
+                                Value::Native { arity: 1, args: vec![], f: eff_fs_create_dir },
+                            );
                             Value::Record(fs_fields)
                         }
                         _ => return Err(EvalError::UnknownEffect(sym)),
@@ -1461,6 +1465,22 @@ fn eff_fs_remove_file(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
         _ => return Err(EvalError::TypeError),
     };
     match std::fs::remove_file(&path) {
+        Ok(()) => Ok(result_ok(Value::Unit)),
+        Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+    }
+}
+
+fn eff_fs_create_dir(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 1 {
+        return Err(EvalError::TypeError);
+    }
+    let path_val = force_value(env, &args[0])?;
+    let path = match path_val {
+        Value::Str(s) => s.to_string(),
+        _ => return Err(EvalError::TypeError),
+    };
+    match std::fs::create_dir_all(&path) {
         Ok(()) => Ok(result_ok(Value::Unit)),
         Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
     }

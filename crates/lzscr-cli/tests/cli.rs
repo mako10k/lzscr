@@ -245,6 +245,30 @@ fn effect_fs_remove_file_allowed_with_flag() {
     cmd.assert().success().stdout(contains("fallback\n"));
 }
 
+#[test]
+fn effect_fs_create_dir_allowed_with_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let new_dir = dir.path().join("nested");
+    let path_literal = format!("{:?}", new_dir.to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .create_dir_or {} ()) (~Fs .list_dir_or {} [])))",
+        path_literal,
+        format!("{:?}", dir.path().to_str().unwrap())
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("nested"));
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
 }

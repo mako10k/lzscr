@@ -66,6 +66,19 @@
   (\(.Ok _) -> () | \(.Err ~msg) -> (~handle ~msg))
 ) (~remove_file_result ~path);
 
+# create_dir_result: create directory (including parents) and return (.Ok () | .Err msg)
+~create_dir_result ~path = (~chain () (!fs.create_dir ~path));
+
+# create_dir_or: return () or fallback when mkdir fails
+~create_dir_or ~path ~fallback = (
+  (\(.Ok _) -> () | \(.Err _) -> ~fallback)
+) (~create_dir_result ~path);
+
+# create_dir_or_else: compute fallback from error message
+~create_dir_or_else ~path ~handle = (
+  (\(.Ok _) -> () | \(.Err ~msg) -> (~handle ~msg))
+) (~create_dir_result ~path);
+
 {
   read_text_result: ~read_text_result,
   read_text_or: ~read_text_or,
@@ -81,5 +94,8 @@
   list_dir_or_else: ~list_dir_or_else,
   remove_file_result: ~remove_file_result,
   remove_file_or: ~remove_file_or,
-  remove_file_or_else: ~remove_file_or_else
+  remove_file_or_else: ~remove_file_or_else,
+  create_dir_result: ~create_dir_result,
+  create_dir_or: ~create_dir_or,
+  create_dir_or_else: ~create_dir_or_else
 }

@@ -78,3 +78,15 @@ fn fs_remove_file_types_as_result() {
         "unexpected type: {ty}"
     );
 }
+
+#[test]
+fn fs_create_dir_types_as_result() {
+    let src = "(~seq () (!fs.create_dir \"foo/bar\"))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(
+        ty == "(.Ok Unit | .Err Str)" || ty == "(.Err Str | .Ok Unit)",
+        "unexpected type: {ty}"
+    );
+}
