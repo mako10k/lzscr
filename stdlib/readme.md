@@ -6,7 +6,8 @@ core namespaces from the runtime `Builtins` plus foundational list/string/option
 
 ## Files
 
-- `prelude.lzscr`: Core base + list/string/scan helpers. Now lazily loads the pure submodules and exposes backward-compatible deprecated aliases (e.g. `~is_some`, `~map_option`, `~map_result`).
+- `prelude.lzscr`: Core base + list/string/scan helpers. It now focuses on pure helpers and delegates deprecated aliases to the compat shim.
+- `compat/prelude_aliases.lzscr`: Effectful shim that re-exports the legacy prelude helper names (`~is_some`, `~map_option`, etc.) and logs warnings whenever they are used.
 - `pure/option.lzscr`: Stand-alone Option helper module (functional ops).
 - `pure/result.lzscr`: Stand-alone Result helper module (map/and_then/or_else, etc.).
 - `pure/list.lzscr`: Expanded list algorithms (any/all/sum/product/zip/etc.).
@@ -27,6 +28,7 @@ core namespaces from the runtime `Builtins` plus foundational list/string/option
 | `effect/io.lzscr` | Effect | Thin wrappers around builtin `!print`/`!println` plus logging helpers. | Layer additional effect modules on top (fs/net) once IO core is stable. |
 | `effect/log.lzscr` | Effect | Level-tagged logging helpers with tap utilities, field builders, scoped field combinators, and `key=value` / JSON emitters; depends on `effect/io`. | Extend with richer structured emitters (JSON, spans) once runtime protocols exist. |
 | `effect/fs.lzscr` | Effect | Filesystem helpers wrapping `!fs.read_text` / `!fs.write_text` / `!fs.append_text` / `!fs.list_dir` / `!fs.remove_file` / `!fs.create_dir` / `!fs.metadata`, returning `Result` interfaces so callers decide when to surface errors or fallbacks. Metadata now reports `size`, `is_dir`, `is_file`, `readonly`, and `modified_ms` (Option Int). | Future: extend metadata further once platform-specific signals (e.g. perms bits) are consistently exposed. |
+| `compat/prelude_aliases.lzscr` | Effect | Deprecated helper aliases that log warnings and delegate to `pure/option.lzscr` / `pure/result.lzscr`. | Eventually drop entirely once downstream crates migrate. |
 
 Run `python scripts/check_stdlib_classification.py` to ensure every `.lzscr` file listed under `stdlib/` has an up-to-date entry in this table before sending a PR.
 

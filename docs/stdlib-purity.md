@@ -44,6 +44,7 @@ optimizations.
 2. **Module split + compat layer** *(Status: in progress)*
    - Shrink `prelude.lzscr` to re-export only modules under `stdlib/pure/`; move legacy names into `stdlib/compat/` with soft warnings logged through `effect/log`.
    - Track dependencies so pure modules never `~require` from `.effect`; enforced via `scripts/check_stdlib_classification.py` (runs locally and in CI) which now fails if any `stdlib/pure/**` file imports `.effect` namespaces.
+   - Introduced `compat/prelude_aliases.lzscr`, an effectful shim that logs warnings whenever the deprecated helper names are used; the remaining work is to stop exporting those names from `prelude.lzscr` entirely once downstream code migrates.
 
 3. **Effect namespace hardening** *(Status: planned)*
    - For each effect module (fs, io, log, future net/process), document the exported surface in the spec and provide dedicated smoke tests under `crates/lzscr-cli/tests` gated by `--stdlib-mode=allow-effects`.

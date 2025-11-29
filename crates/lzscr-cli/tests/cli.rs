@@ -97,6 +97,19 @@ fn effect_modules_blocked_in_pure_mode() {
 }
 
 #[test]
+fn compat_module_blocked_in_pure_mode() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~require .compat .prelude_aliases)",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+    ]);
+
+    cmd.assert().failure().stderr(contains("--stdlib-mode=allow-effects"));
+}
+
+#[test]
 fn effect_modules_allowed_with_flag() {
     let mut cmd = cli_cmd();
     cmd.args([
@@ -111,6 +124,27 @@ fn effect_modules_allowed_with_flag() {
     cmd.assert().success().stdout(
         contains("[INFO] demo: 42\n")
             .and(contains("[INFO] stats: {\"session\": 9, \"count\": 2}\n")),
+    );
+}
+
+#[test]
+fn compat_module_warns_with_flag() {
+    let program = "(~Compat = (~require .compat .prelude_aliases); (~Compat .is_some (.Some 1), (~Compat .map_option (\\~x -> (~x + 1)) (.Some 2))))";
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program,
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(
+        contains("[WARN] stdlib.compat")
+            .and(contains("~is_some is deprecated"))
+            .and(contains("~map_option is deprecated"))
+            .and(contains(".True, .Some(3))")),
     );
 }
 

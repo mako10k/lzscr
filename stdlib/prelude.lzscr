@@ -25,20 +25,6 @@
 ~Result = (~require .pure .result);
 ~ListExtra = (~require .pure .list);
 
-# Back-compat Option helper aliases (deprecated: prefer (~Option .map) etc.)
-~is_some = (~Option .is_some);          # DEPRECATED (use (~Option .is_some))
-~is_none = (~Option .is_none);          # DEPRECATED
-~map_option = (~Option .map);           # DEPRECATED (name kept to avoid clash with list ~map)
-~unwrap_or = (~Option .unwrap_or);      # DEPRECATED (Option version)
-# Note: Option also has unwrap_or_else; expose ONLY Result variant under the
-# legacy prelude name to avoid silent behavior change. Access Option's version
-# explicitly via (~Option .unwrap_or_else).
-
-# Back-compat Result helper aliases
-~map_result = (~Result .map);           # DEPRECATED (use (~Result .map))
-~map_err = (~Result .map_err);          # DEPRECATED
-~unwrap_or_else = (~Result .unwrap_or_else);  # DEPRECATED
-
 # (Optional future) Re-export selected list extras if desired:
 # e.g. ~list_any = (~ListExtra .any);
 
