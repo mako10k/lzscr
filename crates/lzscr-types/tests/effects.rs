@@ -101,10 +101,7 @@ fn fs_metadata_types_as_result() {
     assert!(ty.contains("is_file: (.False | .True)"), "missing is_file field: {ty}");
     let has_mod_some_first = ty.contains("modified_ms: (.Some Int | .None)");
     let has_mod_none_first = ty.contains("modified_ms: (.None | .Some Int)");
-    assert!(
-        has_mod_some_first || has_mod_none_first,
-        "missing modified_ms option field: {ty}"
-    );
+    assert!(has_mod_some_first || has_mod_none_first, "missing modified_ms option field: {ty}");
     assert!(ty.contains("readonly: (.False | .True)"), "missing readonly field: {ty}");
     assert!(ty.contains("size: Int"), "missing size field: {ty}");
     assert!(ty.contains(".Ok") && ty.contains(".Err"), "expected Result in type: {ty}");

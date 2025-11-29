@@ -11,11 +11,7 @@ fn run_python(script: &PathBuf) -> io::Result<std::process::Output> {
     let repo = repo_root();
     let mut last_err: Option<io::Error> = None;
     for candidate in candidates {
-        match Command::new(candidate)
-            .arg(script)
-            .current_dir(&repo)
-            .output()
-        {
+        match Command::new(candidate).arg(script).current_dir(&repo).output() {
             Ok(output) => {
                 return Ok(output);
             }

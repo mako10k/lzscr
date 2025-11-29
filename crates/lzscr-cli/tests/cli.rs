@@ -281,10 +281,10 @@ fn effect_fs_create_dir_allowed_with_flag() {
     let dir = tempfile::tempdir().unwrap();
     let new_dir = dir.path().join("nested");
     let path_literal = format!("{:?}", new_dir.to_str().unwrap());
+    let dir_literal = format!("{:?}", dir.path().to_str().unwrap());
     let program = format!(
         "(~Fs = (~require .effect .fs); (~chain (~Fs .create_dir_or {} ()) (~Fs .list_dir_or {} [])))",
-        path_literal,
-        format!("{:?}", dir.path().to_str().unwrap())
+        path_literal, dir_literal
     );
 
     let mut cmd = cli_cmd();
