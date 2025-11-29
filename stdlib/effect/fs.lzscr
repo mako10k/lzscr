@@ -40,6 +40,19 @@
   (\(.Ok _) -> () | \(.Err ~msg) -> (~handle ~msg))
 ) (~append_text_result ~path ~contents);
 
+# list_dir_result: list directory contents and return (.Ok entries | .Err msg)
+~list_dir_result ~path = (~chain () (!fs.list_dir ~path));
+
+# list_dir_or: return entries or fallback list
+~list_dir_or ~path ~fallback = (
+  (\(.Ok ~entries) -> ~entries | \(.Err _) -> ~fallback)
+) (~list_dir_result ~path);
+
+# list_dir_or_else: compute fallback from error message
+~list_dir_or_else ~path ~handle = (
+  (\(.Ok ~entries) -> ~entries | \(.Err ~msg) -> (~handle ~msg))
+) (~list_dir_result ~path);
+
 {
   read_text_result: ~read_text_result,
   read_text_or: ~read_text_or,
@@ -49,5 +62,8 @@
   write_text_or_else: ~write_text_or_else,
   append_text_result: ~append_text_result,
   append_text_or: ~append_text_or,
-  append_text_or_else: ~append_text_or_else
+  append_text_or_else: ~append_text_or_else,
+  list_dir_result: ~list_dir_result,
+  list_dir_or: ~list_dir_or,
+  list_dir_or_else: ~list_dir_or_else
 }

@@ -70,6 +70,13 @@ fn result_unit_str_type() -> Type {
     Type::SumCtor(vec![(".Ok".into(), vec![Type::Unit]), (".Err".into(), vec![Type::Str])])
 }
 
+fn result_list_str_type() -> Type {
+    Type::SumCtor(vec![
+        (".Ok".into(), vec![Type::List(Box::new(Type::Str))]),
+        (".Err".into(), vec![Type::Str]),
+    ])
+}
+
 fn fs_effects_record_type() -> Type {
     let mut fields = BTreeMap::new();
     fields.insert("read_text".into(), (Type::fun(Type::Str, result_str_str_type()), None));
@@ -81,6 +88,7 @@ fn fs_effects_record_type() -> Type {
         "append_text".into(),
         (Type::fun(Type::Str, Type::fun(Type::Str, result_unit_str_type())), None),
     );
+    fields.insert("list_dir".into(), (Type::fun(Type::Str, result_list_str_type()), None));
     Type::Record(fields)
 }
 

@@ -1,6 +1,7 @@
 use assert_cmd::prelude::*;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
+use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
@@ -193,6 +194,32 @@ fn effect_fs_append_text_allowed_with_flag() {
     ]);
 
     cmd.assert().success().stdout(contains("seed-tail\n"));
+}
+
+#[test]
+fn effect_fs_list_dir_allowed_with_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_a = dir.path().join("a.txt");
+    let file_b = dir.path().join("b.log");
+    fs::write(&file_a, "a").unwrap();
+    fs::write(&file_b, "b").unwrap();
+    let path_literal = format!("{:?}", dir.path().to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~Fs .list_dir_or {} []))",
+        path_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("a.txt").and(contains("b.log")));
 }
 
 fn repo_root() -> PathBuf {

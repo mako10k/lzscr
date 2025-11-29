@@ -54,3 +54,15 @@ fn fs_append_text_types_as_result() {
         "unexpected type: {ty}"
     );
 }
+
+#[test]
+fn fs_list_dir_types_as_result() {
+    let src = "(~seq () (!fs.list_dir \"foo\"))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(
+        ty == "(.Ok [Str] | .Err Str)" || ty == "(.Err Str | .Ok [Str])",
+        "unexpected type: {ty}"
+    );
+}
