@@ -6,30 +6,30 @@ core namespaces from the runtime `Builtins` plus foundational list/string/option
 
 ## Files
 
-- `prelude.lzscr`: Core base + list/string/scan helpers. Now lazily loads `option.lzscr`, `result.lzscr`, and `list.lzscr` via `~require` and exposes backward-compatible deprecated aliases (e.g. `~is_some`, `~map_option`, `~map_result`).
-- `option.lzscr`: Stand-alone Option helper module (functional ops).
-- `result.lzscr`: Stand-alone Result helper module (map/and_then/or_else, etc.).
-- `list.lzscr`: Expanded list algorithms (any/all/sum/product/zip/etc.).
-- `lex.lzscr`: Lexer-oriented character + scanning helpers (used by tooling examples).
+- `prelude.lzscr`: Core base + list/string/scan helpers. Now lazily loads the pure submodules and exposes backward-compatible deprecated aliases (e.g. `~is_some`, `~map_option`, `~map_result`).
+- `pure/option.lzscr`: Stand-alone Option helper module (functional ops).
+- `pure/result.lzscr`: Stand-alone Result helper module (map/and_then/or_else, etc.).
+- `pure/list.lzscr`: Expanded list algorithms (any/all/sum/product/zip/etc.).
+- `pure/lex.lzscr`: Lexer-oriented character + scanning helpers (used by tooling examples).
 
 ## Purity Classification (initial pass)
 
 | Module | Status | Notes | Follow-up |
 | --- | --- | --- | --- |
 | `prelude.lzscr` | Mixed / compat | Re-exports helpers and still bundles deprecated aliases; mixes pure namespaces with effectful entry-points. | Split into thin pure prelude + compat shim once purity enforcement lands. |
-| `option.lzscr` | Pure | Functional combinators over `Option`; no IO or mutation. | Move under `stdlib/pure/option.lzscr` and keep API stable. |
-| `result.lzscr` | Pure | Mirrors `option` style—map/and_then/or_else without side effects. | Same relocation to `stdlib/pure/`. |
-| `list.lzscr` | Pure | Collection helpers over in-memory lists only. | Relocate to `stdlib/pure/` after dependency graph script exists. |
-| `lex.lzscr` | Pure (tooling) | Helper predicates for characters; current usage is deterministic and effect-free. | Relocate to `stdlib/pure/lex.lzscr`; follow up if scanner APIs grow effects. |
+| `pure/option.lzscr` | Pure | Functional combinators over `Option`; no IO or mutation. | Monitor for dependency on effect modules as new features land. |
+| `pure/result.lzscr` | Pure | Mirrors `option` style—map/and_then/or_else without side effects. | Same as above. |
+| `pure/list.lzscr` | Pure | Collection helpers over in-memory lists only. | Keep dependency graph flowing into effect tree only (if ever needed). |
+| `pure/lex.lzscr` | Pure (tooling) | Helper predicates for characters; current usage is deterministic and effect-free. | Re-evaluate classification if lexer helpers start performing IO. |
 
 Run `python scripts/check_stdlib_classification.py` to ensure every `.lzscr` file listed under `stdlib/` has an up-to-date entry in this table before sending a PR.
 
 ## Loading Additional Modules
 
-Use the surface form `(~require .stdlib .option)` once module resolution roots include the project `stdlib` directory. Example CLI invocation:
+Use the surface form `(~require .pure .option)` when running inside this repository (the CLI already adds `./stdlib` to the search path). End-users can always spell the fully-qualified path `(~require .stdlib .pure .option)` if they want to be explicit. Example CLI invocation:
 
 ```
-cargo run -p lzscr-cli -- -e '( (~require .option) .is_some (.Some 1) )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .option) .is_some (.Some 1) )'
 ```
 
 The CLI search order is:
@@ -57,13 +57,13 @@ Until a dedicated test harness is wired, quick manual checks:
 
 ```
 # Option
-cargo run -p lzscr-cli -- -e '( (~require .option) .map (\~x -> (~x + 1)) (.Some 41) )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .option) .map (\~x -> (~x + 1)) (.Some 41) )'
 
 # Result
-cargo run -p lzscr-cli -- -e '( (~require .result) .map (\~x -> (~x * 2)) (.Ok 5) )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .result) .map (\~x -> (~x * 2)) (.Ok 5) )'
 
 # List zip
-cargo run -p lzscr-cli -- -e '( (~require .list) .zip [1,2,3] [4,5] )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .list) .zip [1,2,3] [4,5] )'
 ```
 
 ## Notes

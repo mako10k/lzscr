@@ -21,9 +21,9 @@
 # dedicated types file once the syntax is stabilized.
 
 # Load modules (records) via ~require expansion
-~Option = (~require .option);
-~Result = (~require .result);
-~ListExtra = (~require .list);
+~Option = (~require .pure .option);
+~Result = (~require .pure .result);
+~ListExtra = (~require .pure .list);
 
 # Back-compat Option helper aliases (deprecated: prefer (~Option .map) etc.)
 ~is_some = (~Option .is_some);          # DEPRECATED (use (~Option .is_some))
