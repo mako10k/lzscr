@@ -171,6 +171,30 @@ fn effect_fs_write_text_allowed_with_flag() {
     cmd.assert().success().stdout(contains("payload\n"));
 }
 
+#[test]
+fn effect_fs_append_text_allowed_with_flag() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    write!(tmp, "seed").unwrap();
+    tmp.flush().unwrap();
+    let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .append_text_or {} \"-tail\" ()) (~Fs .read_text_or {} \"fallback\")))",
+        path_literal, path_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("seed-tail\n"));
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
 }

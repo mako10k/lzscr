@@ -77,6 +77,10 @@ fn fs_effects_record_type() -> Type {
         "write_text".into(),
         (Type::fun(Type::Str, Type::fun(Type::Str, result_unit_str_type())), None),
     );
+    fields.insert(
+        "append_text".into(),
+        (Type::fun(Type::Str, Type::fun(Type::Str, result_unit_str_type())), None),
+    );
     Type::Record(fields)
 }
 

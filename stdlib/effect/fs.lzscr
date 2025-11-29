@@ -27,11 +27,27 @@
   (\(.Ok _) -> () | \(.Err ~msg) -> (~handle ~msg))
 ) (~write_text_result ~path ~contents);
 
+# append_text_result: append to file and return (.Ok () | .Err msg)
+~append_text_result ~path ~contents = (~chain () (!fs.append_text ~path ~contents));
+
+# append_text_or: return () on success or fallback value on error
+~append_text_or ~path ~contents ~fallback = (
+  (\(.Ok _) -> () | \(.Err _) -> ~fallback)
+) (~append_text_result ~path ~contents);
+
+# append_text_or_else: compute fallback when append fails
+~append_text_or_else ~path ~contents ~handle = (
+  (\(.Ok _) -> () | \(.Err ~msg) -> (~handle ~msg))
+) (~append_text_result ~path ~contents);
+
 {
   read_text_result: ~read_text_result,
   read_text_or: ~read_text_or,
   read_text_or_else: ~read_text_or_else,
   write_text_result: ~write_text_result,
   write_text_or: ~write_text_or,
-  write_text_or_else: ~write_text_or_else
+  write_text_or_else: ~write_text_or_else,
+  append_text_result: ~append_text_result,
+  append_text_or: ~append_text_or,
+  append_text_or_else: ~append_text_or_else
 }
