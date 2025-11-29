@@ -1,0 +1,164 @@
+# stdlib effect: structured logging helpers
+# Builds on `stdlib/effect/io.lzscr` to provide level-tagged logging utilities.
+
+~Str = ~Builtins .string;
+~IO = (~require .effect .io);
+
+~level_tag ~level = (~Str .concat "[" (~Str .concat ~level "] "));
+~decorate_label ~level ~label = (
+  ~prefixed = (~Str .concat (~level_tag ~level) ~label);
+  (~Str .concat ~prefixed ": ")
+);
+
+# emit: write a plain string message with a level prefix
+~emit ~level ~message = (
+  ~line = (~Str .concat (~level_tag ~level) ~message);
+  (~chain ((~IO .println) ~line) ())
+);
+
+# log_with_level: render the value using IO.log with a prefixed label
+~log_with_level ~level ~label ~value = ((~IO .log) (~decorate_label ~level ~label) ~value);
+
+~make_logger ~level = (\~label ~value -> (~log_with_level ~level ~label ~value));
+
+# tap_with_level: log the value then yield it unchanged, keeping sequencing explicit
+~tap_with_level ~level ~label ~value = (~chain (~log_with_level ~level ~label ~value) ~value);
+
+~tap_via_logger ~logger = (\~label ~value -> (~chain (~logger ~label ~value) ~value));
+
+~trace = (~make_logger "TRACE");
+~debug = (~make_logger "DEBUG");
+~info = (~make_logger "INFO");
+~warn = (~make_logger "WARN");
+~error = (~make_logger "ERROR");
+~fatal = (~make_logger "FATAL");
+
+~tap_trace = (~tap_via_logger ~trace);
+~tap_debug = (~tap_via_logger ~debug);
+~tap_info = (~tap_via_logger ~info);
+~tap_warn = (~tap_via_logger ~warn);
+~tap_error = (~tap_via_logger ~error);
+~tap_fatal = (~tap_via_logger ~fatal);
+
+# Structured field logging -------------------------------------------------
+
+~field ~key ~value = { key: ~key, value: ~value };
+
+~fields_from_pairs ~pairs = (
+  ~go = (\[] -> [] | \( ~head : ~tail ) -> (
+    ~key = (~head .key);
+    ~value = (~head .value);
+    (~cons (~field ~key ~value) (~go ~tail))
+  ));
+  (~go ~pairs)
+);
+
+~append_fields ~xs ~ys = (
+  (\[] -> ~ys | \( ~head : ~tail ) -> (~cons ~head (~append_fields ~tail ~ys))) ~xs
+);
+
+~render_field ~field = (
+  ~key = (~field .key);
+  ~value = (~field .value);
+  (~Str .concat ~key (~Str .concat "=" (~to_str ~value)))
+);
+
+~render_fields ~fields = (
+  ~go = (\[] -> "" | \( ~head : ~tail ) -> (
+    ~current = (~render_field ~head);
+    ~rest = (~go ~tail);
+    (~if (~rest == "") ~current (~Str .concat ~current (~Str .concat " " ~rest)))
+  ));
+  (~go ~fields)
+);
+
+~log_fields ~level ~label ~fields = (
+  ~suffix = (~render_fields ~fields);
+  ~line = (~Str .concat (~decorate_label ~level ~label) ~suffix);
+  (~chain ((~IO .println) ~line) ())
+);
+
+~make_fields_logger ~level = (\~label ~fields -> (~log_fields ~level ~label ~fields));
+
+~with_fields_logger ~logger ~base_fields = (
+  \~label ~fields -> (~logger ~label (~append_fields ~base_fields ~fields))
+);
+
+~info_fields = (~make_fields_logger "INFO");
+~debug_fields = (~make_fields_logger "DEBUG");
+~warn_fields = (~make_fields_logger "WARN");
+~error_fields = (~make_fields_logger "ERROR");
+~trace_fields = (~make_fields_logger "TRACE");
+~fatal_fields = (~make_fields_logger "FATAL");
+
+~render_field_json ~field = (
+  ~key = (~field .key);
+  ~value = (~to_str (~field .value));
+  ~quoted_key = (~Str .concat "\"" (~Str .concat ~key "\""));
+  (~Str .concat ~quoted_key (~Str .concat ": " ~value))
+);
+
+~render_fields_json ~fields = (
+  ~go = (\[] -> "" | \( ~head : ~tail ) -> (
+    ~current = (~render_field_json ~head);
+    ~rest = (~go ~tail);
+    (~if (~rest == "") ~current (~Str .concat ~current (~Str .concat ", " ~rest)))
+  ));
+  ~body = (~go ~fields);
+  (~Str .concat "{" (~Str .concat ~body "}"))
+);
+
+~log_fields_json ~level ~label ~fields = (
+  ~json = (~render_fields_json ~fields);
+  ~line = (~Str .concat (~decorate_label ~level ~label) ~json);
+  (~chain ((~IO .println) ~line) ())
+);
+
+~make_fields_json_logger ~level = (\~label ~fields -> (~log_fields_json ~level ~label ~fields));
+
+~with_fields_json_logger = ~with_fields_logger;
+
+~info_fields_json = (~make_fields_json_logger "INFO");
+~debug_fields_json = (~make_fields_json_logger "DEBUG");
+~warn_fields_json = (~make_fields_json_logger "WARN");
+~error_fields_json = (~make_fields_json_logger "ERROR");
+~trace_fields_json = (~make_fields_json_logger "TRACE");
+~fatal_fields_json = (~make_fields_json_logger "FATAL");
+
+{
+  emit: ~emit,
+  log_with_level: ~log_with_level,
+  log_fields: ~log_fields,
+  log_fields_json: ~log_fields_json,
+  tap_with_level: ~tap_with_level,
+  tap_via_logger: ~tap_via_logger,
+  trace: ~trace,
+  debug: ~debug,
+  info: ~info,
+  warn: ~warn,
+  error: ~error,
+  fatal: ~fatal,
+  tap_trace: ~tap_trace,
+  tap_debug: ~tap_debug,
+  tap_info: ~tap_info,
+  tap_warn: ~tap_warn,
+  tap_error: ~tap_error,
+  tap_fatal: ~tap_fatal,
+  field: ~field,
+  fields_from_pairs: ~fields_from_pairs,
+  append_fields: ~append_fields,
+  trace_fields: ~trace_fields,
+  debug_fields: ~debug_fields,
+  info_fields: ~info_fields,
+  warn_fields: ~warn_fields,
+  error_fields: ~error_fields,
+  fatal_fields: ~fatal_fields,
+  with_fields_logger: ~with_fields_logger,
+  trace_fields_json: ~trace_fields_json,
+  debug_fields_json: ~debug_fields_json,
+  info_fields_json: ~info_fields_json,
+  warn_fields_json: ~warn_fields_json,
+  error_fields_json: ~error_fields_json,
+  fatal_fields_json: ~fatal_fields_json,
+  with_fields_json_logger: ~with_fields_json_logger
+}

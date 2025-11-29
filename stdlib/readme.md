@@ -6,19 +6,41 @@ core namespaces from the runtime `Builtins` plus foundational list/string/option
 
 ## Files
 
-- `prelude.lzscr`: Core base + list/string/scan helpers. Now lazily loads `option.lzscr`, `result.lzscr`, and `list.lzscr` via `~require` and exposes backward-compatible deprecated aliases (e.g. `~is_some`, `~map_option`, `~map_result`).
-- `option.lzscr`: Stand-alone Option helper module (functional ops).
-- `result.lzscr`: Stand-alone Result helper module (map/and_then/or_else, etc.).
-- `list.lzscr`: Expanded list algorithms (any/all/sum/product/zip/etc.).
-- `lex.lzscr`: Lexer-oriented character + scanning helpers (used by tooling examples).
+- `prelude.lzscr`: Core base + list/string/scan helpers. It now focuses on pure helpers and delegates deprecated aliases to the compat shim.
+- `compat/prelude_aliases.lzscr`: Effectful shim that re-exports the legacy prelude helper names (`~is_some`, `~map_option`, etc.) and logs warnings whenever they are used.
+- `pure/option.lzscr`: Stand-alone Option helper module (functional ops).
+- `pure/result.lzscr`: Stand-alone Result helper module (map/and_then/or_else, etc.).
+- `pure/list.lzscr`: Expanded list algorithms (any/all/sum/product/zip/etc.).
+- `pure/lex.lzscr`: Lexer-oriented character + scanning helpers (used by tooling examples).
+- `effect/io.lzscr`: Wrappers over builtin `!print`/`!println` (logging helpers, gated behind `--stdlib-mode=allow-effects`).
+- `effect/log.lzscr`: Structured logging helpers layered on top of `effect/io`, including tap utilities, field builders, and `key=value` / JSON field emitters.
+- `effect/fs.lzscr`: Filesystem helpers that wrap runtime `!fs.*` effects and expose ergonomic `Result`-first APIs (e.g. `read_text_*`, `write_text_*`, `append_text_*`, `list_dir_*`, `remove_file_*`, `create_dir_*`, `metadata_*`).
+
+## Purity Classification (initial pass)
+
+| Module | Status | Notes | Follow-up |
+| --- | --- | --- | --- |
+| `prelude.lzscr` | Mixed / compat | Re-exports helpers and still bundles deprecated aliases; mixes pure namespaces with effectful entry-points. | Split into thin pure prelude + compat shim once purity enforcement lands. |
+| `pure/option.lzscr` | Pure | Functional combinators over `Option`; no IO or mutation. | Monitor for dependency on effect modules as new features land. |
+| `pure/result.lzscr` | Pure | Mirrors `option` style—map/and_then/or_else without side effects. | Same as above. |
+| `pure/list.lzscr` | Pure | Collection helpers over in-memory lists only. | Keep dependency graph flowing into effect tree only (if ever needed). |
+| `pure/lex.lzscr` | Pure (tooling) | Helper predicates for characters; current usage is deterministic and effect-free. | Re-evaluate classification if lexer helpers start performing IO. |
+| `effect/io.lzscr` | Effect | Thin wrappers around builtin `!print`/`!println` plus logging helpers. | Layer additional effect modules on top (fs/net) once IO core is stable. |
+| `effect/log.lzscr` | Effect | Level-tagged logging helpers with tap utilities, field builders, scoped field combinators, and `key=value` / JSON emitters; depends on `effect/io`. | Extend with richer structured emitters (JSON, spans) once runtime protocols exist. |
+| `effect/fs.lzscr` | Effect | Filesystem helpers wrapping `!fs.read_text` / `!fs.write_text` / `!fs.append_text` / `!fs.list_dir` / `!fs.remove_file` / `!fs.create_dir` / `!fs.metadata`, returning `Result` interfaces so callers decide when to surface errors or fallbacks. Metadata now reports `size`, `is_dir`, `is_file`, `readonly`, and `modified_ms` (Option Int). | Future: extend metadata further once platform-specific signals (e.g. perms bits) are consistently exposed. |
+| `compat/prelude_aliases.lzscr` | Effect | Deprecated helper aliases that log warnings and delegate to `pure/option.lzscr` / `pure/result.lzscr`. | Eventually drop entirely once downstream crates migrate. |
+
+Run `python scripts/check_stdlib_classification.py` to ensure every `.lzscr` file listed under `stdlib/` has an up-to-date entry in this table before sending a PR.
 
 ## Loading Additional Modules
 
-Use the surface form `(~require .stdlib .option)` once module resolution roots include the project `stdlib` directory. Example CLI invocation:
+Use the surface form `(~require .pure .option)` when running inside this repository (the CLI already adds `./stdlib` to the search path). End-users can always spell the fully-qualified path `(~require .stdlib .pure .option)` if they want to be explicit. Example CLI invocation:
 
 ```
-cargo run -p lzscr-cli -- -e '( (~require .option) .is_some (.Some 1) )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .option) .is_some (.Some 1) )'
 ```
+
+> Effect namespaces (e.g. `(~require .effect ...)`) are gated. Run tooling with `--stdlib-mode=allow-effects` to opt in; the default `pure` mode rejects those imports to keep builds deterministic by default.
 
 The CLI search order is:
 1. Current directory
@@ -45,13 +67,13 @@ Until a dedicated test harness is wired, quick manual checks:
 
 ```
 # Option
-cargo run -p lzscr-cli -- -e '( (~require .option) .map (\~x -> (~x + 1)) (.Some 41) )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .option) .map (\~x -> (~x + 1)) (.Some 41) )'
 
 # Result
-cargo run -p lzscr-cli -- -e '( (~require .result) .map (\~x -> (~x * 2)) (.Ok 5) )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .result) .map (\~x -> (~x * 2)) (.Ok 5) )'
 
 # List zip
-cargo run -p lzscr-cli -- -e '( (~require .list) .zip [1,2,3] [4,5] )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .list) .zip [1,2,3] [4,5] )'
 ```
 
 ## Notes

@@ -1,6 +1,7 @@
 use assert_cmd::prelude::*;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
+use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
@@ -80,6 +81,252 @@ fn stdlib_list_helpers_via_cli() {
     ]);
 
     cmd.assert().success().stdout(contains("(3, [2, 3, 4], [2, 3], 6)\n"));
+}
+
+#[test]
+fn effect_modules_blocked_in_pure_mode() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~require .effect .log)",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+    ]);
+
+    cmd.assert().failure().stderr(contains("--stdlib-mode=allow-effects"));
+}
+
+#[test]
+fn compat_module_blocked_in_pure_mode() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~require .compat .prelude_aliases)",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+    ]);
+
+    cmd.assert().failure().stderr(contains("--stdlib-mode=allow-effects"));
+}
+
+#[test]
+fn effect_modules_allowed_with_flag() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~Log = (~require .effect .log); (~Scoped = ((~Log .with_fields_json_logger) (~Log .info_fields_json) [((~Log .field) \"session\" 9)]); (~chain ((~Log .tap_info) \"demo\" 42) (~Scoped \"stats\" [((~Log .field) \"count\" 2)]))))",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(
+        contains("[INFO] demo: 42\n")
+            .and(contains("[INFO] stats: {\"session\": 9, \"count\": 2}\n")),
+    );
+}
+
+#[test]
+fn compat_module_warns_with_flag() {
+    let program = "(~Compat = (~require .compat .prelude_aliases); (~Compat .is_some (.Some 1), (~Compat .map_option (\\~x -> (~x + 1)) (.Some 2))))";
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program,
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(
+        contains("[WARN] stdlib.compat")
+            .and(contains("~is_some is deprecated"))
+            .and(contains("~map_option is deprecated"))
+            .and(contains(".True, .Some(3))")),
+    );
+}
+
+#[test]
+fn effect_fs_module_blocked_in_pure_mode() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~require .effect .fs)",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+    ]);
+
+    cmd.assert().failure().stderr(contains("--stdlib-mode=allow-effects"));
+}
+
+#[test]
+fn effect_fs_read_text_allowed_with_flag() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "hello-fs").unwrap();
+    let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~Fs .read_text_or {} \"fallback\"))",
+        path_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("hello-fs\n"));
+}
+
+#[test]
+fn effect_fs_write_text_allowed_with_flag() {
+    let tmp = NamedTempFile::new().unwrap();
+    let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .write_text_or {} \"payload\" ()) (~Fs .read_text_or {} \"fallback\")))",
+        path_literal, path_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("payload\n"));
+}
+
+#[test]
+fn effect_fs_append_text_allowed_with_flag() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    write!(tmp, "seed").unwrap();
+    tmp.flush().unwrap();
+    let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .append_text_or {} \"-tail\" ()) (~Fs .read_text_or {} \"fallback\")))",
+        path_literal, path_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("seed-tail\n"));
+}
+
+#[test]
+fn effect_fs_list_dir_allowed_with_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_a = dir.path().join("a.txt");
+    let file_b = dir.path().join("b.log");
+    fs::write(&file_a, "a").unwrap();
+    fs::write(&file_b, "b").unwrap();
+    let path_literal = format!("{:?}", dir.path().to_str().unwrap());
+    let program = format!("(~Fs = (~require .effect .fs); (~Fs .list_dir_or {} []))", path_literal);
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("a.txt").and(contains("b.log")));
+}
+
+#[test]
+fn effect_fs_remove_file_allowed_with_flag() {
+    let tmp = NamedTempFile::new().unwrap();
+    let path = tmp.path().to_path_buf();
+    let path_literal = format!("{:?}", path.to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .remove_file_or {} ()) (~Fs .read_text_or {} \"fallback\")))",
+        path_literal, path_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("fallback\n"));
+}
+
+#[test]
+fn effect_fs_create_dir_allowed_with_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let new_dir = dir.path().join("nested");
+    let path_literal = format!("{:?}", new_dir.to_str().unwrap());
+    let dir_literal = format!("{:?}", dir.path().to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .create_dir_or {} ()) (~Fs .list_dir_or {} [])))",
+        path_literal, dir_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("nested"));
+}
+
+#[test]
+fn effect_fs_metadata_allowed_with_flag() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    write!(tmp, "metal").unwrap();
+    tmp.flush().unwrap();
+    let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
+    let program =
+        format!("(~Fs = (~require .effect .fs); (~Fs .metadata_result {}))", path_literal);
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(
+        contains(".Ok")
+            .and(contains("size: 5"))
+            .and(contains("is_dir: .False"))
+            .and(contains("is_file: .True"))
+            .and(contains("readonly: .False"))
+            .and(contains("modified_ms: (.Some")),
+    );
 }
 
 fn repo_root() -> PathBuf {

@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use lzscr_analyzer::{
     analyze_ctor_arity, analyze_duplicates, analyze_shadowing, analyze_unbound_refs,
     analyze_unused_params, default_allowlist, AnalyzeOptions,
@@ -13,6 +13,18 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+enum StdlibMode {
+    Pure,
+    AllowEffects,
+}
+
+impl StdlibMode {
+    fn allows_effects(self) -> bool {
+        matches!(self, StdlibMode::AllowEffects)
+    }
+}
 
 // Map span offsets to their originating source (filename and text), supporting modules.
 struct SourceRegistry {
@@ -392,6 +404,10 @@ struct Opt {
     #[arg(short = 's', long = "strict-effects", default_value_t = false)]
     strict_effects: bool,
 
+    /// Control stdlib visibility (pure vs allow-effects)
+    #[arg(long = "stdlib-mode", value_enum, default_value_t = StdlibMode::Pure)]
+    stdlib_mode: StdlibMode,
+
     /// Run static analysis instead of executing
     #[arg(long = "analyze", default_value_t = false)]
     analyze: bool,
@@ -737,6 +753,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &module_search_paths,
             &mut Vec::new(),
             &mut src_reg,
+            opt.stdlib_mode,
         ) {
             Ok(x) => x,
             Err(e) => {
@@ -1418,6 +1435,7 @@ fn expand_requires_in_expr(
     search_paths: &[PathBuf],
     stack: &mut Vec<String>,
     src_reg: &mut SourceRegistry,
+    stdlib_mode: StdlibMode,
 ) -> Result<Expr, String> {
     // First, handle ~builtin path: expand to a Ref of a generated alias name.
     if let Some(alias) = match_builtin_call(e) {
@@ -1426,6 +1444,13 @@ fn expand_requires_in_expr(
     // Next, handle ~require expansion
     match match_require_call(e) {
         Some(Ok(segs)) => {
+            if !stdlib_mode.allows_effects() && is_effect_namespace(&segs) {
+                let dotted = segs.iter().map(|s| format!(".{}", s)).collect::<Vec<_>>().join(" ");
+                return Err(format!(
+                    "importing stdlib effect modules via `(~require {})` requires --stdlib-mode=allow-effects",
+                    dotted
+                ));
+            }
             let rel = segs.join("/") + ".lzscr";
             let (path, content) = resolve_module_content(&rel, search_paths)?;
             let canon = match std::fs::canonicalize(&path) {
@@ -1460,7 +1485,13 @@ fn expand_requires_in_expr(
             // Register module source and rebase spans so they map to this module's filename
             let base = src_reg.register_module(rel.clone(), content);
             let parsed_rebased = rebase_expr_spans_with_minus(&parsed, base, 1);
-            let expanded = expand_requires_in_expr(&parsed_rebased, search_paths, stack, src_reg)?;
+            let expanded = expand_requires_in_expr(
+                &parsed_rebased,
+                search_paths,
+                stack,
+                src_reg,
+                stdlib_mode,
+            )?;
             stack.pop();
             return Ok(expanded);
         }
@@ -1477,62 +1508,135 @@ fn expand_requires_in_expr(
         }
         Annot { ty, expr } => Annot {
             ty: ty.clone(),
-            expr: Box::new(expand_requires_in_expr(expr, search_paths, stack, src_reg)?),
+            expr: Box::new(expand_requires_in_expr(
+                expr,
+                search_paths,
+                stack,
+                src_reg,
+                stdlib_mode,
+            )?),
         },
         Lambda { param, body } => Lambda {
             param: param.clone(),
-            body: Box::new(expand_requires_in_expr(body, search_paths, stack, src_reg)?),
+            body: Box::new(expand_requires_in_expr(
+                body,
+                search_paths,
+                stack,
+                src_reg,
+                stdlib_mode,
+            )?),
         },
         Apply { func, arg } => Apply {
-            func: Box::new(expand_requires_in_expr(func, search_paths, stack, src_reg)?),
-            arg: Box::new(expand_requires_in_expr(arg, search_paths, stack, src_reg)?),
+            func: Box::new(expand_requires_in_expr(
+                func,
+                search_paths,
+                stack,
+                src_reg,
+                stdlib_mode,
+            )?),
+            arg: Box::new(expand_requires_in_expr(arg, search_paths, stack, src_reg, stdlib_mode)?),
         },
-        Block(inner) => {
-            Block(Box::new(expand_requires_in_expr(inner, search_paths, stack, src_reg)?))
-        }
+        Block(inner) => Block(Box::new(expand_requires_in_expr(
+            inner,
+            search_paths,
+            stack,
+            src_reg,
+            stdlib_mode,
+        )?)),
         List(xs) => List(
             xs.iter()
-                .map(|x| expand_requires_in_expr(x, search_paths, stack, src_reg))
+                .map(|x| expand_requires_in_expr(x, search_paths, stack, src_reg, stdlib_mode))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
         Record(fs) => Record(
             fs.iter()
                 .map(|(k, v)| {
-                    Ok((k.clone(), expand_requires_in_expr(v, search_paths, stack, src_reg)?))
+                    Ok((
+                        k.clone(),
+                        expand_requires_in_expr(v, search_paths, stack, src_reg, stdlib_mode)?,
+                    ))
                 })
                 .collect::<Result<Vec<_>, String>>()?,
         ),
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
-                new_bs
-                    .push((p.clone(), expand_requires_in_expr(ex, search_paths, stack, src_reg)?));
+                new_bs.push((
+                    p.clone(),
+                    expand_requires_in_expr(ex, search_paths, stack, src_reg, stdlib_mode)?,
+                ));
             }
             // type_decls are excluded from require-expansion; keep them as-is
             if let LetGroup { type_decls, .. } = &e.kind {
                 LetGroup {
                     type_decls: type_decls.clone(),
                     bindings: new_bs,
-                    body: Box::new(expand_requires_in_expr(body, search_paths, stack, src_reg)?),
+                    body: Box::new(expand_requires_in_expr(
+                        body,
+                        search_paths,
+                        stack,
+                        src_reg,
+                        stdlib_mode,
+                    )?),
                 }
             } else {
                 unreachable!()
             }
         }
-        Raise(inner) => {
-            Raise(Box::new(expand_requires_in_expr(inner, search_paths, stack, src_reg)?))
-        }
+        Raise(inner) => Raise(Box::new(expand_requires_in_expr(
+            inner,
+            search_paths,
+            stack,
+            src_reg,
+            stdlib_mode,
+        )?)),
         AltLambda { left, right } => AltLambda {
-            left: Box::new(expand_requires_in_expr(left, search_paths, stack, src_reg)?),
-            right: Box::new(expand_requires_in_expr(right, search_paths, stack, src_reg)?),
+            left: Box::new(expand_requires_in_expr(
+                left,
+                search_paths,
+                stack,
+                src_reg,
+                stdlib_mode,
+            )?),
+            right: Box::new(expand_requires_in_expr(
+                right,
+                search_paths,
+                stack,
+                src_reg,
+                stdlib_mode,
+            )?),
         },
         OrElse { left, right } => OrElse {
-            left: Box::new(expand_requires_in_expr(left, search_paths, stack, src_reg)?),
-            right: Box::new(expand_requires_in_expr(right, search_paths, stack, src_reg)?),
+            left: Box::new(expand_requires_in_expr(
+                left,
+                search_paths,
+                stack,
+                src_reg,
+                stdlib_mode,
+            )?),
+            right: Box::new(expand_requires_in_expr(
+                right,
+                search_paths,
+                stack,
+                src_reg,
+                stdlib_mode,
+            )?),
         },
         Catch { left, right } => Catch {
-            left: Box::new(expand_requires_in_expr(left, search_paths, stack, src_reg)?),
-            right: Box::new(expand_requires_in_expr(right, search_paths, stack, src_reg)?),
+            left: Box::new(expand_requires_in_expr(
+                left,
+                search_paths,
+                stack,
+                src_reg,
+                stdlib_mode,
+            )?),
+            right: Box::new(expand_requires_in_expr(
+                right,
+                search_paths,
+                stack,
+                src_reg,
+                stdlib_mode,
+            )?),
         },
     };
     Ok(Expr { kind: k, span: e.span })
@@ -1674,6 +1778,16 @@ fn match_require_call(e: &Expr) -> Option<Result<Vec<String>, String>> {
         }
         _ => None,
     }
+}
+
+fn is_effect_namespace(segs: &[String]) -> bool {
+    if segs.is_empty() {
+        return false;
+    }
+    if segs[0] == "effect" || segs[0] == "compat" {
+        return true;
+    }
+    segs.len() >= 2 && segs[0] == "stdlib" && (segs[1] == "effect" || segs[1] == "compat")
 }
 
 fn match_builtin_call(e: &Expr) -> Option<String> {

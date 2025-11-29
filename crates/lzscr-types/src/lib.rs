@@ -62,6 +62,67 @@ fn bool_sum_type() -> Type {
     Type::SumCtor(vec![(".False".into(), vec![]), (".True".into(), vec![])])
 }
 
+fn option_type(inner: Type) -> Type {
+    Type::SumCtor(vec![(".Some".into(), vec![inner]), (".None".into(), vec![])])
+}
+
+fn result_str_str_type() -> Type {
+    Type::SumCtor(vec![(".Ok".into(), vec![Type::Str]), (".Err".into(), vec![Type::Str])])
+}
+
+fn result_unit_str_type() -> Type {
+    Type::SumCtor(vec![(".Ok".into(), vec![Type::Unit]), (".Err".into(), vec![Type::Str])])
+}
+
+fn result_list_str_type() -> Type {
+    Type::SumCtor(vec![
+        (".Ok".into(), vec![Type::List(Box::new(Type::Str))]),
+        (".Err".into(), vec![Type::Str]),
+    ])
+}
+
+fn fs_metadata_record_type() -> Type {
+    let mut fields = BTreeMap::new();
+    fields.insert("is_dir".into(), (bool_sum_type(), None));
+    fields.insert("is_file".into(), (bool_sum_type(), None));
+    fields.insert("modified_ms".into(), (option_type(Type::Int), None));
+    fields.insert("readonly".into(), (bool_sum_type(), None));
+    fields.insert("size".into(), (Type::Int, None));
+    Type::Record(fields)
+}
+
+fn result_metadata_type() -> Type {
+    Type::SumCtor(vec![
+        (".Ok".into(), vec![fs_metadata_record_type()]),
+        (".Err".into(), vec![Type::Str]),
+    ])
+}
+
+fn fs_effects_record_type() -> Type {
+    let mut fields = BTreeMap::new();
+    fields.insert("read_text".into(), (Type::fun(Type::Str, result_str_str_type()), None));
+    fields.insert(
+        "write_text".into(),
+        (Type::fun(Type::Str, Type::fun(Type::Str, result_unit_str_type())), None),
+    );
+    fields.insert(
+        "append_text".into(),
+        (Type::fun(Type::Str, Type::fun(Type::Str, result_unit_str_type())), None),
+    );
+    fields.insert("list_dir".into(), (Type::fun(Type::Str, result_list_str_type()), None));
+    fields.insert("remove_file".into(), (Type::fun(Type::Str, result_unit_str_type()), None));
+    fields.insert("create_dir".into(), (Type::fun(Type::Str, result_unit_str_type()), None));
+    fields.insert("metadata".into(), (Type::fun(Type::Str, result_metadata_type()), None));
+    Type::Record(fields)
+}
+
+fn effect_signature(sym: &str) -> Option<Type> {
+    match sym {
+        ".fs" => Some(fs_effects_record_type()),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Scheme {
     pub vars: Vec<TvId>,
@@ -1454,6 +1515,15 @@ fn infer_expr(
             Ok((ty, s_body.compose(pi.subst)))
         }
         ExprKind::Apply { func, arg } => {
+            if let ExprKind::Ref(eff_ref) = &func.kind {
+                if eff_ref == "effects" {
+                    if let ExprKind::Symbol(sym) = &arg.kind {
+                        if let Some(sig) = effect_signature(sym) {
+                            return Ok((sig, Subst::new()));
+                        }
+                    }
+                }
+            }
             // Special-case: (~if cond then else)
             // Recognize nested application: (((if cond) then) else)
             if let ExprKind::Apply { func: f_then, arg: then_branch } = &func.kind {
