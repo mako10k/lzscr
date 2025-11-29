@@ -62,6 +62,10 @@ fn bool_sum_type() -> Type {
     Type::SumCtor(vec![(".False".into(), vec![]), (".True".into(), vec![])])
 }
 
+fn option_type(inner: Type) -> Type {
+    Type::SumCtor(vec![(".Some".into(), vec![inner]), (".None".into(), vec![])])
+}
+
 fn result_str_str_type() -> Type {
     Type::SumCtor(vec![(".Ok".into(), vec![Type::Str]), (".Err".into(), vec![Type::Str])])
 }
@@ -79,8 +83,11 @@ fn result_list_str_type() -> Type {
 
 fn fs_metadata_record_type() -> Type {
     let mut fields = BTreeMap::new();
-    fields.insert("size".into(), (Type::Int, None));
     fields.insert("is_dir".into(), (bool_sum_type(), None));
+    fields.insert("is_file".into(), (bool_sum_type(), None));
+    fields.insert("modified_ms".into(), (option_type(Type::Int), None));
+    fields.insert("readonly".into(), (bool_sum_type(), None));
+    fields.insert("size".into(), (Type::Int, None));
     Type::Record(fields)
 }
 

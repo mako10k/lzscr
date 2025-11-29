@@ -79,7 +79,8 @@
   (\(.Ok _) -> () | \(.Err ~msg) -> (~handle ~msg))
 ) (~create_dir_result ~path);
 
-# metadata_result: fetch file metadata and return (.Ok info | .Err msg)
+# metadata_result: fetch file metadata as { size, is_dir, is_file, readonly, modified_ms }
+# where modified_ms is (.Some Int | .None) epoch millis
 ~metadata_result ~path = (~chain () (!fs.metadata ~path));
 
 # metadata_or: return metadata record or fallback

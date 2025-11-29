@@ -273,7 +273,7 @@ fn effect_fs_metadata_allowed_with_flag() {
     tmp.flush().unwrap();
     let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
     let program = format!(
-        "(~Fs = (~require .effect .fs); ((\\(.Ok {{ size: ~size, is_dir: ~is_dir }}) -> (~size, ~is_dir) | \\(.Err _) -> (0, .True)) (~Fs .metadata_result {})))",
+        "(~Fs = (~require .effect .fs); (~Fs .metadata_result {}))",
         path_literal
     );
 
@@ -287,7 +287,14 @@ fn effect_fs_metadata_allowed_with_flag() {
         "allow-effects",
     ]);
 
-    cmd.assert().success().stdout(contains("(5, .False)\n"));
+    cmd.assert().success().stdout(
+        contains(".Ok")
+            .and(contains("size: 5"))
+            .and(contains("is_dir: .False"))
+            .and(contains("is_file: .True"))
+            .and(contains("readonly: .False"))
+            .and(contains("modified_ms: (.Some")),
+    );
 }
 
 fn repo_root() -> PathBuf {

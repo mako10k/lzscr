@@ -1164,6 +1164,13 @@ fn bool_ctor(b: bool) -> Value {
     }
 }
 
+fn option_value(value: Option<Value>) -> Value {
+    match value {
+        Some(v) => Value::Ctor { name: ".Some".into(), args: vec![v] },
+        None => Value::Ctor { name: ".None".into(), args: vec![] },
+    }
+}
+
 fn result_ok(value: Value) -> Value {
     Value::Ctor { name: ".Ok".into(), args: vec![value] }
 }
@@ -1504,8 +1511,24 @@ fn eff_fs_metadata(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
     match std::fs::metadata(&path) {
         Ok(meta) => {
             let mut fields = std::collections::BTreeMap::new();
-            fields.insert("size".into(), Value::Int(meta.len() as i64));
             fields.insert("is_dir".into(), bool_ctor(meta.is_dir()));
+            fields.insert("is_file".into(), bool_ctor(meta.is_file()));
+            fields.insert("readonly".into(), bool_ctor(meta.permissions().readonly()));
+            let modified_ms = meta
+                .modified()
+                .ok()
+                .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|dur| {
+                    let millis = dur.as_millis();
+                    let clamped = if millis > i64::MAX as u128 {
+                        i64::MAX
+                    } else {
+                        millis as i64
+                    };
+                    Value::Int(clamped)
+                });
+            fields.insert("modified_ms".into(), option_value(modified_ms));
+            fields.insert("size".into(), Value::Int(meta.len() as i64));
             Ok(result_ok(Value::Record(fields)))
         }
         Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),

@@ -97,8 +97,15 @@ fn fs_metadata_types_as_result() {
     let got = infer_program(src);
     assert!(got.is_ok(), "unexpected error: {}", pretty(got));
     let ty = got.unwrap();
-    let has_size_first = ty.contains("{size: Int, is_dir: (.False | .True)}");
-    let has_dir_first = ty.contains("{is_dir: (.False | .True), size: Int}");
-    assert!(has_size_first || has_dir_first, "unexpected record layout: {ty}");
+    assert!(ty.contains("is_dir: (.False | .True)"), "missing is_dir field: {ty}");
+    assert!(ty.contains("is_file: (.False | .True)"), "missing is_file field: {ty}");
+    let has_mod_some_first = ty.contains("modified_ms: (.Some Int | .None)");
+    let has_mod_none_first = ty.contains("modified_ms: (.None | .Some Int)");
+    assert!(
+        has_mod_some_first || has_mod_none_first,
+        "missing modified_ms option field: {ty}"
+    );
+    assert!(ty.contains("readonly: (.False | .True)"), "missing readonly field: {ty}");
+    assert!(ty.contains("size: Int"), "missing size field: {ty}");
     assert!(ty.contains(".Ok") && ty.contains(".Err"), "expected Result in type: {ty}");
 }
