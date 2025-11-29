@@ -32,5 +32,6 @@ optimizations.
 ## Next Steps
 - After reviewing these goals, draft the migration plan (work breakdown, tooling, CI enforcement).
 - Keep the `stdlib/readme.md` classification table current and fail CI when a stdlib module lacks a declared purity level. The helper script `scripts/check_stdlib_classification.py` enforces the coverage locally—add it to CI once the split begins.
+- Keep the `stdlib/readme.md` classification table current and fail CI when a stdlib module lacks a declared purity level. The helper script `scripts/check_stdlib_classification.py` enforces the coverage locally (run via `python scripts/check_stdlib_classification.py` or `cargo test -p lzscr-cli --test stdlib_classification`).
 - Stand up the `stdlib/effect/` tree (starting with IO wrappers) and migrate remaining effect helpers there (e.g. the new `effect/log` module built atop IO, now with tap, field/JSON logging, and scoped-field combinators so pure call sites can observe values without re-threading logging code).
 - Keep extending the `effect/fs` namespace that wraps the runtime filesystem effects (`!fs.read_text`, `!fs.write_text`, `!fs.append_text`, `!fs.list_dir`, `!fs.remove_file`, etc.) so every helper funnels results through `Result`; next focus areas are directory metadata/create/remove-dir helpers once runtime hooks land.
