@@ -1784,10 +1784,10 @@ fn is_effect_namespace(segs: &[String]) -> bool {
     if segs.is_empty() {
         return false;
     }
-    if segs[0] == "effect" {
+    if segs[0] == "effect" || segs[0] == "compat" {
         return true;
     }
-    segs.len() >= 2 && segs[0] == "stdlib" && segs[1] == "effect"
+    segs.len() >= 2 && segs[0] == "stdlib" && (segs[1] == "effect" || segs[1] == "compat")
 }
 
 fn match_builtin_call(e: &Expr) -> Option<String> {

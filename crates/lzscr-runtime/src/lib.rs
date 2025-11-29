@@ -1524,7 +1524,9 @@ fn eff_fs_metadata(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                     Value::Int(clamped)
                 });
             fields.insert("modified_ms".into(), option_value(modified_ms));
-            fields.insert("size".into(), Value::Int(meta.len() as i64));
+            let len_u64 = meta.len();
+            let size_clamped = if len_u64 > i64::MAX as u64 { i64::MAX } else { len_u64 as i64 };
+            fields.insert("size".into(), Value::Int(size_clamped));
             Ok(result_ok(Value::Record(fields)))
         }
         Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
