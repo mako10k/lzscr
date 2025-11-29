@@ -30,3 +30,15 @@ fn fs_read_text_types_as_result() {
     let ty = got.unwrap();
     assert!(ty == "(.Ok Str | .Err Str)" || ty == "(.Err Str | .Ok Str)", "unexpected type: {ty}");
 }
+
+#[test]
+fn fs_write_text_types_as_result() {
+    let src = "(~seq () (!fs.write_text \"foo.txt\" \"payload\"))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(
+        ty == "(.Ok Unit | .Err Str)" || ty == "(.Err Str | .Ok Unit)",
+        "unexpected type: {ty}"
+    );
+}

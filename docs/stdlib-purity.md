@@ -33,4 +33,4 @@ optimizations.
 - After reviewing these goals, draft the migration plan (work breakdown, tooling, CI enforcement).
 - Keep the `stdlib/readme.md` classification table current and fail CI when a stdlib module lacks a declared purity level. The helper script `scripts/check_stdlib_classification.py` enforces the coverage locally—add it to CI once the split begins.
 - Stand up the `stdlib/effect/` tree (starting with IO wrappers) and migrate remaining effect helpers there (e.g. the new `effect/log` module built atop IO, now with tap, field/JSON logging, and scoped-field combinators so pure call sites can observe values without re-threading logging code).
-- Introduce an `effect/fs` namespace that wraps the runtime filesystem effects (`!fs.read_text`, `!fs.write_text`, etc.) and always funnels results through `Result` so callers can choose between explicit error handling and fallbacks.
+- Extend the `effect/fs` namespace that wraps the runtime filesystem effects (`!fs.read_text`, `!fs.write_text`, etc.) so every helper (`read_text_*`, `write_text_*`) funnels results through `Result`, letting callers choose between explicit error handling and fallbacks.

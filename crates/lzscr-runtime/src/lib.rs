@@ -432,6 +432,10 @@ impl Env {
                                 "read_text".into(),
                                 Value::Native { arity: 1, args: vec![], f: eff_fs_read_text },
                             );
+                            fs_fields.insert(
+                                "write_text".into(),
+                                Value::Native { arity: 2, args: vec![], f: eff_fs_write_text },
+                            );
                             Value::Record(fs_fields)
                         }
                         _ => return Err(EvalError::UnknownEffect(sym)),
@@ -1353,6 +1357,27 @@ fn eff_fs_read_text(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
     };
     match std::fs::read_to_string(&path) {
         Ok(contents) => Ok(result_ok(Value::Str(env.intern_string(contents)))),
+        Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+    }
+}
+
+fn eff_fs_write_text(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 2 {
+        return Err(EvalError::TypeError);
+    }
+    let path_val = force_value(env, &args[0])?;
+    let contents_val = force_value(env, &args[1])?;
+    let path = match path_val {
+        Value::Str(s) => s.to_string(),
+        _ => return Err(EvalError::TypeError),
+    };
+    let contents = match contents_val {
+        Value::Str(s) => s,
+        _ => return Err(EvalError::TypeError),
+    };
+    match std::fs::write(&path, contents.as_bytes()) {
+        Ok(()) => Ok(result_ok(Value::Unit)),
         Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
     }
 }

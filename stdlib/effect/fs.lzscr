@@ -14,8 +14,24 @@
   (\(.Ok ~contents) -> ~contents | \(.Err ~msg) -> (~handle ~msg))
 ) (~read_text_result ~path);
 
+# write_text_result: run the filesystem write effect and return (.Ok () | .Err msg)
+~write_text_result ~path ~contents = (~chain () (!fs.write_text ~path ~contents));
+
+# write_text_or: return () on success or fall back to provided value on error
+~write_text_or ~path ~contents ~fallback = (
+  (\(.Ok _) -> () | \(.Err _) -> ~fallback)
+) (~write_text_result ~path ~contents);
+
+# write_text_or_else: compute a fallback when writing fails
+~write_text_or_else ~path ~contents ~handle = (
+  (\(.Ok _) -> () | \(.Err ~msg) -> (~handle ~msg))
+) (~write_text_result ~path ~contents);
+
 {
   read_text_result: ~read_text_result,
   read_text_or: ~read_text_or,
-  read_text_or_else: ~read_text_or_else
+  read_text_or_else: ~read_text_or_else,
+  write_text_result: ~write_text_result,
+  write_text_or: ~write_text_or,
+  write_text_or_else: ~write_text_or_else
 }

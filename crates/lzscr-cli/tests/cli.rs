@@ -149,6 +149,28 @@ fn effect_fs_read_text_allowed_with_flag() {
     cmd.assert().success().stdout(contains("hello-fs\n"));
 }
 
+#[test]
+fn effect_fs_write_text_allowed_with_flag() {
+    let tmp = NamedTempFile::new().unwrap();
+    let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .write_text_or {} \"payload\" ()) (~Fs .read_text_or {} \"fallback\")))",
+        path_literal, path_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("payload\n"));
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
 }
