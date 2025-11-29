@@ -1,10 +1,11 @@
 use assert_cmd::prelude::*;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
+use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
-use tempfile::NamedTempFile;
+use tempfile::{tempdir, NamedTempFile};
 
 fn cli_cmd() -> Command {
     Command::new(assert_cmd::cargo::cargo_bin!("lzscr-cli"))
@@ -80,6 +81,46 @@ fn stdlib_list_helpers_via_cli() {
     ]);
 
     cmd.assert().success().stdout(contains("(3, [2, 3, 4], [2, 3], 6)\n"));
+}
+
+#[test]
+fn effect_modules_blocked_in_pure_mode() {
+    let tmp = tempdir().unwrap();
+    let effect_dir = tmp.path().join("effect");
+    fs::create_dir_all(&effect_dir).unwrap();
+    fs::write(effect_dir.join("demo.lzscr"), "{ ping: \\~x -> ~x }\n").unwrap();
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~require .effect .demo)",
+        "--no-stdlib",
+        "--stdlib-dir",
+        tmp.path().to_str().unwrap(),
+    ]);
+
+    cmd.assert().failure().stderr(contains("--stdlib-mode=allow-effects"));
+}
+
+#[test]
+fn effect_modules_allowed_with_flag() {
+    let tmp = tempdir().unwrap();
+    let effect_dir = tmp.path().join("effect");
+    fs::create_dir_all(&effect_dir).unwrap();
+    fs::write(effect_dir.join("demo.lzscr"), "{ ping: \\~x -> ~x }\n").unwrap();
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~require .effect .demo)",
+        "--no-stdlib",
+        "--stdlib-dir",
+        tmp.path().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success();
 }
 
 fn repo_root() -> PathBuf {

@@ -32,6 +32,8 @@ Use the surface form `(~require .pure .option)` when running inside this reposit
 cargo run -p lzscr-cli -- -e '( (~require .pure .option) .is_some (.Some 1) )'
 ```
 
+> Effect namespaces (e.g. `(~require .effect ...)`) are gated. Run tooling with `--stdlib-mode=allow-effects` to opt in; the default `pure` mode rejects those imports to keep builds deterministic by default.
+
 The CLI search order is:
 1. Current directory
 2. `--stdlib-dir` (default `./stdlib`)

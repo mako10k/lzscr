@@ -19,8 +19,8 @@ optimizations.
    - Effectful APIs return `Effect r a` (working name) so pure code cannot run them directly.  
    - The CLI / REPL interprets `Effect` values to actually interact with the outside world.
 4. **Enforce via load paths and flags**  
-   - Runtime options such as `--stdlib-mode=pure` / `--allow-effects` gate access to effect namespaces.  
-   - In `pure` mode, importing from `.effect` fails immediately.
+   - The CLI exposes `--stdlib-mode={pure,allow-effects}` (default `pure`) to gate access to effect namespaces.  
+   - In `pure` mode, importing from `.effect` fails immediately with a hint to rerun using `--stdlib-mode=allow-effects`.
 5. **Guard the rules with CI / lint**  
    - Fail the build if `pure` modules export `!` names or return `Effect`.  
    - Fail if `effect` modules export public symbols without the `!` prefix.  
