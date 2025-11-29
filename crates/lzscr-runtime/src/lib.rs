@@ -425,6 +425,7 @@ impl Env {
                     let f: fn(&Env, &[Value]) -> Result<Value, EvalError> = match sym.as_str() {
                         ".print" => eff_print,
                         ".println" => eff_println,
+                        ".fs.read_text" => eff_fs_read_text,
                         _ => return Err(EvalError::UnknownEffect(sym)),
                     };
                     Ok(Value::Native { arity: 1, args: vec![], f })
@@ -1131,6 +1132,14 @@ fn bool_ctor(b: bool) -> Value {
     }
 }
 
+fn result_ok(value: Value) -> Value {
+    Value::Ctor { name: ".Ok".into(), args: vec![value] }
+}
+
+fn result_err(value: Value) -> Value {
+    Value::Ctor { name: ".Err".into(), args: vec![value] }
+}
+
 fn as_bool(env: &Env, v: &Value) -> Result<bool, EvalError> {
     let v = force_value(env, v)?;
     match &v {
@@ -1321,6 +1330,22 @@ fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
             Value::Thunk { .. } => unreachable!(),
             Value::Str(_) => unreachable!(),
         },
+    }
+}
+
+fn eff_fs_read_text(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 1 {
+        return Err(EvalError::TypeError);
+    }
+    let path_val = force_value(env, &args[0])?;
+    let path = match path_val {
+        Value::Str(s) => s.to_string(),
+        _ => return Err(EvalError::TypeError),
+    };
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => Ok(result_ok(Value::Str(env.intern_string(contents)))),
+        Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
     }
 }
 
