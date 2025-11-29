@@ -90,3 +90,15 @@ fn fs_create_dir_types_as_result() {
         "unexpected type: {ty}"
     );
 }
+
+#[test]
+fn fs_metadata_types_as_result() {
+    let src = "(~seq () (!fs.metadata \"foo.txt\"))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    let has_size_first = ty.contains("{size: Int, is_dir: (.False | .True)}");
+    let has_dir_first = ty.contains("{is_dir: (.False | .True), size: Int}");
+    assert!(has_size_first || has_dir_first, "unexpected record layout: {ty}");
+    assert!(ty.contains(".Ok") && ty.contains(".Err"), "expected Result in type: {ty}");
+}

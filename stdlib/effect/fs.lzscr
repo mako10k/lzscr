@@ -79,6 +79,19 @@
   (\(.Ok _) -> () | \(.Err ~msg) -> (~handle ~msg))
 ) (~create_dir_result ~path);
 
+# metadata_result: fetch file metadata and return (.Ok info | .Err msg)
+~metadata_result ~path = (~chain () (!fs.metadata ~path));
+
+# metadata_or: return metadata record or fallback
+~metadata_or ~path ~fallback = (
+  (\(.Ok ~info) -> ~info | \(.Err _) -> ~fallback)
+) (~metadata_result ~path);
+
+# metadata_or_else: compute fallback from error
+~metadata_or_else ~path ~handle = (
+  (\(.Ok ~info) -> ~info | \(.Err ~msg) -> (~handle ~msg))
+) (~metadata_result ~path);
+
 {
   read_text_result: ~read_text_result,
   read_text_or: ~read_text_or,
@@ -97,5 +110,8 @@
   remove_file_or_else: ~remove_file_or_else,
   create_dir_result: ~create_dir_result,
   create_dir_or: ~create_dir_or,
-  create_dir_or_else: ~create_dir_or_else
+  create_dir_or_else: ~create_dir_or_else,
+  metadata_result: ~metadata_result,
+  metadata_or: ~metadata_or,
+  metadata_or_else: ~metadata_or_else
 }

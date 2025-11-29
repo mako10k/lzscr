@@ -452,6 +452,10 @@ impl Env {
                                 "create_dir".into(),
                                 Value::Native { arity: 1, args: vec![], f: eff_fs_create_dir },
                             );
+                            fs_fields.insert(
+                                "metadata".into(),
+                                Value::Native { arity: 1, args: vec![], f: eff_fs_metadata },
+                            );
                             Value::Record(fs_fields)
                         }
                         _ => return Err(EvalError::UnknownEffect(sym)),
@@ -1413,10 +1417,11 @@ fn eff_fs_append_text(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
         Value::Str(s) => s,
         _ => return Err(EvalError::TypeError),
     };
-    let res = std::fs::OpenOptions::new().create(true).append(true).open(&path).and_then(|mut file| {
-        use std::io::Write as _;
-        file.write_all(contents.as_bytes())
-    });
+    let res =
+        std::fs::OpenOptions::new().create(true).append(true).open(&path).and_then(|mut file| {
+            use std::io::Write as _;
+            file.write_all(contents.as_bytes())
+        });
     match res {
         Ok(()) => Ok(result_ok(Value::Unit)),
         Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
@@ -1482,6 +1487,27 @@ fn eff_fs_create_dir(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
     };
     match std::fs::create_dir_all(&path) {
         Ok(()) => Ok(result_ok(Value::Unit)),
+        Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+    }
+}
+
+fn eff_fs_metadata(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 1 {
+        return Err(EvalError::TypeError);
+    }
+    let path_val = force_value(env, &args[0])?;
+    let path = match path_val {
+        Value::Str(s) => s.to_string(),
+        _ => return Err(EvalError::TypeError),
+    };
+    match std::fs::metadata(&path) {
+        Ok(meta) => {
+            let mut fields = std::collections::BTreeMap::new();
+            fields.insert("size".into(), Value::Int(meta.len() as i64));
+            fields.insert("is_dir".into(), bool_ctor(meta.is_dir()));
+            Ok(result_ok(Value::Record(fields)))
+        }
         Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
     }
 }

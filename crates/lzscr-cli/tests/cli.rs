@@ -204,10 +204,7 @@ fn effect_fs_list_dir_allowed_with_flag() {
     fs::write(&file_a, "a").unwrap();
     fs::write(&file_b, "b").unwrap();
     let path_literal = format!("{:?}", dir.path().to_str().unwrap());
-    let program = format!(
-        "(~Fs = (~require .effect .fs); (~Fs .list_dir_or {} []))",
-        path_literal
-    );
+    let program = format!("(~Fs = (~require .effect .fs); (~Fs .list_dir_or {} []))", path_literal);
 
     let mut cmd = cli_cmd();
     cmd.args([
@@ -267,6 +264,30 @@ fn effect_fs_create_dir_allowed_with_flag() {
     ]);
 
     cmd.assert().success().stdout(contains("nested"));
+}
+
+#[test]
+fn effect_fs_metadata_allowed_with_flag() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    write!(tmp, "metal").unwrap();
+    tmp.flush().unwrap();
+    let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); ((\\(.Ok {{ size: ~size, is_dir: ~is_dir }}) -> (~size, ~is_dir) | \\(.Err _) -> (0, .True)) (~Fs .metadata_result {})))",
+        path_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("(5, .False)\n"));
 }
 
 fn repo_root() -> PathBuf {

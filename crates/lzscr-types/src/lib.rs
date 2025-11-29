@@ -77,6 +77,20 @@ fn result_list_str_type() -> Type {
     ])
 }
 
+fn fs_metadata_record_type() -> Type {
+    let mut fields = BTreeMap::new();
+    fields.insert("size".into(), (Type::Int, None));
+    fields.insert("is_dir".into(), (bool_sum_type(), None));
+    Type::Record(fields)
+}
+
+fn result_metadata_type() -> Type {
+    Type::SumCtor(vec![
+        (".Ok".into(), vec![fs_metadata_record_type()]),
+        (".Err".into(), vec![Type::Str]),
+    ])
+}
+
 fn fs_effects_record_type() -> Type {
     let mut fields = BTreeMap::new();
     fields.insert("read_text".into(), (Type::fun(Type::Str, result_str_str_type()), None));
@@ -91,6 +105,7 @@ fn fs_effects_record_type() -> Type {
     fields.insert("list_dir".into(), (Type::fun(Type::Str, result_list_str_type()), None));
     fields.insert("remove_file".into(), (Type::fun(Type::Str, result_unit_str_type()), None));
     fields.insert("create_dir".into(), (Type::fun(Type::Str, result_unit_str_type()), None));
+    fields.insert("metadata".into(), (Type::fun(Type::Str, result_metadata_type()), None));
     Type::Record(fields)
 }
 
