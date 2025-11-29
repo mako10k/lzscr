@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+import re
 
 
 def parse_table(readme_path: Path) -> dict[str, dict[str, str]]:
@@ -68,6 +69,19 @@ def find_stdlib_modules(stdlib_dir: Path) -> set[str]:
     return modules
 
 
+def find_pure_effect_requires(stdlib_dir: Path) -> list[str]:
+    pure_dir = stdlib_dir / "pure"
+    if not pure_dir.exists():
+        return []
+    offenders: list[str] = []
+    pattern = re.compile(r"\(~require\s+\.effect")
+    for file_path in pure_dir.rglob("*.lzscr"):
+        text = file_path.read_text(encoding="utf-8")
+        if pattern.search(text):
+            offenders.append(file_path.relative_to(stdlib_dir).as_posix())
+    return sorted(offenders)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -107,6 +121,13 @@ def main(argv: list[str]) -> int:
     if empty_status:
         issues.append(
             "Modules missing a status value:\n  - " + "\n  - ".join(empty_status)
+        )
+
+    pure_requires = find_pure_effect_requires(args.stdlib)
+    if pure_requires:
+        issues.append(
+            "Pure modules importing effect namespaces (forbidden):\n  - "
+            + "\n  - ".join(pure_requires)
         )
 
     if issues:
