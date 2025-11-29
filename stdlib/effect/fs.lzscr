@@ -2,18 +2,16 @@
 # Wraps runtime filesystem effects so callers get ergonomic Result utilities.
 
 # read_text_result: run the filesystem read effect and return (.Ok contents | .Err msg)
-~read_text_result ~path = (~bind (!fs.read_text ~path) (\~res -> ~res));
+~read_text_result ~path = (~chain () (!fs.read_text ~path));
 
 # read_text_or: return file contents or fall back to provided default string on error
 ~read_text_or ~path ~fallback = (
-  (\.Ok ~contents) -> ~contents
-  | (\.Err _) -> ~fallback
+  (\(.Ok ~contents) -> ~contents | \(.Err _) -> ~fallback)
 ) (~read_text_result ~path);
 
 # read_text_or_else: supply an error handler to compute a fallback
 ~read_text_or_else ~path ~handle = (
-  (\.Ok ~contents) -> ~contents
-  | (\.Err ~msg) -> (~handle ~msg)
+  (\(.Ok ~contents) -> ~contents | \(.Err ~msg) -> (~handle ~msg))
 ) (~read_text_result ~path);
 
 {

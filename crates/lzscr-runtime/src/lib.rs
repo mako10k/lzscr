@@ -422,13 +422,21 @@ impl Env {
                         Value::Symbol(id) => env.symbol_name(*id),
                         _ => return Err(EvalError::TypeError),
                     };
-                    let f: fn(&Env, &[Value]) -> Result<Value, EvalError> = match sym.as_str() {
-                        ".print" => eff_print,
-                        ".println" => eff_println,
-                        ".fs.read_text" => eff_fs_read_text,
+                    let eff_value = match sym.as_str() {
+                        ".print" => Value::Native { arity: 1, args: vec![], f: eff_print },
+                        ".println" => Value::Native { arity: 1, args: vec![], f: eff_println },
+                        ".fs" => {
+                            let mut fs_fields: std::collections::BTreeMap<String, Value> =
+                                std::collections::BTreeMap::new();
+                            fs_fields.insert(
+                                "read_text".into(),
+                                Value::Native { arity: 1, args: vec![], f: eff_fs_read_text },
+                            );
+                            Value::Record(fs_fields)
+                        }
                         _ => return Err(EvalError::UnknownEffect(sym)),
                     };
-                    Ok(Value::Native { arity: 1, args: vec![], f })
+                    Ok(eff_value)
                 },
             },
         );

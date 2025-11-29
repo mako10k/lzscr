@@ -21,3 +21,12 @@ fn effect_allowed_in_seq_second_arg() {
     assert!(got.is_ok(), "unexpected error: {}", pretty(got));
     assert_eq!(got.unwrap(), "Unit");
 }
+
+#[test]
+fn fs_read_text_types_as_result() {
+    let src = "(~seq () (!fs.read_text \"foo.txt\"))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(ty == "(.Ok Str | .Err Str)" || ty == "(.Err Str | .Ok Str)", "unexpected type: {ty}");
+}

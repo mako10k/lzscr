@@ -113,6 +113,42 @@ fn effect_modules_allowed_with_flag() {
     );
 }
 
+#[test]
+fn effect_fs_module_blocked_in_pure_mode() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~require .effect .fs)",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+    ]);
+
+    cmd.assert().failure().stderr(contains("--stdlib-mode=allow-effects"));
+}
+
+#[test]
+fn effect_fs_read_text_allowed_with_flag() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "hello-fs").unwrap();
+    let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~Fs .read_text_or {} \"fallback\"))",
+        path_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("hello-fs\n"));
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
 }

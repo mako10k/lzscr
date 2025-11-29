@@ -62,6 +62,23 @@ fn bool_sum_type() -> Type {
     Type::SumCtor(vec![(".False".into(), vec![]), (".True".into(), vec![])])
 }
 
+fn result_str_str_type() -> Type {
+    Type::SumCtor(vec![(".Ok".into(), vec![Type::Str]), (".Err".into(), vec![Type::Str])])
+}
+
+fn fs_effects_record_type() -> Type {
+    let mut fields = BTreeMap::new();
+    fields.insert("read_text".into(), (Type::fun(Type::Str, result_str_str_type()), None));
+    Type::Record(fields)
+}
+
+fn effect_signature(sym: &str) -> Option<Type> {
+    match sym {
+        ".fs" => Some(fs_effects_record_type()),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Scheme {
     pub vars: Vec<TvId>,
@@ -1454,6 +1471,15 @@ fn infer_expr(
             Ok((ty, s_body.compose(pi.subst)))
         }
         ExprKind::Apply { func, arg } => {
+            if let ExprKind::Ref(eff_ref) = &func.kind {
+                if eff_ref == "effects" {
+                    if let ExprKind::Symbol(sym) = &arg.kind {
+                        if let Some(sig) = effect_signature(sym) {
+                            return Ok((sig, Subst::new()));
+                        }
+                    }
+                }
+            }
             // Special-case: (~if cond then else)
             // Recognize nested application: (((if cond) then) else)
             if let ExprKind::Apply { func: f_then, arg: then_branch } = &func.kind {
