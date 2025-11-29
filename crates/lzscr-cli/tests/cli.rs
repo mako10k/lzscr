@@ -222,6 +222,29 @@ fn effect_fs_list_dir_allowed_with_flag() {
     cmd.assert().success().stdout(contains("a.txt").and(contains("b.log")));
 }
 
+#[test]
+fn effect_fs_remove_file_allowed_with_flag() {
+    let tmp = NamedTempFile::new().unwrap();
+    let path = tmp.path().to_path_buf();
+    let path_literal = format!("{:?}", path.to_str().unwrap());
+    let program = format!(
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .remove_file_or {} ()) (~Fs .read_text_or {} \"fallback\")))",
+        path_literal, path_literal
+    );
+
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        program.as_str(),
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+
+    cmd.assert().success().stdout(contains("fallback\n"));
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
 }

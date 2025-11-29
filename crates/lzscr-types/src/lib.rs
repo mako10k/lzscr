@@ -89,6 +89,7 @@ fn fs_effects_record_type() -> Type {
         (Type::fun(Type::Str, Type::fun(Type::Str, result_unit_str_type())), None),
     );
     fields.insert("list_dir".into(), (Type::fun(Type::Str, result_list_str_type()), None));
+    fields.insert("remove_file".into(), (Type::fun(Type::Str, result_unit_str_type()), None));
     Type::Record(fields)
 }
 

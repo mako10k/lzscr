@@ -53,6 +53,19 @@
   (\(.Ok ~entries) -> ~entries | \(.Err ~msg) -> (~handle ~msg))
 ) (~list_dir_result ~path);
 
+# remove_file_result: delete file and return (.Ok () | .Err msg)
+~remove_file_result ~path = (~chain () (!fs.remove_file ~path));
+
+# remove_file_or: return () or fallback when deletion fails
+~remove_file_or ~path ~fallback = (
+  (\(.Ok _) -> () | \(.Err _) -> ~fallback)
+) (~remove_file_result ~path);
+
+# remove_file_or_else: compute fallback from error message
+~remove_file_or_else ~path ~handle = (
+  (\(.Ok _) -> () | \(.Err ~msg) -> (~handle ~msg))
+) (~remove_file_result ~path);
+
 {
   read_text_result: ~read_text_result,
   read_text_or: ~read_text_or,
@@ -65,5 +78,8 @@
   append_text_or_else: ~append_text_or_else,
   list_dir_result: ~list_dir_result,
   list_dir_or: ~list_dir_or,
-  list_dir_or_else: ~list_dir_or_else
+  list_dir_or_else: ~list_dir_or_else,
+  remove_file_result: ~remove_file_result,
+  remove_file_or: ~remove_file_or,
+  remove_file_or_else: ~remove_file_or_else
 }

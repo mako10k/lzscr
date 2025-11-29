@@ -444,6 +444,10 @@ impl Env {
                                 "list_dir".into(),
                                 Value::Native { arity: 1, args: vec![], f: eff_fs_list_dir },
                             );
+                            fs_fields.insert(
+                                "remove_file".into(),
+                                Value::Native { arity: 1, args: vec![], f: eff_fs_remove_file },
+                            );
                             Value::Record(fs_fields)
                         }
                         _ => return Err(EvalError::UnknownEffect(sym)),
@@ -1442,6 +1446,22 @@ fn eff_fs_list_dir(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
             }
             Ok(result_ok(Value::List(out)))
         }
+        Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+    }
+}
+
+fn eff_fs_remove_file(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 1 {
+        return Err(EvalError::TypeError);
+    }
+    let path_val = force_value(env, &args[0])?;
+    let path = match path_val {
+        Value::Str(s) => s.to_string(),
+        _ => return Err(EvalError::TypeError),
+    };
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(result_ok(Value::Unit)),
         Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
     }
 }
