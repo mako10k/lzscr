@@ -31,7 +31,24 @@ optimizations.
 
 ## Next Steps
 - After reviewing these goals, draft the migration plan (work breakdown, tooling, CI enforcement).
-- Keep the `stdlib/readme.md` classification table current and fail CI when a stdlib module lacks a declared purity level. The helper script `scripts/check_stdlib_classification.py` enforces the coverage locally—add it to CI once the split begins.
 - Keep the `stdlib/readme.md` classification table current and fail CI when a stdlib module lacks a declared purity level. The helper script `scripts/check_stdlib_classification.py` enforces the coverage locally (run via `python scripts/check_stdlib_classification.py` or `cargo test -p lzscr-cli --test stdlib_classification`).
 - Stand up the `stdlib/effect/` tree (starting with IO wrappers) and migrate remaining effect helpers there (e.g. the new `effect/log` module built atop IO, now with tap, field/JSON logging, and scoped-field combinators so pure call sites can observe values without re-threading logging code).
 - Keep extending the `effect/fs` namespace that wraps the runtime filesystem effects (`!fs.read_text`, `!fs.write_text`, `!fs.append_text`, `!fs.list_dir`, `!fs.remove_file`, `!fs.create_dir`, `!fs.metadata`, etc.) so every helper funnels results through `Result`. Metadata now surfaces `size`, `is_dir`, `is_file`, `readonly`, and `modified_ms` (epoch millis wrapped in `(.Some Int | .None)` when the platform cannot report a timestamp).
+
+## Migration Plan (draft)
+
+1. **Inventory and guardrails** *(Status: complete)*
+   - Catalog every `stdlib/**/*.lzscr` file in `stdlib/readme.md` and keep the table enforced via `scripts/check_stdlib_classification.py` (already wired into CI and the CLI test suite).
+   - Keep `--stdlib-mode` defaulting to `pure`, blocking `.effect` imports unless the user opts in.
+
+2. **Module split + compat layer** *(Status: in progress)*
+   - Shrink `prelude.lzscr` to re-export only modules under `stdlib/pure/`; move legacy names into `stdlib/compat/` with soft warnings logged through `effect/log`.
+   - Track dependencies so pure modules never `~require` from `.effect`; CI should fail if `rg '(~require \\.effect)' stdlib/pure` finds matches.
+
+3. **Effect namespace hardening** *(Status: planned)*
+   - For each effect module (fs, io, log, future net/process), document the exported surface in the spec and provide dedicated smoke tests under `crates/lzscr-cli/tests` gated by `--stdlib-mode=allow-effects`.
+   - Add targeted type tests in `crates/lzscr-types/tests/effects.rs` for every new effect helper so inference guarantees hold.
+
+4. **Automation + CI visibility** *(Status: planned)*
+   - Promote the compatibility warnings to CI telemetry (e.g., emit JSON the CLI can aggregate) so future cleanups have concrete usage data.
+   - Extend the classification script to detect modules exporting public names that violate the `~`/`!` naming rules once those rules firm up.
