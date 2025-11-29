@@ -1520,11 +1520,7 @@ fn eff_fs_metadata(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|dur| {
                     let millis = dur.as_millis();
-                    let clamped = if millis > i64::MAX as u128 {
-                        i64::MAX
-                    } else {
-                        millis as i64
-                    };
+                    let clamped = if millis > i64::MAX as u128 { i64::MAX } else { millis as i64 };
                     Value::Int(clamped)
                 });
             fields.insert("modified_ms".into(), option_value(modified_ms));

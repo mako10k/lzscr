@@ -272,10 +272,8 @@ fn effect_fs_metadata_allowed_with_flag() {
     write!(tmp, "metal").unwrap();
     tmp.flush().unwrap();
     let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
-    let program = format!(
-        "(~Fs = (~require .effect .fs); (~Fs .metadata_result {}))",
-        path_literal
-    );
+    let program =
+        format!("(~Fs = (~require .effect .fs); (~Fs .metadata_result {}))", path_literal);
 
     let mut cmd = cli_cmd();
     cmd.args([
