@@ -100,19 +100,17 @@ fn effect_modules_allowed_with_flag() {
     let mut cmd = cli_cmd();
     cmd.args([
         "-e",
-        "(~Log = (~require .effect .log); (~chain ((~Log .tap_info) \"demo\" 42) ((~Log .info_fields_json) \"stats\" [((~Log .field) \"count\" 2), ((~Log .field) \"status\" 1)])))",
+        "(~Log = (~require .effect .log); (~Scoped = ((~Log .with_fields_json_logger) (~Log .info_fields_json) [((~Log .field) \"session\" 9)]); (~chain ((~Log .tap_info) \"demo\" 42) (~Scoped \"stats\" [((~Log .field) \"count\" 2)]))))",
         "--stdlib-dir",
         workspace_stdlib_dir().to_str().unwrap(),
         "--stdlib-mode",
         "allow-effects",
     ]);
 
-    cmd.assert()
-        .success()
-        .stdout(
-            contains("[INFO] demo: 42\n")
-                .and(contains("[INFO] stats: {\"count\": 2, \"status\": 1}\n")),
-        );
+    cmd.assert().success().stdout(
+        contains("[INFO] demo: 42\n")
+            .and(contains("[INFO] stats: {\"session\": 9, \"count\": 2}\n")),
+    );
 }
 
 fn repo_root() -> PathBuf {

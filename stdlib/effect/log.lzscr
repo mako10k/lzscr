@@ -53,6 +53,10 @@
   (~go ~pairs)
 );
 
+~append_fields ~xs ~ys = (
+  (\[] -> ~ys | \( ~head : ~tail ) -> (~cons ~head (~append_fields ~tail ~ys))) ~xs
+);
+
 ~render_field ~field = (
   ~key = (~field .key);
   ~value = (~field .value);
@@ -75,6 +79,10 @@
 );
 
 ~make_fields_logger ~level = (\~label ~fields -> (~log_fields ~level ~label ~fields));
+
+~with_fields_logger ~logger ~base_fields = (
+  \~label ~fields -> (~logger ~label (~append_fields ~base_fields ~fields))
+);
 
 ~info_fields = (~make_fields_logger "INFO");
 ~debug_fields = (~make_fields_logger "DEBUG");
@@ -108,6 +116,8 @@
 
 ~make_fields_json_logger ~level = (\~label ~fields -> (~log_fields_json ~level ~label ~fields));
 
+~with_fields_json_logger = ~with_fields_logger;
+
 ~info_fields_json = (~make_fields_json_logger "INFO");
 ~debug_fields_json = (~make_fields_json_logger "DEBUG");
 ~warn_fields_json = (~make_fields_json_logger "WARN");
@@ -136,16 +146,19 @@
   tap_fatal: ~tap_fatal,
   field: ~field,
   fields_from_pairs: ~fields_from_pairs,
+  append_fields: ~append_fields,
   trace_fields: ~trace_fields,
   debug_fields: ~debug_fields,
   info_fields: ~info_fields,
   warn_fields: ~warn_fields,
   error_fields: ~error_fields,
   fatal_fields: ~fatal_fields,
+  with_fields_logger: ~with_fields_logger,
   trace_fields_json: ~trace_fields_json,
   debug_fields_json: ~debug_fields_json,
   info_fields_json: ~info_fields_json,
   warn_fields_json: ~warn_fields_json,
   error_fields_json: ~error_fields_json,
-  fatal_fields_json: ~fatal_fields_json
+  fatal_fields_json: ~fatal_fields_json,
+  with_fields_json_logger: ~with_fields_json_logger
 }

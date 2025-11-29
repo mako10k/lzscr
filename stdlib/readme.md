@@ -24,7 +24,7 @@ core namespaces from the runtime `Builtins` plus foundational list/string/option
 | `pure/list.lzscr` | Pure | Collection helpers over in-memory lists only. | Keep dependency graph flowing into effect tree only (if ever needed). |
 | `pure/lex.lzscr` | Pure (tooling) | Helper predicates for characters; current usage is deterministic and effect-free. | Re-evaluate classification if lexer helpers start performing IO. |
 | `effect/io.lzscr` | Effect | Thin wrappers around builtin `!print`/`!println` plus logging helpers. | Layer additional effect modules on top (fs/net) once IO core is stable. |
-| `effect/log.lzscr` | Effect | Level-tagged logging helpers with tap utilities, field builders, and `key=value` / JSON emitters; depends on `effect/io`. | Extend with richer structured emitters (JSON, spans) once runtime protocols exist. |
+| `effect/log.lzscr` | Effect | Level-tagged logging helpers with tap utilities, field builders, scoped field combinators, and `key=value` / JSON emitters; depends on `effect/io`. | Extend with richer structured emitters (JSON, spans) once runtime protocols exist. |
 
 Run `python scripts/check_stdlib_classification.py` to ensure every `.lzscr` file listed under `stdlib/` has an up-to-date entry in this table before sending a PR.
 
