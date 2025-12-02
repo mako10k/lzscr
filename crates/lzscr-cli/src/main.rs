@@ -140,6 +140,22 @@ impl SourceRegistry {
 
     // Find the first non-comment, non-whitespace character offset starting from `offset`.
     // Treat lines whose first non-space is '#' as comments and skip them.
+    /// Normalize a span for diagnostic display.
+    /// - If span_len == 1: expands to the first meaningful token or last top-level {...} block
+    /// - Otherwise: uses the span as-is
+    /// Returns (adjusted_offset, adjusted_len).
+    fn normalize_span(&self, offset: usize, len: usize) -> (usize, usize) {
+        if len == 1 {
+            if let Some((block_off, _block_len)) = self.last_top_level_brace_block_in_same_source(offset) {
+                (self.first_non_comment_offset_from(block_off), 1)
+            } else {
+                (self.first_non_comment_offset_from(offset), 1)
+            }
+        } else {
+            (offset, len)
+        }
+    }
+
     fn first_non_comment_offset_from(&self, offset: usize) -> usize {
         // Helper to scan within a given text with base offset
         fn scan(text: &str, base: usize, rel: usize) -> usize {
@@ -1086,17 +1102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ..
                             } => {
                                 eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) = if span_len == 1 {
-                                    if let Some((op, _len)) = src_reg
-                                        .last_top_level_brace_block_in_same_source(span_offset)
-                                    {
-                                        (src_reg.first_non_comment_offset_from(op), 1)
-                                    } else {
-                                        (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                    }
-                                } else {
-                                    (span_offset, span_len)
-                                };
+                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
                                 if !suggestions.is_empty() {
@@ -1108,17 +1114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             TypeError::EffectNotAllowed { span_offset, span_len } => {
                                 eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) = if span_len == 1 {
-                                    if let Some((op, _len)) = src_reg
-                                        .last_top_level_brace_block_in_same_source(span_offset)
-                                    {
-                                        (src_reg.first_non_comment_offset_from(op), 1)
-                                    } else {
-                                        (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                    }
-                                } else {
-                                    (span_offset, span_len)
-                                };
+                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
                                 eprintln!("  hint: effects require explicit sequencing");
@@ -1129,17 +1125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             TypeError::MixedAltBranches { span_offset, span_len } => {
                                 eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) = if span_len == 1 {
-                                    if let Some((op, _len)) = src_reg
-                                        .last_top_level_brace_block_in_same_source(span_offset)
-                                    {
-                                        (src_reg.first_non_comment_offset_from(op), 1)
-                                    } else {
-                                        (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                    }
-                                } else {
-                                    (span_offset, span_len)
-                                };
+                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
                                 eprintln!("  hint: AltLambda requires consistent pattern style");
@@ -1154,17 +1140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             TypeError::Mismatch { span_offset, span_len, .. }
                             | TypeError::RecordFieldMismatch { span_offset, span_len, .. } => {
                                 eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) = if span_len == 1 {
-                                    if let Some((op, _len)) = src_reg
-                                        .last_top_level_brace_block_in_same_source(span_offset)
-                                    {
-                                        (src_reg.first_non_comment_offset_from(op), 1)
-                                    } else {
-                                        (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                    }
-                                } else {
-                                    (span_offset, span_len)
-                                };
+                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
                                 eprintln!("  hint: type mismatch may indicate ambiguous inference");
@@ -1178,20 +1154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                             | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                 eprintln!("type error: {}", e);
-                                // Heuristic: if span len is 1 (generic), nudge caret to the first
-                                // non-comment token at/after that offset for better UX.
-                                let (adj_off, adj_len) = if span_len == 1 {
-                                    // Prefer the last top-level { ... } block (e.g., module export record)
-                                    if let Some((op, _len)) = src_reg
-                                        .last_top_level_brace_block_in_same_source(span_offset)
-                                    {
-                                        (src_reg.first_non_comment_offset_from(op), 1)
-                                    } else {
-                                        (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                    }
-                                } else {
-                                    (span_offset, span_len)
-                                };
+                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
                             }
@@ -1258,17 +1221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     ..
                                 } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = if span_len == 1 {
-                                        if let Some((op, _len)) = src_reg
-                                            .last_top_level_brace_block_in_same_source(span_offset)
-                                        {
-                                            (src_reg.first_non_comment_offset_from(op), 1)
-                                        } else {
-                                            (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                        }
-                                    } else {
-                                        (span_offset, span_len)
-                                    };
+                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                     if !suggestions.is_empty() {
@@ -1280,17 +1233,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 TypeError::EffectNotAllowed { span_offset, span_len } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = if span_len == 1 {
-                                        if let Some((op, _len)) = src_reg
-                                            .last_top_level_brace_block_in_same_source(span_offset)
-                                        {
-                                            (src_reg.first_non_comment_offset_from(op), 1)
-                                        } else {
-                                            (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                        }
-                                    } else {
-                                        (span_offset, span_len)
-                                    };
+                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                     eprintln!("  hint: effects require explicit sequencing");
@@ -1305,17 +1248,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                                 | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = if span_len == 1 {
-                                        if let Some((op, _len)) = src_reg
-                                            .last_top_level_brace_block_in_same_source(span_offset)
-                                        {
-                                            (src_reg.first_non_comment_offset_from(op), 1)
-                                        } else {
-                                            (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                        }
-                                    } else {
-                                        (span_offset, span_len)
-                                    };
+                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                 }
@@ -1405,17 +1338,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     ..
                                 } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = if span_len == 1 {
-                                        if let Some((op, _len)) = src_reg
-                                            .last_top_level_brace_block_in_same_source(span_offset)
-                                        {
-                                            (src_reg.first_non_comment_offset_from(op), 1)
-                                        } else {
-                                            (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                        }
-                                    } else {
-                                        (span_offset, span_len)
-                                    };
+                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                     if !suggestions.is_empty() {
@@ -1427,17 +1350,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 TypeError::EffectNotAllowed { span_offset, span_len } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = if span_len == 1 {
-                                        if let Some((op, _len)) = src_reg
-                                            .last_top_level_brace_block_in_same_source(span_offset)
-                                        {
-                                            (src_reg.first_non_comment_offset_from(op), 1)
-                                        } else {
-                                            (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                        }
-                                    } else {
-                                        (span_offset, span_len)
-                                    };
+                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                     eprintln!("  hint: effects require explicit sequencing");
@@ -1452,17 +1365,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                                 | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = if span_len == 1 {
-                                        if let Some((op, _len)) = src_reg
-                                            .last_top_level_brace_block_in_same_source(span_offset)
-                                        {
-                                            (src_reg.first_non_comment_offset_from(op), 1)
-                                        } else {
-                                            (src_reg.first_non_comment_offset_from(span_offset), 1)
-                                        }
-                                    } else {
-                                        (span_offset, span_len)
-                                    };
+                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                 }
