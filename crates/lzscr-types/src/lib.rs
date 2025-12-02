@@ -565,7 +565,7 @@ fn edit_distance(a: &str, b: &str) -> usize {
 
 /// Find similar variable names in the environment for typo suggestions
 fn find_similar_names(target: &str, env: &TypeEnv) -> Vec<String> {
-    let max_distance = std::cmp::min(3, (target.len() + 1) / 2);
+    let max_distance = std::cmp::min(3, target.len().div_ceil(2));
     let mut candidates: Vec<(String, usize)> = env
         .0
         .keys()
