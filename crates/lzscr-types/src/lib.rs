@@ -19,12 +19,18 @@
 //! This crate has been split into multiple focused modules:
 //! - `types`: Core type representations (`Type`, `TvId`)
 //! - `error`: Type errors and suggestion helpers (`TypeError`, `edit_distance`)
-//! - Other modules to be extracted: builtins, scheme, unification, inference, display
+//! - `builtins`: Built-in type constructors (bool, option, result, fs effects)
+//! - Other modules to be extracted: scheme, unification, inference, display
 
+mod builtins;
 mod error;
 mod types;
 
 // Re-export core types
+pub use builtins::{
+    bool_sum_type, effect_signature, fs_effects_record_type, fs_metadata_record_type, option_type,
+    result_list_str_type, result_metadata_type, result_str_str_type, result_unit_str_type,
+};
 pub use error::{find_similar_names, format_field_path, TypeError};
 pub use types::{TvId, Type};
 
@@ -32,70 +38,6 @@ use lzscr_ast::ast::*;
 use lzscr_ast::span::Span;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-fn bool_sum_type() -> Type {
-    Type::SumCtor(vec![(".False".into(), vec![]), (".True".into(), vec![])])
-}
-
-fn option_type(inner: Type) -> Type {
-    Type::SumCtor(vec![(".Some".into(), vec![inner]), (".None".into(), vec![])])
-}
-
-fn result_str_str_type() -> Type {
-    Type::SumCtor(vec![(".Ok".into(), vec![Type::Str]), (".Err".into(), vec![Type::Str])])
-}
-
-fn result_unit_str_type() -> Type {
-    Type::SumCtor(vec![(".Ok".into(), vec![Type::Unit]), (".Err".into(), vec![Type::Str])])
-}
-
-fn result_list_str_type() -> Type {
-    Type::SumCtor(vec![
-        (".Ok".into(), vec![Type::List(Box::new(Type::Str))]),
-        (".Err".into(), vec![Type::Str]),
-    ])
-}
-
-fn fs_metadata_record_type() -> Type {
-    let mut fields = BTreeMap::new();
-    fields.insert("is_dir".into(), (bool_sum_type(), None));
-    fields.insert("is_file".into(), (bool_sum_type(), None));
-    fields.insert("modified_ms".into(), (option_type(Type::Int), None));
-    fields.insert("readonly".into(), (bool_sum_type(), None));
-    fields.insert("size".into(), (Type::Int, None));
-    Type::Record(fields)
-}
-
-fn result_metadata_type() -> Type {
-    Type::SumCtor(vec![
-        (".Ok".into(), vec![fs_metadata_record_type()]),
-        (".Err".into(), vec![Type::Str]),
-    ])
-}
-
-fn fs_effects_record_type() -> Type {
-    let mut fields = BTreeMap::new();
-    fields.insert("read_text".into(), (Type::fun(Type::Str, result_str_str_type()), None));
-    fields.insert(
-        "write_text".into(),
-        (Type::fun(Type::Str, Type::fun(Type::Str, result_unit_str_type())), None),
-    );
-    fields.insert(
-        "append_text".into(),
-        (Type::fun(Type::Str, Type::fun(Type::Str, result_unit_str_type())), None),
-    );
-    fields.insert("list_dir".into(), (Type::fun(Type::Str, result_list_str_type()), None));
-    fields.insert("remove_file".into(), (Type::fun(Type::Str, result_unit_str_type()), None));
-    fields.insert("create_dir".into(), (Type::fun(Type::Str, result_unit_str_type()), None));
-    fields.insert("metadata".into(), (Type::fun(Type::Str, result_metadata_type()), None));
-    Type::Record(fields)
-}
-
-fn effect_signature(sym: &str) -> Option<Type> {
-    match sym {
-        ".fs" => Some(fs_effects_record_type()),
-        _ => None,
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Scheme {
