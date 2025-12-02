@@ -520,13 +520,75 @@ pub enum TypeError {
     #[error("not a function: {ty}")]
     NotFunction { ty: Type },
     #[error("unbound reference: {name} at ({span_offset},{span_len})")]
-    UnboundRef { name: String, span_offset: usize, span_len: usize },
+    UnboundRef {
+        name: String,
+        span_offset: usize,
+        span_len: usize,
+        suggestions: Vec<String>,
+    },
     #[error("effect not allowed at ({span_offset},{span_len})")]
     EffectNotAllowed { span_offset: usize, span_len: usize },
     #[error("negative occurrence of recursive type {type_name} at ({span_offset},{span_len})")]
     NegativeOccurrence { type_name: String, span_offset: usize, span_len: usize },
     #[error("invalid type declaration: {msg} at ({span_offset},{span_len})")]
     InvalidTypeDecl { msg: String, span_offset: usize, span_len: usize },
+}
+
+// ---------- Error Suggestions ----------
+
+/// Compute Levenshtein edit distance between two strings
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let a_len = a_chars.len();
+    let b_len = b_chars.len();
+    
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+    
+    let mut prev_row: Vec<usize> = (0..=b_len).collect();
+    let mut curr_row: Vec<usize> = vec![0; b_len + 1];
+    
+    for i in 1..=a_len {
+        curr_row[0] = i;
+        for j in 1..=b_len {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            curr_row[j] = std::cmp::min(
+                std::cmp::min(curr_row[j - 1] + 1, prev_row[j] + 1),
+                prev_row[j - 1] + cost,
+            );
+        }
+        std::mem::swap(&mut prev_row, &mut curr_row);
+    }
+    
+    prev_row[b_len]
+}
+
+/// Find similar variable names in the environment for typo suggestions
+fn find_similar_names(target: &str, env: &TypeEnv) -> Vec<String> {
+    let max_distance = std::cmp::min(3, (target.len() + 1) / 2);
+    let mut candidates: Vec<(String, usize)> = env
+        .0
+        .keys()
+        .filter_map(|name| {
+            let dist = edit_distance(target, name);
+            if dist > 0 && dist <= max_distance {
+                Some((name.clone(), dist))
+            } else {
+                None
+            }
+        })
+        .collect();
+    
+    // Sort by distance first, then alphabetically
+    candidates.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+    
+    // Return top 3 suggestions
+    candidates.into_iter().take(3).map(|(name, _)| name).collect()
 }
 
 // ---------- Unification ----------
@@ -1485,10 +1547,14 @@ fn infer_expr(
         ExprKind::Str(_) => Ok((Type::Str, Subst::new())),
         ExprKind::Char(_) => Ok((Type::Char, Subst::new())),
         ExprKind::Ref(n) => {
-            let s = ctx.env.get(n).ok_or_else(|| TypeError::UnboundRef {
-                name: n.clone(),
-                span_offset: e.span.offset,
-                span_len: e.span.len,
+            let s = ctx.env.get(n).ok_or_else(|| {
+                let suggestions = find_similar_names(n, &ctx.env);
+                TypeError::UnboundRef {
+                    name: n.clone(),
+                    span_offset: e.span.offset,
+                    span_len: e.span.len,
+                    suggestions,
+                }
             })?;
             let inst = instantiate(&mut ctx.tv, &s);
             if let Some(dbg) = &ctx.debug {
