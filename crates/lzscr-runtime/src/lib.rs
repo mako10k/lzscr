@@ -5,8 +5,10 @@ use std::sync::Arc;
 
 mod error;
 mod value;
+mod thunk;
 pub use error::EvalError;
 pub use value::{Value, RtStr};
+pub use thunk::{ThunkState, ThunkKind};
 #[derive(Debug, Clone, Default)]
 pub struct Env {
     pub vars: std::collections::HashMap<String, Value>,
@@ -19,18 +21,6 @@ pub struct Env {
         std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, Arc<Vec<u8>>>>>,
 }
 
-#[derive(Debug, Clone)]
-pub enum ThunkState {
-    Unevaluated,
-    Evaluating,
-    Evaluated(Box<Value>),
-}
-
-#[derive(Debug, Clone)]
-pub enum ThunkKind {
-    Expr { expr: Expr, env: std::rc::Rc<std::cell::RefCell<Env>> },
-    Project { src: Box<Value>, pattern: Pattern, var: String },
-}
 
 impl Env {
     pub fn new() -> Self {
