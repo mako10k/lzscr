@@ -18,11 +18,14 @@
 //!
 //! This crate has been split into multiple focused modules:
 //! - `types`: Core type representations (`Type`, `TvId`)
-//! - Other modules to be extracted: error, builtins, scheme, unification, inference, display
+//! - `error`: Type errors and suggestion helpers (`TypeError`, `edit_distance`)
+//! - Other modules to be extracted: builtins, scheme, unification, inference, display
 
+mod error;
 mod types;
 
 // Re-export core types
+pub use error::{find_similar_names, format_field_path, TypeError};
 pub use types::{TvId, Type};
 
 use lzscr_ast::ast::*;
@@ -422,154 +425,11 @@ fn typedefs_lookup_typename<'a>(ctx: &'a InferCtx, name: &str) -> Option<&'a Typ
     None
 }
 
-// ---------- Errors ----------
-
-#[derive(thiserror::Error, Debug)]
-pub enum TypeError {
-    #[error("type mismatch: expected {expected} vs actual {actual} at ({span_offset},{span_len})")]
-    Mismatch { expected: Type, actual: Type, span_offset: usize, span_len: usize },
-    #[error("record field type mismatch: field '{field}' expected {expected} vs actual {actual} at ({span_offset},{span_len})")]
-    RecordFieldMismatch {
-        field: String,
-        expected: Type,
-        actual: Type,
-        span_offset: usize,
-        span_len: usize,
-    },
-    #[error("record field '{field}' type mismatch: expected %{expected} vs actual %{actual}")]
-    RecordFieldMismatchBoth {
-        field: String,
-        expected: Type,
-        actual: Type,
-        expected_span_offset: usize,
-        expected_span_len: usize,
-        actual_span_offset: usize,
-        actual_span_len: usize,
-    },
-    #[error("type mismatch: expected {expected} vs actual {actual}")]
-    MismatchBoth {
-        expected: Type,
-        actual: Type,
-        expected_span_offset: usize,
-        expected_span_len: usize,
-        actual_span_offset: usize,
-        actual_span_len: usize,
-    },
-    #[error("type mismatch: expected {expected} vs actual {actual}")]
-    AnnotMismatch {
-        expected: Type,
-        actual: Type,
-        annot_span_offset: usize,
-        annot_span_len: usize,
-        expr_span_offset: usize,
-        expr_span_len: usize,
-    },
-    #[error("cannot construct infinite type: {var_pretty} occurs in {pretty}")]
-    Occurs {
-        var: TvId,
-        var_pretty: String, // normalized pretty name for the variable (e.g. %a)
-        ty: Type,
-        pretty: String, // normalized pretty name for the type (%{ ... })
-        var_span_offset: usize,
-        var_span_len: usize,
-        ty_span_offset: usize,
-        ty_span_len: usize,
-    },
-    #[error("constructor union duplicate tag: {tag} at ({span_offset},{span_len})")]
-    DuplicateCtorTag { tag: String, span_offset: usize, span_len: usize },
-    #[error("AltLambda branches mixed: expected all Ctor patterns or wildcard/default only at ({span_offset},{span_len})")]
-    MixedAltBranches { span_offset: usize, span_len: usize },
-    #[error("AltLambda arity mismatch: expected {expected} args but got {got}")]
-    AltLambdaArityMismatch {
-        expected: usize,
-        got: usize,
-        expected_span_offset: usize,
-        expected_span_len: usize,
-        actual_span_offset: usize,
-        actual_span_len: usize,
-    },
-    #[error("not a function: {ty}")]
-    NotFunction { ty: Type },
-    #[error("unbound reference: {name} at ({span_offset},{span_len})")]
-    UnboundRef { name: String, span_offset: usize, span_len: usize, suggestions: Vec<String> },
-    #[error("effect not allowed at ({span_offset},{span_len})")]
-    EffectNotAllowed { span_offset: usize, span_len: usize },
-    #[error("negative occurrence of recursive type {type_name} at ({span_offset},{span_len})")]
-    NegativeOccurrence { type_name: String, span_offset: usize, span_len: usize },
-    #[error("invalid type declaration: {msg} at ({span_offset},{span_len})")]
-    InvalidTypeDecl { msg: String, span_offset: usize, span_len: usize },
-}
-
-// ---------- Error Suggestions ----------
-
-/// Compute Levenshtein edit distance between two strings
-fn edit_distance(a: &str, b: &str) -> usize {
-    let a_chars: Vec<char> = a.chars().collect();
-    let b_chars: Vec<char> = b.chars().collect();
-    let a_len = a_chars.len();
-    let b_len = b_chars.len();
-
-    if a_len == 0 {
-        return b_len;
-    }
-    if b_len == 0 {
-        return a_len;
-    }
-
-    let mut prev_row: Vec<usize> = (0..=b_len).collect();
-    let mut curr_row: Vec<usize> = vec![0; b_len + 1];
-
-    for i in 1..=a_len {
-        curr_row[0] = i;
-        for j in 1..=b_len {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
-            curr_row[j] = std::cmp::min(
-                std::cmp::min(curr_row[j - 1] + 1, prev_row[j] + 1),
-                prev_row[j - 1] + cost,
-            );
-        }
-        std::mem::swap(&mut prev_row, &mut curr_row);
-    }
-
-    prev_row[b_len]
-}
-
-/// Find similar variable names in the environment for typo suggestions
-fn find_similar_names(target: &str, env: &TypeEnv) -> Vec<String> {
-    let max_distance = std::cmp::min(3, target.len().div_ceil(2));
-    let mut candidates: Vec<(String, usize)> = env
-        .0
-        .keys()
-        .filter_map(|name| {
-            let dist = edit_distance(target, name);
-            if dist > 0 && dist <= max_distance {
-                Some((name.clone(), dist))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Sort by distance first, then alphabetically
-    candidates.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
-
-    // Return top 3 suggestions
-    candidates.into_iter().take(3).map(|(name, _)| name).collect()
-}
-
 // ---------- Unification ----------
+// (TypeError and helpers now in error module)
 
 fn occurs(v: TvId, t: &Type) -> bool {
     t.ftv().contains(&v)
-}
-
-#[inline]
-fn format_field_path(parent: &str, child: &str) -> String {
-    if child.is_empty() {
-        parent.to_string()
-    } else {
-        format!("{parent}.{child}")
-    }
 }
 
 #[allow(clippy::result_large_err)]

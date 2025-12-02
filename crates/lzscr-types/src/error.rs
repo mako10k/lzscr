@@ -1,0 +1,196 @@
+//! Type error definitions and error suggestion helpers.
+//!
+//! This module defines:
+//! - `TypeError`: All possible type inference errors with rich span information
+//! - Error suggestion functions: `edit_distance()`, `find_similar_names()`, `format_field_path()`
+//!
+//! Errors support dual-span reporting for better diagnostics (e.g., expected vs actual).
+
+use crate::types::{TvId, Type};
+
+/// Type inference errors with detailed span information for diagnostics.
+///
+/// Most variants include span information (offset, len) for precise error reporting.
+/// Some variants support dual-span errors (shows both expected and actual locations).
+#[derive(thiserror::Error, Debug)]
+pub enum TypeError {
+    /// Type mismatch (single-span)
+    #[error("type mismatch: expected {expected} vs actual {actual} at ({span_offset},{span_len})")]
+    Mismatch { expected: Type, actual: Type, span_offset: usize, span_len: usize },
+    /// Record field type mismatch (single-span, legacy)
+    #[error("record field type mismatch: field '{field}' expected {expected} vs actual {actual} at ({span_offset},{span_len})")]
+    RecordFieldMismatch {
+        field: String,
+        expected: Type,
+        actual: Type,
+        span_offset: usize,
+        span_len: usize,
+    },
+    /// Record field type mismatch (dual-span)
+    #[error("record field '{field}' type mismatch: expected %{{expected}} vs actual %{{actual}}")]
+    RecordFieldMismatchBoth {
+        field: String,
+        expected: Type,
+        actual: Type,
+        expected_span_offset: usize,
+        expected_span_len: usize,
+        actual_span_offset: usize,
+        actual_span_len: usize,
+    },
+    /// Type mismatch with dual-span reporting (expected vs actual)
+    #[error("type mismatch: expected {expected} vs actual {actual}")]
+    MismatchBoth {
+        expected: Type,
+        actual: Type,
+        expected_span_offset: usize,
+        expected_span_len: usize,
+        actual_span_offset: usize,
+        actual_span_len: usize,
+    },
+    /// Type annotation mismatch
+    #[error("type mismatch: expected {expected} vs actual {actual}")]
+    AnnotMismatch {
+        expected: Type,
+        actual: Type,
+        annot_span_offset: usize,
+        annot_span_len: usize,
+        expr_span_offset: usize,
+        expr_span_len: usize,
+    },
+    /// Occurs check failure (infinite type detection)
+    #[error("cannot construct infinite type: {var_pretty} occurs in {pretty}")]
+    Occurs {
+        var: TvId,
+        var_pretty: String, // normalized pretty name for the variable (e.g. %a)
+        ty: Type,
+        pretty: String, // normalized pretty name for the type (%{ ... })
+        var_span_offset: usize,
+        var_span_len: usize,
+        ty_span_offset: usize,
+        ty_span_len: usize,
+    },
+    /// Duplicate constructor tag in union
+    #[error("constructor union duplicate tag: {tag} at ({span_offset},{span_len})")]
+    DuplicateCtorTag { tag: String, span_offset: usize, span_len: usize },
+    /// Mixed constructor and non-constructor patterns in AltLambda
+    #[error("AltLambda branches mixed: expected all Ctor patterns or wildcard/default only at ({span_offset},{span_len})")]
+    MixedAltBranches { span_offset: usize, span_len: usize },
+    /// AltLambda constructor arity mismatch
+    #[error("AltLambda arity mismatch: expected {expected} args but got {got}")]
+    AltLambdaArityMismatch {
+        expected: usize,
+        got: usize,
+        expected_span_offset: usize,
+        expected_span_len: usize,
+        actual_span_offset: usize,
+        actual_span_len: usize,
+    },
+    /// Not a function type (applied to argument)
+    #[error("not a function: {ty}")]
+    NotFunction { ty: Type },
+    /// Unbound variable reference with suggestions
+    #[error("unbound reference: {name} at ({span_offset},{span_len})")]
+    UnboundRef { name: String, span_offset: usize, span_len: usize, suggestions: Vec<String> },
+    /// Effect used in non-effect context (strict-effects mode)
+    #[error("effect not allowed at ({span_offset},{span_len})")]
+    EffectNotAllowed { span_offset: usize, span_len: usize },
+    /// Negative occurrence of recursive type (non-positive position)
+    #[error("negative occurrence of recursive type {type_name} at ({span_offset},{span_len})")]
+    NegativeOccurrence { type_name: String, span_offset: usize, span_len: usize },
+    /// Invalid type declaration
+    #[error("invalid type declaration: {msg} at ({span_offset},{span_len})")]
+    InvalidTypeDecl { msg: String, span_offset: usize, span_len: usize },
+}
+
+// ---------- Error Suggestion Helpers ----------
+
+/// Compute Levenshtein edit distance between two strings.
+///
+/// Used for typo detection in variable name suggestions.
+///
+/// # Examples
+///
+/// ```ignore
+/// assert_eq!(edit_distance("kitten", "sitting"), 3);
+/// assert_eq!(edit_distance("foo", "foo"), 0);
+/// ```
+pub fn edit_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let a_len = a_chars.len();
+    let b_len = b_chars.len();
+
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+
+    let mut prev_row: Vec<usize> = (0..=b_len).collect();
+    let mut curr_row: Vec<usize> = vec![0; b_len + 1];
+
+    for i in 1..=a_len {
+        curr_row[0] = i;
+        for j in 1..=b_len {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            curr_row[j] = std::cmp::min(
+                std::cmp::min(curr_row[j - 1] + 1, prev_row[j] + 1),
+                prev_row[j - 1] + cost,
+            );
+        }
+        std::mem::swap(&mut prev_row, &mut curr_row);
+    }
+
+    prev_row[b_len]
+}
+
+/// Find similar variable names in the environment for typo suggestions.
+///
+/// Returns up to 3 suggestions sorted by edit distance (closest first).
+/// Only suggests names within a reasonable edit distance (≤ min(3, len/2)).
+///
+/// # Arguments
+///
+/// * `target` - The unbound variable name
+/// * `env` - The type environment to search
+///
+/// # Examples
+///
+/// ```ignore
+/// let suggestions = find_similar_names("cound", &env);
+/// // might return: ["count", "found", "bound"]
+/// ```
+pub fn find_similar_names(target: &str, env: &crate::TypeEnv) -> Vec<String> {
+    let max_distance = std::cmp::min(3, target.len().div_ceil(2));
+    let mut candidates: Vec<(String, usize)> = env
+        .0
+        .keys()
+        .filter_map(|name| {
+            let dist = edit_distance(target, name);
+            if dist > 0 && dist <= max_distance {
+                Some((name.clone(), dist))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Sort by distance first, then alphabetically
+    candidates.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+
+    // Return top 3 suggestions
+    candidates.into_iter().take(3).map(|(name, _)| name).collect()
+}
+
+/// Helper to format nested record field paths.
+///
+/// Used in error messages to show precise field location (e.g., "record.field.subfield").
+#[inline]
+pub fn format_field_path(parent: &str, child: &str) -> String {
+    if child.is_empty() {
+        parent.to_string()
+    } else {
+        format!("{parent}.{child}")
+    }
+}
