@@ -1150,8 +1150,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("    Cannot mix both styles in one AltLambda.");
                                 }
                                 TypeError::Mismatch { span_offset, span_len, .. }
-                            | TypeError::RecordFieldMismatch { span_offset, span_len, .. }
-                            | TypeError::NegativeOccurrence { span_offset, span_len, .. }
+                            | TypeError::RecordFieldMismatch { span_offset, span_len, .. } => {
+                                eprintln!("type error: {}", e);
+                                let (adj_off, adj_len) = if span_len == 1 {
+                                    if let Some((op, _len)) = src_reg
+                                        .last_top_level_brace_block_in_same_source(span_offset)
+                                    {
+                                        (src_reg.first_non_comment_offset_from(op), 1)
+                                    } else {
+                                        (src_reg.first_non_comment_offset_from(span_offset), 1)
+                                    }
+                                } else {
+                                    (span_offset, span_len)
+                                };
+                                let block = src_reg.format_span_block(adj_off, adj_len);
+                                eprintln!("{}", block);
+                                eprintln!("  hint: type mismatch may indicate ambiguous inference");
+                                eprintln!("    Consider adding an explicit type annotation:");
+                                eprintln!("      (%{{expected-type}} expression)");
+                                eprintln!("    or adding type hints to function parameters/let bindings.");
+                            }
+                            TypeError::NegativeOccurrence { span_offset, span_len, .. }
                             | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                             | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                 eprintln!("type error: {}", e);
@@ -1275,12 +1294,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("      (~seq () (!effect-call ...))");
                                     eprintln!("    or");
                                     eprintln!("      (~chain (!effect-call ...) (\\\\~result -> ...))");
-                                }
-                                TypeError::Mismatch { span_offset, span_len, .. }
-                                | TypeError::RecordFieldMismatch {
-                                    span_offset, span_len, ..
-                                }
-                                | TypeError::NegativeOccurrence { span_offset, span_len, .. }
+                                }                                | TypeError::NegativeOccurrence { span_offset, span_len, .. }
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                                 | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                     eprintln!("type error: {}", e);
@@ -1424,12 +1438,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("      (~seq () (!effect-call ...))");
                                     eprintln!("    or");
                                     eprintln!("      (~chain (!effect-call ...) (\\\\~result -> ...))");
-                                }
-                                TypeError::Mismatch { span_offset, span_len, .. }
-                                | TypeError::RecordFieldMismatch {
-                                    span_offset, span_len, ..
-                                }
-                                | TypeError::NegativeOccurrence { span_offset, span_len, .. }
+                                }                                | TypeError::NegativeOccurrence { span_offset, span_len, .. }
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                                 | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                     eprintln!("type error: {}", e);
