@@ -2,6 +2,9 @@ use lzscr_ast::ast::*;
 use std::sync::Arc;
 
 // ===== Runtime core types (Env, Value, Errors, Thunks) =====
+
+mod error;
+pub use error::EvalError;
 #[derive(Debug, Clone, Default)]
 pub struct Env {
     pub vars: std::collections::HashMap<String, Value>,
@@ -12,29 +15,6 @@ pub struct Env {
     pub sym_rev: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
     pub str_intern:
         std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, Arc<Vec<u8>>>>>,
-}
-
-#[derive(Debug, Clone)]
-pub enum EvalError {
-    TypeError,
-    Unbound(String),
-    UnknownEffect(String),
-    EffectNotAllowed,
-    NotFunc,
-    Traced { kind: Box<EvalError>, spans: Vec<lzscr_ast::span::Span> },
-}
-
-impl std::fmt::Display for EvalError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EvalError::TypeError => write!(f, "type error"),
-            EvalError::Unbound(n) => write!(f, "unbound variable: {n}"),
-            EvalError::UnknownEffect(e) => write!(f, "unknown effect: {e}"),
-            EvalError::EffectNotAllowed => write!(f, "effects not allowed in this context"),
-            EvalError::NotFunc => write!(f, "not a function"),
-            EvalError::Traced { kind, .. } => write!(f, "{kind}"),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
