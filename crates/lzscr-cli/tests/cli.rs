@@ -384,3 +384,115 @@ fn regression_min_repro_executes() {
 fn regression_hyp_nested_executes() {
     run_sample("hyp_nested.lzscr");
 }
+
+#[test]
+fn effect_io_print_smoke() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~Io = (~require .effect .io); (~Io .print \"hello\"))",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+    cmd.assert().success().stdout(contains("hello"));
+}
+
+#[test]
+fn effect_io_println_smoke() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~Io = (~require .effect .io); (~Io .println \"world\"))",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+    cmd.assert().success().stdout(contains("world\n"));
+}
+
+#[test]
+fn effect_io_show_smoke() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~Io = (~require .effect .io); (~Io .show 42))",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+    cmd.assert().success().stdout(contains("42\n"));
+}
+
+#[test]
+fn effect_io_log_smoke() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~Io = (~require .effect .io); (~Io .log \"value: \" 10))",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+    cmd.assert().success().stdout(contains("value: 10\n"));
+}
+
+#[test]
+fn effect_log_emit_smoke() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~Log = (~require .effect .log); (~Log .emit \"INFO\" \"started\"))",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+    cmd.assert().success().stdout(contains("[INFO] started\n"));
+}
+
+#[test]
+fn effect_log_level_logger_smoke() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~Log = (~require .effect .log); (~Log .info \"session\" 999))",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+    cmd.assert().success().stdout(contains("[INFO] session: 999\n"));
+}
+
+#[test]
+fn effect_log_fields_smoke() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~Log = (~require .effect .log); (~Log .info_fields \"req\" [(~Log .field \"id\" 1)]))",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+    cmd.assert().success().stdout(contains("[INFO] req: id=1\n"));
+}
+
+#[test]
+fn effect_log_fields_json_smoke() {
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "(~Log = (~require .effect .log); (~Log .info_fields_json \"metrics\" [(~Log .field \"count\" 5)]))",
+        "--stdlib-dir",
+        workspace_stdlib_dir().to_str().unwrap(),
+        "--stdlib-mode",
+        "allow-effects",
+    ]);
+    cmd.assert().success().stdout(contains("[INFO] metrics: {\"count\": 5}\n"));
+}

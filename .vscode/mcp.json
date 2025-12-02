@@ -33,7 +33,19 @@
 				"MEMORY_HTTP_BEARER_TOKEN": "${input:memory_api_token}",
 				"BUN_CERT": "${userHome}/mcp-memo/certs/cloudflare-chain.pem",
 				"MEMORY_NAMESPACE_DEFAULT": "lzscr"
-			},
+			}
+		},
+		"copilot-instructions": {
+			"type": "stdio",
+			"command": "npx",
+			"cwd": "${workspaceFolder}",
+			"args": [
+				"@mako10k/mcp-copilot-instructions@latest",
+				"--stdio"
+			],
+			"envFile": "",
+			"env": {},
+			"dev": {}
 		}
 	},
 	"inputs": [
