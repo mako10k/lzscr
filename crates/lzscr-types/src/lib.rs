@@ -520,12 +520,7 @@ pub enum TypeError {
     #[error("not a function: {ty}")]
     NotFunction { ty: Type },
     #[error("unbound reference: {name} at ({span_offset},{span_len})")]
-    UnboundRef {
-        name: String,
-        span_offset: usize,
-        span_len: usize,
-        suggestions: Vec<String>,
-    },
+    UnboundRef { name: String, span_offset: usize, span_len: usize, suggestions: Vec<String> },
     #[error("effect not allowed at ({span_offset},{span_len})")]
     EffectNotAllowed { span_offset: usize, span_len: usize },
     #[error("negative occurrence of recursive type {type_name} at ({span_offset},{span_len})")]
@@ -542,17 +537,17 @@ fn edit_distance(a: &str, b: &str) -> usize {
     let b_chars: Vec<char> = b.chars().collect();
     let a_len = a_chars.len();
     let b_len = b_chars.len();
-    
+
     if a_len == 0 {
         return b_len;
     }
     if b_len == 0 {
         return a_len;
     }
-    
+
     let mut prev_row: Vec<usize> = (0..=b_len).collect();
     let mut curr_row: Vec<usize> = vec![0; b_len + 1];
-    
+
     for i in 1..=a_len {
         curr_row[0] = i;
         for j in 1..=b_len {
@@ -564,7 +559,7 @@ fn edit_distance(a: &str, b: &str) -> usize {
         }
         std::mem::swap(&mut prev_row, &mut curr_row);
     }
-    
+
     prev_row[b_len]
 }
 
@@ -583,10 +578,10 @@ fn find_similar_names(target: &str, env: &TypeEnv) -> Vec<String> {
             }
         })
         .collect();
-    
+
     // Sort by distance first, then alphabetically
     candidates.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
-    
+
     // Return top 3 suggestions
     candidates.into_iter().take(3).map(|(name, _)| name).collect()
 }
