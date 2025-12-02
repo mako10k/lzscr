@@ -106,3 +106,19 @@ fn fs_metadata_types_as_result() {
     assert!(ty.contains("size: Int"), "missing size field: {ty}");
     assert!(ty.contains(".Ok") && ty.contains(".Err"), "expected Result in type: {ty}");
 }
+
+#[test]
+fn io_print_types_as_unit() {
+    let src = "(~seq () (!print \"msg\"))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    assert_eq!(got.unwrap(), "Unit");
+}
+
+#[test]
+fn io_println_types_as_unit() {
+    let src = "(~seq () (!println \"msg\"))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    assert_eq!(got.unwrap(), "Unit");
+}
