@@ -1,8 +1,8 @@
 //! Runtime value types for lzscr evaluation.
 
-use std::sync::Arc;
+use crate::{Env, EvalError, ThunkKind, ThunkState};
 use lzscr_ast::ast::{Expr, Pattern};
-use crate::{Env, EvalError, ThunkState, ThunkKind};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub enum Value {

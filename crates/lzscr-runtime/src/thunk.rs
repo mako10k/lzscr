@@ -1,7 +1,7 @@
 //! Thunk types for lazy evaluation in lzscr runtime.
 
-use lzscr_ast::ast::{Expr, Pattern};
 use crate::{Env, Value};
+use lzscr_ast::ast::{Expr, Pattern};
 
 #[derive(Debug, Clone)]
 pub enum ThunkState {
