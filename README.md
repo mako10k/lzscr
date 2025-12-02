@@ -145,11 +145,38 @@ cargo run -p lzscr-cli -- -e '1 + 2' --dump-coreir
 cargo run -p lzscr-cli -- -e '1 + 2' --dump-coreir-json
 ```
 
-For contributors (Rust-side checks):
-- Format check: `cargo fmt --all -- --check`
-- Lint (Clippy): `cargo clippy --all-targets -- -D warnings`
-- Tests: `cargo test`
-GitHub Actions runs fmt/clippy/test automatically (`.github/workflows/ci.yml`).
+## Contributing
+
+We welcome contributions! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development workflow and setup
+- Coding standards and style guidelines
+- Testing requirements and coverage expectations
+- Pull request process
+
+### Quick Start for Contributors
+
+```bash
+# Clone and build
+git clone https://github.com/mako10k/lzscr.git
+cd lzscr
+cargo build
+
+# Before committing, ensure these pass:
+cargo fmt --all --check        # Format check
+cargo clippy --all-targets -- -D warnings  # Lint check
+cargo test                     # All tests
+./scripts/check-file-sizes.sh  # File size compliance
+```
+
+**Code Quality Standards:**
+- Rust files: Keep under 1000 lines (recommended: 500 lines)
+- LazyScript files: Keep under 300 lines (recommended: 200 lines)
+- Function complexity: cognitive_complexity under 15
+- Test coverage: Maintain above 70% overall
+
+See [docs/coding-standards.md](docs/coding-standards.md) for detailed guidelines.
+
+GitHub Actions CI runs 7 checks automatically: fmt, clippy, test, coverage, security audit, docs, and dependency checks.
 
 ## Code formatting
 
