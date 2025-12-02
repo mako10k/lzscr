@@ -2362,7 +2362,7 @@ fn pp_type_with_renaming(
         rename_map.insert(tv, name.clone());
         name
     }
-    
+
     match t {
         Type::Unit => "Unit".into(),
         Type::Int => "Int".into(),
@@ -2382,7 +2382,9 @@ fn pp_type_with_renaming(
         Type::Record(fs) => {
             let mut items: Vec<_> = fs
                 .iter()
-                .map(|(k, (v, _))| format!("{}: {}", k, pp_type_with_renaming(v, rename_map, counter)))
+                .map(|(k, (v, _))| {
+                    format!("{}: {}", k, pp_type_with_renaming(v, rename_map, counter))
+                })
                 .collect();
             items.sort();
             format!("{{{}}}", items.join(", "))
@@ -2470,7 +2472,9 @@ fn pp_type_legacy(t: &Type) -> String {
         Type::Type => "Type".into(),
         Type::Var(TvId(i)) => rename_var(*i as i64),
         Type::List(a) => format!("[{}]", pp_type_legacy(a)),
-        Type::Tuple(xs) => format!("({})", xs.iter().map(pp_type_legacy).collect::<Vec<_>>().join(", ")),
+        Type::Tuple(xs) => {
+            format!("({})", xs.iter().map(pp_type_legacy).collect::<Vec<_>>().join(", "))
+        }
         Type::Record(fs) => {
             let mut items: Vec<_> =
                 fs.iter().map(|(k, (v, _))| format!("{}: {}", k, pp_type_legacy(v))).collect();
@@ -2482,14 +2486,22 @@ fn pp_type_legacy(t: &Type) -> String {
             if payload.is_empty() {
                 tag.clone()
             } else {
-                format!("{} {}", tag, payload.iter().map(pp_atom_legacy).collect::<Vec<_>>().join(" "))
+                format!(
+                    "{} {}",
+                    tag,
+                    payload.iter().map(pp_atom_legacy).collect::<Vec<_>>().join(" ")
+                )
             }
         }
         Type::Named { name, args } => {
             if args.is_empty() {
                 name.clone()
             } else {
-                format!("{} {}", name, args.iter().map(pp_atom_legacy).collect::<Vec<_>>().join(" "))
+                format!(
+                    "{} {}",
+                    name,
+                    args.iter().map(pp_atom_legacy).collect::<Vec<_>>().join(" ")
+                )
             }
         }
         Type::SumCtor(vs) => {
@@ -2501,7 +2513,8 @@ fn pp_type_legacy(t: &Type) -> String {
                     0 => tag,
                     1 => format!("{} {}", tag, pp_atom_legacy(&ps[0])),
                     _ => {
-                        let parts: Vec<String> = ps.into_iter().map(|ty| pp_type_legacy(&ty)).collect();
+                        let parts: Vec<String> =
+                            ps.into_iter().map(|ty| pp_type_legacy(&ty)).collect();
                         format!("{}({})", tag, parts.join(", "))
                     }
                 })
