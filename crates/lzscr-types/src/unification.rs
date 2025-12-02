@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use crate::error::{format_field_path, TypeError};
 use crate::scheme::{normalize_tuples, Subst, TypesApply};
 use crate::typeexpr::instantiate_named_sum;
-use crate::types::{Type, TvId};
+use crate::types::{TvId, Type};
 use crate::{normalize_type_and_map, pp_type, user_pretty_type_and_map, InferCtx};
 
 /// Check if a type variable occurs in a type (occurs check for preventing infinite types).

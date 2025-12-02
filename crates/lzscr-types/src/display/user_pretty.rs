@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ptr::addr_of;
 
-use crate::types::{Type, TvId};
+use crate::types::{TvId, Type};
 
 /// User-friendly type display with %{ ... } wrapping and normalized variable names.
 pub(crate) fn user_pretty_type(t: &Type) -> String {

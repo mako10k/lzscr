@@ -39,7 +39,9 @@ pub use builtins::{
     bool_sum_type, effect_signature, fs_effects_record_type, fs_metadata_record_type, option_type,
     result_list_str_type, result_metadata_type, result_str_str_type, result_unit_str_type,
 };
+use display::{normalize_type_and_map, pp_type, user_pretty_type, user_pretty_type_and_map};
 pub use error::{find_similar_names, format_field_path, TypeError};
+use inference::{infer_expr, DebugConfig, InferCtx};
 pub use scheme::{
     generalize, instantiate, normalize_tuples, zonk_type, Scheme, Subst, TvGen, TypeEnv, TypesApply,
 };
@@ -48,8 +50,6 @@ pub use typeexpr::{
     TypeDefsFrame, TypeNameDef, TypeNameDefsFrame,
 };
 pub use types::{TvId, Type};
-use display::{normalize_type_and_map, pp_type, user_pretty_type, user_pretty_type_and_map};
-use inference::{DebugConfig, InferCtx, infer_expr};
 
 use lzscr_ast::ast::*;
 use std::collections::{BTreeMap, HashMap};

@@ -7,17 +7,15 @@ use lzscr_ast::ast::*;
 use lzscr_ast::span::Span;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::builtins::{
-    bool_sum_type, effect_signature,
-};
+use crate::builtins::{bool_sum_type, effect_signature};
 use crate::display::{pp_type, user_pretty_type_and_map};
 use crate::error::{find_similar_names, TypeError};
-use crate::inference::context::{InferCtx, lookup_tyvar, pop_tyvars, push_tyvars_from_pattern};
-use crate::inference::pattern::{PatInfo, infer_pattern};
+use crate::inference::context::{lookup_tyvar, pop_tyvars, push_tyvars_from_pattern, InferCtx};
+use crate::inference::pattern::{infer_pattern, PatInfo};
 use crate::scheme::{generalize, instantiate, zonk_type, Scheme, Subst, TypesApply};
 use crate::typeexpr::{
-    build_typedefs_frame, build_typename_frame,
-    typedefs_lookup_typename, validate_typedecls_positive,
+    build_typedefs_frame, build_typename_frame, typedefs_lookup_typename,
+    validate_typedecls_positive,
 };
 use crate::types::{TvId, Type};
 use crate::unification::{ctx_unify, unify};
@@ -986,7 +984,6 @@ pub(crate) fn infer_expr(
     ctx.pop_span();
     out
 }
-
 
 /// Get a short string description of an expression kind for debugging.
 pub(crate) fn short_expr_kind(k: &ExprKind) -> &'static str {

@@ -12,7 +12,9 @@ pub(crate) mod pattern;
 
 // Re-exports (used by lib.rs and public API)
 #[allow(unused_imports)]
-pub(crate) use context::{DebugConfig, InferCtx, lookup_tyvar, pop_tyvars, push_tyvars_from_pattern};
+pub(crate) use context::{
+    lookup_tyvar, pop_tyvars, push_tyvars_from_pattern, DebugConfig, InferCtx,
+};
 pub(crate) use expr::infer_expr;
 #[allow(unused_imports)]
-pub(crate) use pattern::{PatInfo, infer_pattern};
+pub(crate) use pattern::{infer_pattern, PatInfo};

@@ -77,7 +77,10 @@ pub(crate) fn typedefs_lookup_ctor<'a>(ctx: &'a InferCtx, tag: &str) -> Option<&
 /// Look up a named type definition in the typename stack.
 ///
 /// Searches from innermost to outermost scope.
-pub(crate) fn typedefs_lookup_typename<'a>(ctx: &'a InferCtx, name: &str) -> Option<&'a TypeNameDef> {
+pub(crate) fn typedefs_lookup_typename<'a>(
+    ctx: &'a InferCtx,
+    name: &str,
+) -> Option<&'a TypeNameDef> {
     for fr in ctx.typedef_types.iter().rev() {
         if let Some(d) = fr.get(name) {
             return Some(d);

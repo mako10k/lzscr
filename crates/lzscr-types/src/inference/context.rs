@@ -44,7 +44,7 @@ impl DebugConfig {
             self.logs.push(format!("[d{depth} l{lvl}] {}", msg.into()));
         }
     }
-    
+
     pub(crate) fn dump_env(&mut self, depth: usize, env: &TypeEnv) {
         if self.log_env && depth <= self.max_depth {
             let mut entries: Vec<_> = env.0.iter().collect();
@@ -54,7 +54,7 @@ impl DebugConfig {
             }
         }
     }
-    
+
     pub(crate) fn log_scheme(&mut self, depth: usize, name: &str, sc: &Scheme) {
         if self.log_schemes && depth <= self.max_depth {
             self.logs.push(format!("[d{depth} scheme] {} :: {}", name, pp_type(&sc.ty)));
@@ -77,17 +77,17 @@ impl InferCtx {
     pub(crate) fn push_span(&mut self, sp: Span) {
         self.span_stack.push(sp);
     }
-    
+
     /// Pop an expression span from the context stack.
     pub(crate) fn pop_span(&mut self) {
         self.span_stack.pop();
     }
-    
+
     /// Get the current expression span.
     pub(crate) fn current_span(&self) -> Option<Span> {
         self.span_stack.last().copied()
     }
-    
+
     /// Generate a fresh type variable with current span tracking.
     pub(crate) fn fresh_tv(&mut self) -> Type {
         let t = self.tv.fresh();
@@ -115,9 +115,7 @@ pub(crate) fn push_tyvars_from_pattern<'a>(
             if nm.is_empty() {
                 continue;
             }
-            let Type::Var(id) = ctx.tv.fresh() else {
-                unreachable!()
-            }; // keep raw fresh: type bind generics shouldn't inherit expr span
+            let Type::Var(id) = ctx.tv.fresh() else { unreachable!() }; // keep raw fresh: type bind generics shouldn't inherit expr span
             frame.insert(nm.clone(), id);
         }
         ctx.tyvars.push(frame);

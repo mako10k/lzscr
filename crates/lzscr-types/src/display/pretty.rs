@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use crate::types::{Type, TvId};
+use crate::types::{TvId, Type};
 
 /// Pretty-print a type with alphabetic variable renaming.
 pub(crate) fn pp_type(t: &Type) -> String {

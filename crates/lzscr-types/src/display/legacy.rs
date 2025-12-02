@@ -3,7 +3,7 @@
 //! This format uses raw type variable IDs (%t0, %t1, etc.) instead of
 //! alphabetic names. Used by existing tests that expect this format.
 
-use crate::types::{Type, TvId};
+use crate::types::{TvId, Type};
 
 /// Legacy type pretty-printing with raw variable IDs (%tN format).
 #[allow(dead_code)]
