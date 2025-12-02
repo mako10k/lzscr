@@ -1061,6 +1061,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ty_span_offset: actual_span_offset,
                                 ty_span_len: actual_span_len,
                                 ..
+                            }
+                            | TypeError::AltLambdaArityMismatch {
+                                expected_span_offset,
+                                expected_span_len,
+                                actual_span_offset,
+                                actual_span_len,
+                                ..
                             } => {
                                 eprintln!("type error: {}", e);
                                 let (eo, el) = (expected_span_offset, expected_span_len);
@@ -1079,8 +1086,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             | TypeError::MixedAltBranches { span_offset, span_len }
                             | TypeError::NegativeOccurrence { span_offset, span_len, .. }
                             | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
-                            | TypeError::DuplicateCtorTag { span_offset, span_len, .. }
-                            | TypeError::AltLambdaArityMismatch { span_offset, span_len, .. } => {
+                            | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                 eprintln!("type error: {}", e);
                                 // Heuristic: if span len is 1 (generic), nudge caret to the first
                                 // non-comment token at/after that offset for better UX.
@@ -1137,6 +1143,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     ty_span_offset: actual_span_offset,
                                     ty_span_len: actual_span_len,
                                     ..
+                                }
+                                | TypeError::AltLambdaArityMismatch {
+                                    expected_span_offset,
+                                    expected_span_len,
+                                    actual_span_offset,
+                                    actual_span_len,
+                                    ..
                                 } => {
                                     eprintln!("type error: {}", e);
                                     let (eo, el) = (expected_span_offset, expected_span_len);
@@ -1157,10 +1170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 | TypeError::MixedAltBranches { span_offset, span_len }
                                 | TypeError::NegativeOccurrence { span_offset, span_len, .. }
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
-                                | TypeError::DuplicateCtorTag { span_offset, span_len, .. }
-                                | TypeError::AltLambdaArityMismatch {
-                                    span_offset, span_len, ..
-                                } => {
+                                | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                     eprintln!("type error: {}", e);
                                     let (adj_off, adj_len) = if span_len == 1 {
                                         if let Some((op, _len)) = src_reg
@@ -1237,6 +1247,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     ty_span_offset: actual_span_offset,
                                     ty_span_len: actual_span_len,
                                     ..
+                                }
+                                | TypeError::AltLambdaArityMismatch {
+                                    expected_span_offset,
+                                    expected_span_len,
+                                    actual_span_offset,
+                                    actual_span_len,
+                                    ..
                                 } => {
                                     eprintln!("type error: {}", e);
                                     let (eo, el) = (expected_span_offset, expected_span_len);
@@ -1257,10 +1274,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 | TypeError::MixedAltBranches { span_offset, span_len }
                                 | TypeError::NegativeOccurrence { span_offset, span_len, .. }
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
-                                | TypeError::DuplicateCtorTag { span_offset, span_len, .. }
-                                | TypeError::AltLambdaArityMismatch {
-                                    span_offset, span_len, ..
-                                } => {
+                                | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                     eprintln!("type error: {}", e);
                                     let (adj_off, adj_len) = if span_len == 1 {
                                         if let Some((op, _len)) = src_reg

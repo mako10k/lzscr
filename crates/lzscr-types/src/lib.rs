@@ -508,8 +508,15 @@ pub enum TypeError {
     DuplicateCtorTag { tag: String, span_offset: usize, span_len: usize },
     #[error("AltLambda branches mixed: expected all Ctor patterns or wildcard/default only at ({span_offset},{span_len})")]
     MixedAltBranches { span_offset: usize, span_len: usize },
-    #[error("AltLambda arity mismatch: expected {expected} args but got {got} at ({span_offset},{span_len})")]
-    AltLambdaArityMismatch { expected: usize, got: usize, span_offset: usize, span_len: usize },
+    #[error("AltLambda arity mismatch: expected {expected} args but got {got}")]
+    AltLambdaArityMismatch {
+        expected: usize,
+        got: usize,
+        expected_span_offset: usize,
+        expected_span_len: usize,
+        actual_span_offset: usize,
+        actual_span_len: usize,
+    },
     #[error("not a function: {ty}")]
     NotFunction { ty: Type },
     #[error("unbound reference: {name} at ({span_offset},{span_len})")]
@@ -2067,13 +2074,16 @@ fn infer_expr(
                 }
             }
             let arity = views[0].params.len();
+            let first_span = views[0].span;
             for v in &views {
                 if v.params.len() != arity {
                     return Err(TypeError::AltLambdaArityMismatch {
                         expected: arity,
                         got: v.params.len(),
-                        span_offset: v.span.offset,
-                        span_len: v.span.len,
+                        expected_span_offset: first_span.offset,
+                        expected_span_len: first_span.len,
+                        actual_span_offset: v.span.offset,
+                        actual_span_len: v.span.len,
                     });
                 }
             }
