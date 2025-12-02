@@ -21,11 +21,13 @@
 //! - `error`: Type errors and suggestion helpers (`TypeError`, `edit_distance`)
 //! - `builtins`: Built-in type constructors (bool, option, result, fs effects)
 //! - `scheme`: Type schemes, substitutions, environments (Scheme, Subst, TypeEnv)
+//! - `typeexpr`: Type expression conversion and typedef management
 //! - Other modules to be extracted: unification, inference, display
 
 mod builtins;
 mod error;
 mod scheme;
+mod typeexpr;
 mod types;
 
 // Re-export core types
@@ -37,74 +39,16 @@ pub use error::{find_similar_names, format_field_path, TypeError};
 pub use scheme::{
     generalize, instantiate, normalize_tuples, zonk_type, Scheme, Subst, TvGen, TypeEnv, TypesApply,
 };
+pub use typeexpr::{
+    build_typedefs_frame, build_typename_frame, conv_typeexpr_fresh, validate_typedecls_positive,
+    TypeDefsFrame, TypeNameDef, TypeNameDefsFrame,
+};
+use typeexpr::{instantiate_named_sum, typedefs_lookup_ctor, typedefs_lookup_typename};
 pub use types::{TvId, Type};
 
 use lzscr_ast::ast::*;
 use lzscr_ast::span::Span;
 use std::collections::{BTreeMap, HashMap, HashSet};
-
-// ---------- TypeDef frames (ctor templates from % declarations) ----------
-
-type TypeDefsFrame = HashMap<String, Vec<TypeExpr>>; // tag -> payload type templates (AST TypeExpr)
-
-fn build_typedefs_frame(decls: &[TypeDecl]) -> TypeDefsFrame {
-    let mut m: TypeDefsFrame = HashMap::new();
-    for d in decls {
-        match &d.body {
-            TypeDefBody::Sum(alts) => {
-                for (tag, args) in alts {
-                    m.insert(tag.clone(), args.clone());
-                }
-            }
-        }
-    }
-    m
-}
-
-fn typedefs_lookup_ctor<'a>(ctx: &'a InferCtx, tag: &str) -> Option<&'a Vec<TypeExpr>> {
-    for fr in ctx.typedefs.iter().rev() {
-        if let Some(v) = fr.get(tag) {
-            return Some(v);
-        }
-    }
-    None
-}
-
-// Named type definitions (for μ-types via isorecursive unfolding)
-#[derive(Clone)]
-struct TypeNameDef {
-    params: Vec<String>,
-    alts: Vec<(String, Vec<TypeExpr>)>,
-    span_offset: usize,
-    span_len: usize,
-}
-type TypeNameDefsFrame = HashMap<String, TypeNameDef>; // name -> def
-
-fn build_typename_frame(decls: &[TypeDecl]) -> TypeNameDefsFrame {
-    let mut m = HashMap::new();
-    for d in decls {
-        let TypeDefBody::Sum(alts) = &d.body;
-        m.insert(
-            d.name.clone(),
-            TypeNameDef {
-                params: d.params.clone(),
-                alts: alts.clone(),
-                span_offset: d.span.offset,
-                span_len: d.span.len,
-            },
-        );
-    }
-    m
-}
-
-fn typedefs_lookup_typename<'a>(ctx: &'a InferCtx, name: &str) -> Option<&'a TypeNameDef> {
-    for fr in ctx.typedef_types.iter().rev() {
-        if let Some(d) = fr.get(name) {
-            return Some(d);
-        }
-    }
-    None
-}
 
 // ---------- Unification ----------
 // (TypeError and helpers now in error module)
@@ -294,152 +238,6 @@ fn unify_slices(xs: &[Type], ys: &[Type]) -> Result<Subst, TypeError> {
         s = s1.compose(s);
     }
     Ok(s)
-}
-
-// Positivity (no negative occurrence) check for a type declaration body
-fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> bool {
-    match te {
-        TypeExpr::Unit
-        | TypeExpr::Int
-        | TypeExpr::Float
-        | TypeExpr::Bool
-        | TypeExpr::Str
-        | TypeExpr::Char => true,
-        TypeExpr::Var(_) => true,
-        TypeExpr::Hole(_) => false, // holes are not allowed in type decls
-        TypeExpr::List(t) => check_positive_occurrence(t, target, polarity),
-        TypeExpr::Tuple(xs) => xs.iter().all(|t| check_positive_occurrence(t, target, polarity)),
-        TypeExpr::Record(fs) => {
-            fs.iter().all(|(_, t)| check_positive_occurrence(t, target, polarity))
-        }
-        TypeExpr::Fun(a, b) => {
-            check_positive_occurrence(a, target, !polarity)
-                && check_positive_occurrence(b, target, polarity)
-        }
-        TypeExpr::Ctor { tag, args } => {
-            let self_occ_ok = if tag == target { polarity } else { true };
-            self_occ_ok && args.iter().all(|t| check_positive_occurrence(t, target, polarity))
-        }
-    }
-}
-
-#[allow(clippy::result_large_err)]
-fn validate_typedecls_positive(decls: &[TypeDecl]) -> Result<(), TypeError> {
-    for d in decls {
-        let TypeDefBody::Sum(alts) = &d.body;
-        for (_tag, payloads) in alts {
-            for t in payloads {
-                if !check_positive_occurrence(t, &d.name, true) {
-                    return Err(TypeError::NegativeOccurrence {
-                        type_name: d.name.clone(),
-                        span_offset: d.span.offset,
-                        span_len: d.span.len,
-                    });
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-// Convert TypeExpr to Type for instantiating named type defs (substitute params with args)
-#[allow(clippy::result_large_err)]
-fn conv_typeexpr_with_subst(
-    ctx: &InferCtx,
-    te: &TypeExpr,
-    subst: &HashMap<String, Type>,
-) -> Result<Type, TypeError> {
-    Ok(match te {
-        TypeExpr::Unit => Type::Unit,
-        TypeExpr::Int => Type::Int,
-        TypeExpr::Float => Type::Float,
-        TypeExpr::Bool => bool_sum_type(),
-        TypeExpr::Str => Type::Str,
-        TypeExpr::Char => Type::Char,
-        TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr_with_subst(ctx, t, subst)?)),
-        TypeExpr::Tuple(xs) => Type::Tuple(
-            xs.iter()
-                .map(|t| conv_typeexpr_with_subst(ctx, t, subst))
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
-        TypeExpr::Record(fs) => {
-            let mut m = BTreeMap::new();
-            for (k, v) in fs {
-                m.insert(k.clone(), (conv_typeexpr_with_subst(ctx, v, subst)?, None));
-            }
-            Type::Record(m)
-        }
-        TypeExpr::Fun(a, b) => Type::fun(
-            conv_typeexpr_with_subst(ctx, a, subst)?,
-            conv_typeexpr_with_subst(ctx, b, subst)?,
-        ),
-        TypeExpr::Ctor { tag, args } => {
-            let conv_args = args
-                .iter()
-                .map(|t| conv_typeexpr_with_subst(ctx, t, subst))
-                .collect::<Result<Vec<_>, _>>()?;
-            if typedefs_lookup_typename(ctx, tag).is_some() {
-                Type::Named { name: tag.clone(), args: conv_args }
-            } else {
-                Type::Ctor { tag: tag.clone(), payload: conv_args }
-            }
-        }
-        TypeExpr::Var(nm) => match subst.get(nm) {
-            Some(t) => t.clone(),
-            None => {
-                return Err(TypeError::InvalidTypeDecl {
-                    msg: format!("unbound type variable '%{} in type declaration", nm),
-                    span_offset: 0,
-                    span_len: 0,
-                })
-            }
-        },
-        TypeExpr::Hole(_) => {
-            return Err(TypeError::InvalidTypeDecl {
-                msg: "holes are not allowed in type declarations".into(),
-                span_offset: 0,
-                span_len: 0,
-            })
-        }
-    })
-}
-
-#[allow(clippy::result_large_err)]
-fn instantiate_named_sum(
-    ctx: &InferCtx,
-    name: &str,
-    args: &[Type],
-) -> Result<Vec<(String, Vec<Type>)>, TypeError> {
-    let def = typedefs_lookup_typename(ctx, name).ok_or_else(|| TypeError::InvalidTypeDecl {
-        msg: format!("unknown type name {}", name),
-        span_offset: 0,
-        span_len: 0,
-    })?;
-    if def.params.len() != args.len() {
-        return Err(TypeError::InvalidTypeDecl {
-            msg: format!(
-                "type {} arity mismatch: expected {}, got {}",
-                name,
-                def.params.len(),
-                args.len()
-            ),
-            span_offset: def.span_offset,
-            span_len: def.span_len,
-        });
-    }
-    let mut map = HashMap::new();
-    for (p, a) in def.params.iter().zip(args.iter()) {
-        map.insert(p.clone(), a.clone());
-    }
-    let mut out = Vec::with_capacity(def.alts.len());
-    for (tag, payload_tes) in &def.alts {
-        let mut payload = Vec::with_capacity(payload_tes.len());
-        for te in payload_tes {
-            payload.push(conv_typeexpr_with_subst(ctx, te, &map)?);
-        }
-        out.push((tag.clone(), payload));
-    }
-    Ok(out)
 }
 
 // Unification with awareness of Named types (μ-types): one-step unfold into SumCtor
@@ -843,35 +641,6 @@ fn push_tyvars_from_pattern<'a>(ctx: &mut InferCtx, p: &'a Pattern) -> (&'a Patt
 fn pop_tyvars(ctx: &mut InferCtx, n: usize) {
     for _ in 0..n {
         let _ = ctx.tyvars.pop();
-    }
-}
-
-// Convert an AST TypeExpr coming from a %type declaration payload into a fresh Type.
-// All type variables are instantiated to fresh Type::Var; holes are treated as fresh as well.
-fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
-    match te {
-        TypeExpr::Unit => Type::Unit,
-        TypeExpr::Int => Type::Int,
-        TypeExpr::Float => Type::Float,
-        TypeExpr::Bool => bool_sum_type(),
-        TypeExpr::Str => Type::Str,
-        TypeExpr::Char => Type::Char,
-        TypeExpr::List(t) => Type::List(Box::new(conv_typeexpr_fresh(tv, t))),
-        TypeExpr::Tuple(xs) => Type::Tuple(xs.iter().map(|t| conv_typeexpr_fresh(tv, t)).collect()),
-        TypeExpr::Record(fs) => {
-            let mut m = BTreeMap::new();
-            for (k, v) in fs {
-                m.insert(k.clone(), conv_typeexpr_fresh(tv, v));
-            }
-            Type::Record(m.into_iter().map(|(k, v)| (k, (v, None))).collect())
-        }
-        TypeExpr::Fun(a, b) => Type::fun(conv_typeexpr_fresh(tv, a), conv_typeexpr_fresh(tv, b)),
-        TypeExpr::Ctor { tag, args } => {
-            let payload = args.iter().map(|t| conv_typeexpr_fresh(tv, t)).collect();
-            Type::Ctor { tag: tag.clone(), payload }
-        }
-        TypeExpr::Var(_) => tv.fresh(),
-        TypeExpr::Hole(_) => tv.fresh(),
     }
 }
 
