@@ -13,51 +13,22 @@
 //!
 //! Implements a minimal rank-1 HM inference over lzscr AST, including AltLambda
 //! typing with Ctor-limited union (SumCtor) for lambda chains.
+//!
+//! # Module Structure (Refactored 2025-12-02)
+//!
+//! This crate has been split into multiple focused modules:
+//! - `types`: Core type representations (`Type`, `TvId`)
+//! - Other modules to be extracted: error, builtins, scheme, unification, inference, display
+
+mod types;
+
+// Re-export core types
+pub use types::{TvId, Type};
 
 use lzscr_ast::ast::*;
 use lzscr_ast::span::Span;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-
-// Core type representation (was accidentally removed during patching)
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
-pub struct TvId(pub u32);
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Type {
-    Unit,
-    Int,
-    Float,
-    Str,
-    Char,
-    Type, // first-class type value
-    Var(TvId),
-    Fun(Box<Type>, Box<Type>),
-    List(Box<Type>),
-    Tuple(Vec<Type>),
-    Record(BTreeMap<String, (Type, Option<Span>)>),
-    Ctor { tag: String, payload: Vec<Type> },
-    Named { name: String, args: Vec<Type> }, // syntactic sugar for unfolding during unify
-    SumCtor(Vec<(String, Vec<Type>)>),       // union of constructors
-}
-
-impl Type {
-    fn fun(a: Type, b: Type) -> Type {
-        Type::Fun(Box::new(a), Box::new(b))
-    }
-}
-
-impl std::fmt::Display for TvId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "%t{}", self.0)
-    }
-}
-
-impl std::fmt::Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", pp_type(self))
-    }
-}
 fn bool_sum_type() -> Type {
     Type::SumCtor(vec![(".False".into(), vec![]), (".True".into(), vec![])])
 }
