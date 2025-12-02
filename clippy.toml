@@ -1,0 +1,52 @@
+# Clippy configuration for lzscr workspace
+# See: https://doc.rust-lang.org/clippy/lint_configuration.html
+
+# Cognitive complexity threshold
+# Functions with higher complexity will trigger clippy::cognitive_complexity
+# Current setting: warn at 15, consider refactoring at 25+
+cognitive-complexity-threshold = 15
+
+# Type complexity threshold
+# Complex types will trigger clippy::type_complexity
+type-complexity-threshold = 250
+
+# Too many arguments threshold
+# Functions with more parameters will trigger clippy::too_many_arguments
+too-many-arguments-threshold = 7
+
+# Single char binding names threshold
+# Allows common iterator variables like i, j, k without warnings
+single-char-binding-names-threshold = 4
+
+# Disallowed names
+# Variable names that should trigger warnings
+disallowed-names = ["foo", "bar", "baz", "quux"]
+
+# Avoid breaking exported API
+avoid-breaking-exported-api = true
+
+# Standard library imports style
+# Prefer absolute paths: std::collections::HashMap
+# over relative: collections::HashMap
+# (Not applicable to 2021 edition, kept for documentation)
+
+# Doc markdown configuration
+doc-valid-idents = [
+    "LazyScript",
+    "lzscr",
+    "HM",
+    "Hindley-Milner",
+    "AST",
+    "IR",
+    "AltLambda",
+    "LetGroup",
+    "LetRec",
+    "SumCtor",
+    "CoreIR",
+]
+
+# Suppress specific lints for intentional design patterns
+# These should be documented in code with #[allow(clippy::...)] and comments
+
+# Note: workspace-wide allows should be minimal
+# Prefer per-module or per-function allows with explanatory comments
