@@ -1,0 +1,235 @@
+# Diagnostics Improvement Plan
+
+**Date**: 2025-12-02  
+**Status**: Planning Phase  
+**Goal**: Standardize and enhance error diagnostics following ROADMAP priorities
+
+## Current State Analysis
+
+### Existing Dual-Span Support
+The codebase already has partial dual-span diagnostic implementation:
+
+1. **Type Errors with Dual Spans** (in `lzscr-types/src/error.rs`):
+   - `MismatchBoth`: expected vs actual type spans
+   - `RecordFieldMismatchBoth`: field mismatch with dual spans
+   - `Occurs`: infinite type detection (var location vs occurrence)
+   - `AnnotMismatch`: annotation vs expression spans
+   - `AltLambdaArityMismatch`: expected vs actual arity spans
+
+2. **CLI Display Logic** (in `lzscr-cli/src/main.rs`):
+   - `format_span_caret()`: single-span caret rendering
+   - `SourceRegistry::format_span_block()`: span-to-source mapping with module support
+   - Dual-span rendering for specific error types (lines 1214-1249)
+
+### Gaps and Inconsistencies
+
+1. **Incomplete Dual-Span Coverage**:
+   - Some error variants still use single-span (`Mismatch`, `RecordFieldMismatch`)
+   - Not all dual-span errors have consistent display logic
+   
+2. **Span Adjustment Heuristics**:
+   - 1-char span heuristic (shift to first non-comment token) scattered across code
+   - No centralized span normalization logic
+
+3. **Error Message Style**:
+   - Mix of English and technical jargon
+   - Missing fix-it hints for many error types
+   - No consistent "cause vs effect" labeling
+
+4. **Occurs Check Display**:
+   - Currently uses raw type variable IDs
+   - No origin span tracking for generated type variables
+   - No normalized display (%a, %b convention not fully implemented)
+
+## Improvement Phases
+
+### Phase 1: Standardize Dual-Span Infrastructure (Week 1)
+
+**Goal**: Create consistent dual-span error types and display utilities
+
+**Tasks**:
+1. Create `DiagnosticSpan` struct to encapsulate span metadata
+   ```rust
+   struct DiagnosticSpan {
+       offset: usize,
+       len: usize,
+       label: Option<String>,  // e.g., "expected here", "actual here"
+       context: SpanContext,    // primary/secondary/note
+   }
+   ```
+
+2. Add `format_dual_span_caret()` function
+   - Renders two carets with distinct labels
+   - Handles spans in different sources/modules
+   - Consistent color/formatting (if terminal supports)
+
+3. Deprecate single-span error variants (migration path):
+   - Keep for backward compat but emit deprecation warnings
+   - Add dual-span versions for all remaining errors
+
+**Acceptance Criteria**:
+- All type errors support dual-span reporting
+- Single function for dual-span rendering
+- Golden tests for dual-span display format
+
+### Phase 2: Normalize Span Adjustment (Week 2)
+
+**Goal**: Centralize span normalization heuristics
+
+**Tasks**:
+1. Create `normalize_span()` function in `SourceRegistry`:
+   ```rust
+   fn normalize_span(&self, offset: usize, len: usize) -> (usize, usize) {
+       // Apply heuristics:
+       // - 1-char generic spans → find meaningful token
+       // - Leading '{' → shift inward to first token
+       // - Adjust for comment/whitespace
+   }
+   ```
+
+2. Consolidate all span adjustment logic:
+   - Remove scattered heuristics from error display code
+   - Apply normalization at span creation time (in inference)
+   - Document normalization rules
+
+3. Add span metadata tracking:
+   - Track "generic" vs "precise" span origin
+   - Preserve original span alongside normalized version
+
+**Acceptance Criteria**:
+- Single source of truth for span normalization
+- All error display uses normalized spans
+- Documentation of normalization rules
+
+### Phase 3: Enhance Occurs Check Display (Week 3)
+
+**Goal**: Improve infinite type error messages
+
+**Tasks**:
+1. Add type variable origin tracking:
+   - Track where each type variable was generated (span)
+   - Store in inference context metadata
+
+2. Implement normalized type variable display:
+   - Map TvId → %a, %b, %c, ... consistently
+   - Use stable ordering (by first occurrence in expression)
+   - Display normalized names in error messages
+
+3. Improve occurs error message:
+   ```
+   Error: Cannot construct infinite type
+     Type variable %a (defined here):
+       <span for original occurrence>
+     Occurs inside:
+       <span for recursive occurrence>
+     
+     The type would be: %a = List %a
+   ```
+
+**Acceptance Criteria**:
+- Type variables use %a, %b notation in all errors
+- Origin spans tracked and displayed
+- Clear explanation of infinite type issue
+
+### Phase 4: Add Fix-It Hints (Week 4)
+
+**Goal**: Provide actionable suggestions for common errors
+
+**Tasks**:
+1. Add `hint` field to diagnostic display:
+   - Suggest explicit type annotations for ambiguous inference
+   - Suggest seq/chain for effect errors
+   - Suggest similar names for unbound refs (already implemented)
+
+2. Create hint templates:
+   ```rust
+   enum FixItHint {
+       AddTypeAnnotation { expr_span: Span, suggested_type: Type },
+       UseEffectWrapper { wrapper: &'static str },  // "seq", "chain"
+       RenameVariable { from: String, to: Vec<String> },
+       AddImport { module: String },
+   }
+   ```
+
+3. Integrate hints into error display:
+   - Show after main error message
+   - Format consistently: "  hint: <suggestion>"
+   - Include code examples where helpful
+
+**Acceptance Criteria**:
+- All error types have appropriate hints
+- Hints are clear and actionable
+- User testing confirms hints are helpful
+
+### Phase 5: Records Field Spans (Week 5)
+
+**Goal**: Precise span tracking for record field names and values
+
+**Tasks**:
+1. Enhance AST to track field name spans:
+   ```rust
+   struct RecordField {
+       name: String,
+       name_span: Span,
+       value: Expr,
+       value_span: Span,  // redundant with value.span but explicit
+   }
+   ```
+
+2. Update parser to capture field name spans
+
+3. Use field spans in record mismatch errors:
+   - Point to specific field name for missing/extra fields
+   - Point to field value for type mismatches
+   - Show both field name and value spans for context
+
+**Acceptance Criteria**:
+- Field name spans available in AST
+- Record errors use field-specific spans
+- Golden tests for record error display
+
+### Phase 6: Error Message Style Guide (Ongoing)
+
+**Goal**: Consistent, clear, concise error messages
+
+**Guidelines**:
+1. **Structure**: `<error-type>: <brief description>`
+2. **Language**: Simple English, avoid jargon
+3. **Spans**: Show cause (expected) before effect (actual)
+4. **Labels**: Use "expected here" / "actual here" / "defined here"
+5. **Hints**: Start with "hint:", provide concrete actions
+6. **Examples**: Include code snippets for complex suggestions
+
+**Tasks**:
+- Audit all error messages for consistency
+- Create message templates for common patterns
+- Document style guide in `docs/coding-standards.md`
+
+## Success Metrics
+
+1. **Coverage**: All error types support dual-span reporting
+2. **Consistency**: All errors follow style guide
+3. **Clarity**: User testing shows improved error understanding
+4. **Maintainability**: Span handling centralized, easy to extend
+
+## Dependencies
+
+- Parser enhancements (for field spans)
+- Terminal color support (optional, for better visual distinction)
+- Golden test framework expansion (for diagnostic tests)
+
+## Timeline
+
+- **Phase 1**: Week 1 (Jan 8-12, 2025)
+- **Phase 2**: Week 2 (Jan 15-19, 2025)  
+- **Phase 3**: Week 3 (Jan 22-26, 2025)
+- **Phase 4**: Week 4 (Jan 29 - Feb 2, 2025)
+- **Phase 5**: Week 5 (Feb 5-9, 2025)
+- **Phase 6**: Ongoing (reviews every 2 weeks)
+
+## Open Questions
+
+1. Should we add color/ANSI support for terminal output?
+2. How to handle very long spans (e.g., entire function bodies)?
+3. Should hints be suppressible via CLI flag?
+4. Need JSON output format for IDE integration?
