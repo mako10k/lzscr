@@ -7,10 +7,12 @@
 //! - Record types with span tracking
 
 pub(crate) mod context;
+pub(crate) mod expr;
 pub(crate) mod pattern;
 
-// Re-exports
+// Re-exports (used by lib.rs and public API)
+#[allow(unused_imports)]
 pub(crate) use context::{DebugConfig, InferCtx, lookup_tyvar, pop_tyvars, push_tyvars_from_pattern};
+pub(crate) use expr::infer_expr;
+#[allow(unused_imports)]
 pub(crate) use pattern::{PatInfo, infer_pattern};
-
-// Note: These re-exports are used by lib.rs (infer_expr and related functions)
