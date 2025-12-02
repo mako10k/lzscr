@@ -4,7 +4,7 @@ use lzscr_types::api::{infer_ast_with_opts, infer_program, InferOptions};
 #[test]
 fn id_function_type() {
     let t = infer_program("\\~x -> ~x").unwrap();
-    assert_eq!(t, "%t0 -> %t0");
+    assert_eq!(t, "%a -> %a");
 }
 
 #[test]
@@ -50,8 +50,9 @@ fn pretty_vs_legacy_variable_names() {
     let ast = parse_expr(src).unwrap();
     let legacy = infer_ast_with_opts(&ast, InferOptions { pretty: false }).unwrap();
     let pretty = infer_ast_with_opts(&ast, InferOptions { pretty: true }).unwrap();
-    // Legacy should have %tN vars; pretty should wrap and rename to %a etc.
-    assert!(legacy.contains("%t"));
+    // Both legacy and pretty now use %a, %b, ... variable naming
+    // Pretty mode additionally zonks and wraps in %{ } for cycle detection
+    assert!(legacy.contains("%a"));
     assert!(pretty.starts_with("%{"));
     assert!(pretty.contains("%a"));
 }

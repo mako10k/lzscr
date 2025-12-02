@@ -2337,11 +2337,32 @@ fn short_expr_kind(k: &ExprKind) -> &'static str {
 //   * Do not mix both in one diagnostic line to avoid confusing two naming domains.
 
 fn pp_type(t: &Type) -> String {
-    fn rename_var(id: i64) -> String {
-        // Map 0->%t0 stays as %t0 for stability; optional enhancement: %a,%b,... cycling.
-        // Keep current behavior for now (already %tN). Placeholder for future customization.
-        format!("%t{id}")
+    pp_type_with_renaming(t, &mut std::collections::HashMap::new(), &mut 0)
+}
+
+fn pp_type_with_renaming(
+    t: &Type,
+    rename_map: &mut std::collections::HashMap<TvId, String>,
+    counter: &mut usize,
+) -> String {
+    fn get_or_create_name(
+        tv: TvId,
+        rename_map: &mut std::collections::HashMap<TvId, String>,
+        counter: &mut usize,
+    ) -> String {
+        if let Some(name) = rename_map.get(&tv) {
+            return name.clone();
+        }
+        let name = if *counter < 26 {
+            format!("%{}", (b'a' + *counter as u8) as char)
+        } else {
+            format!("%{}{}", (b'a' + (*counter % 26) as u8) as char, *counter / 26)
+        };
+        *counter += 1;
+        rename_map.insert(tv, name.clone());
+        name
     }
+    
     match t {
         Type::Unit => "Unit".into(),
         Type::Int => "Int".into(),
@@ -2349,28 +2370,55 @@ fn pp_type(t: &Type) -> String {
         Type::Str => "Str".into(),
         Type::Char => "Char".into(),
         Type::Type => "Type".into(),
-        Type::Var(TvId(i)) => rename_var(*i as i64),
-        Type::List(a) => format!("[{}]", pp_type(a)),
-        Type::Tuple(xs) => format!("({})", xs.iter().map(pp_type).collect::<Vec<_>>().join(", ")),
+        Type::Var(tv) => get_or_create_name(*tv, rename_map, counter),
+        Type::List(a) => format!("[{}]", pp_type_with_renaming(a, rename_map, counter)),
+        Type::Tuple(xs) => format!(
+            "({})",
+            xs.iter()
+                .map(|x| pp_type_with_renaming(x, rename_map, counter))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         Type::Record(fs) => {
-            let mut items: Vec<_> =
-                fs.iter().map(|(k, (v, _))| format!("{}: {}", k, pp_type(v))).collect();
+            let mut items: Vec<_> = fs
+                .iter()
+                .map(|(k, (v, _))| format!("{}: {}", k, pp_type_with_renaming(v, rename_map, counter)))
+                .collect();
             items.sort();
             format!("{{{}}}", items.join(", "))
         }
-        Type::Fun(a, b) => format!("{} -> {}", pp_atom(a), pp_type(b)),
+        Type::Fun(a, b) => format!(
+            "{} -> {}",
+            pp_atom_with_renaming(a, rename_map, counter),
+            pp_type_with_renaming(b, rename_map, counter)
+        ),
         Type::Ctor { tag, payload } => {
             if payload.is_empty() {
                 tag.clone()
             } else {
-                format!("{} {}", tag, payload.iter().map(pp_atom).collect::<Vec<_>>().join(" "))
+                format!(
+                    "{} {}",
+                    tag,
+                    payload
+                        .iter()
+                        .map(|x| pp_atom_with_renaming(x, rename_map, counter))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
             }
         }
         Type::Named { name, args } => {
             if args.is_empty() {
                 name.clone()
             } else {
-                format!("{} {}", name, args.iter().map(pp_atom).collect::<Vec<_>>().join(" "))
+                format!(
+                    "{} {}",
+                    name,
+                    args.iter()
+                        .map(|x| pp_atom_with_renaming(x, rename_map, counter))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
             }
         }
         Type::SumCtor(vs) => {
@@ -2380,9 +2428,12 @@ fn pp_type(t: &Type) -> String {
                 .into_iter()
                 .map(|(tag, ps)| match ps.len() {
                     0 => tag,
-                    1 => format!("{} {}", tag, pp_atom(&ps[0])),
+                    1 => format!("{} {}", tag, pp_atom_with_renaming(&ps[0], rename_map, counter)),
                     _ => {
-                        let parts: Vec<String> = ps.into_iter().map(|ty| pp_type(&ty)).collect();
+                        let parts: Vec<String> = ps
+                            .into_iter()
+                            .map(|ty| pp_type_with_renaming(&ty, rename_map, counter))
+                            .collect();
                         format!("{}({})", tag, parts.join(", "))
                     }
                 })
@@ -2393,10 +2444,80 @@ fn pp_type(t: &Type) -> String {
     }
 }
 
-fn pp_atom(t: &Type) -> String {
+fn pp_atom_with_renaming(
+    t: &Type,
+    rename_map: &mut std::collections::HashMap<TvId, String>,
+    counter: &mut usize,
+) -> String {
     match t {
-        Type::Fun(_, _) => format!("({})", pp_type(t)),
-        _ => pp_type(t),
+        Type::Fun(_, _) => format!("({})", pp_type_with_renaming(t, rename_map, counter)),
+        _ => pp_type_with_renaming(t, rename_map, counter),
+    }
+}
+
+// Legacy implementation kept for reference but unused after redirect
+#[allow(dead_code)]
+fn pp_type_legacy(t: &Type) -> String {
+    fn rename_var(id: i64) -> String {
+        format!("%t{id}")
+    }
+    match t {
+        Type::Unit => "Unit".into(),
+        Type::Int => "Int".into(),
+        Type::Float => "Float".into(),
+        Type::Str => "Str".into(),
+        Type::Char => "Char".into(),
+        Type::Type => "Type".into(),
+        Type::Var(TvId(i)) => rename_var(*i as i64),
+        Type::List(a) => format!("[{}]", pp_type_legacy(a)),
+        Type::Tuple(xs) => format!("({})", xs.iter().map(pp_type_legacy).collect::<Vec<_>>().join(", ")),
+        Type::Record(fs) => {
+            let mut items: Vec<_> =
+                fs.iter().map(|(k, (v, _))| format!("{}: {}", k, pp_type_legacy(v))).collect();
+            items.sort();
+            format!("{{{}}}", items.join(", "))
+        }
+        Type::Fun(a, b) => format!("{} -> {}", pp_atom_legacy(a), pp_type_legacy(b)),
+        Type::Ctor { tag, payload } => {
+            if payload.is_empty() {
+                tag.clone()
+            } else {
+                format!("{} {}", tag, payload.iter().map(pp_atom_legacy).collect::<Vec<_>>().join(" "))
+            }
+        }
+        Type::Named { name, args } => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                format!("{} {}", name, args.iter().map(pp_atom_legacy).collect::<Vec<_>>().join(" "))
+            }
+        }
+        Type::SumCtor(vs) => {
+            let mut vs2 = vs.clone();
+            vs2.sort_by(|a, b| a.0.cmp(&b.0));
+            let inner = vs2
+                .into_iter()
+                .map(|(tag, ps)| match ps.len() {
+                    0 => tag,
+                    1 => format!("{} {}", tag, pp_atom_legacy(&ps[0])),
+                    _ => {
+                        let parts: Vec<String> = ps.into_iter().map(|ty| pp_type_legacy(&ty)).collect();
+                        format!("{}({})", tag, parts.join(", "))
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" | ");
+            format!("({})", inner)
+        }
+    }
+}
+
+// Legacy helper kept for reference but unused after pp_type redirect
+#[allow(dead_code)]
+fn pp_atom_legacy(t: &Type) -> String {
+    match t {
+        Type::Fun(_, _) => format!("({})", pp_type_legacy(t)),
+        _ => pp_type_legacy(t),
     }
 }
 
