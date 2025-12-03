@@ -40,7 +40,7 @@ pub use builtins::{
     bool_sum_type, effect_signature, fs_effects_record_type, fs_metadata_record_type, option_type,
     result_list_str_type, result_metadata_type, result_str_str_type, result_unit_str_type,
 };
-pub use diagnostic::{DiagnosticSpan, DualSpan, SpanContext};
+pub use diagnostic::{DiagnosticSpan, DualSpan, SpanContext, SpanOrigin};
 use display::{normalize_type_and_map, pp_type, user_pretty_type, user_pretty_type_and_map};
 pub use error::{
     find_similar_names, format_field_path, suggest_fixes_for_mismatch,
