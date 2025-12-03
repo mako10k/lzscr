@@ -517,11 +517,13 @@ struct Opt {
 /// This is the new standardized way to display type errors with dual-span support.
 /// Automatically handles dual-span errors (expected vs actual) with proper labeling.
 /// Provides enhanced explanations for complex errors like occurs checks.
-#[allow(dead_code)] // Phase 1-3: Infrastructure in place, will be used in Phase 4
+/// 
+/// If `additional_hints` is empty, uses error.fix_hints() automatically.
+#[allow(dead_code)] // Phase 1-4: Infrastructure complete, will be integrated in Phase 5+
 fn display_type_error_diagnostic(
     src_reg: &SourceRegistry,
     error: &lzscr_types::TypeError,
-    hints: Vec<String>,
+    additional_hints: Vec<String>,
 ) {
     // Try dual-span first
     if let Some(dual_span) = error.as_dual_span() {
@@ -550,8 +552,14 @@ fn display_type_error_diagnostic(
         eprintln!("type error: {}", error);
     }
     
-    // Display hints
-    for hint in hints {
+    // Display hints (use error's built-in hints if no additional hints provided)
+    let hints_to_display = if additional_hints.is_empty() {
+        error.fix_hints()
+    } else {
+        additional_hints
+    };
+    
+    for hint in hints_to_display {
         eprintln!("  hint: {}", hint);
     }
 }

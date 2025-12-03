@@ -218,6 +218,82 @@ impl TypeError {
             None
         }
     }
+
+    /// Get fix-it hints for this error.
+    ///
+    /// Returns actionable suggestions based on the error type and context.
+    pub fn fix_hints(&self) -> Vec<String> {
+        match self {
+            TypeError::Mismatch { expected, actual, .. }
+            | TypeError::MismatchBoth { expected, actual, .. } => {
+                suggest_fixes_for_mismatch(expected, actual)
+            }
+            TypeError::RecordFieldMismatch { field, expected, actual, .. }
+            | TypeError::RecordFieldMismatchBoth { field, expected, actual, .. } => {
+                suggest_fixes_for_record_field(field, expected, actual)
+            }
+            TypeError::UnboundRef { name, suggestions, .. } => {
+                let mut hints = Vec::new();
+                if !suggestions.is_empty() {
+                    hints.push("Did you mean one of these?".to_string());
+                    for suggestion in suggestions {
+                        hints.push(format!("  - {}", suggestion));
+                    }
+                } else {
+                    hints.push(format!("Variable '{}' is not defined in the current scope", name));
+                    hints.push("Check for typos or add the variable to the environment".to_string());
+                }
+                hints
+            }
+            TypeError::EffectNotAllowed { .. } => {
+                vec![
+                    "Effects require explicit sequencing".to_string(),
+                    "Use ~seq or ~chain to enable effects:".to_string(),
+                    "  (~seq () (!effect-call ...))".to_string(),
+                    "or".to_string(),
+                    "  (~chain (!effect-call ...) (\\~result -> ...))".to_string(),
+                ]
+            }
+            TypeError::Occurs { .. } => {
+                vec![
+                    "Consider adding explicit type annotations".to_string(),
+                    "For recursive functions, specify the return type".to_string(),
+                    "For recursive data structures, use explicit type definitions".to_string(),
+                ]
+            }
+            TypeError::MixedAltBranches { .. } => {
+                vec![
+                    "AltLambda requires consistent pattern style".to_string(),
+                    "Either use:".to_string(),
+                    "  - Constructor patterns: (\\SomeTag ... | OtherTag ... -> ...)".to_string(),
+                    "or".to_string(),
+                    "  - Wildcard/default only: (\\~x -> ... | \\_ -> ...)".to_string(),
+                    "Cannot mix both styles in one AltLambda".to_string(),
+                ]
+            }
+            TypeError::AltLambdaArityMismatch { expected, got, .. } => {
+                vec![
+                    format!("Constructor pattern expects {} arguments but got {}", expected, got),
+                    "Check the constructor definition for the correct arity".to_string(),
+                    "Ensure all branches have consistent argument counts".to_string(),
+                ]
+            }
+            TypeError::AnnotMismatch { expected, actual, .. } => {
+                let mut hints = suggest_fixes_for_mismatch(expected, actual);
+                hints.insert(0, "Type annotation doesn't match inferred type".to_string());
+                hints.push("Either fix the annotation or adjust the expression".to_string());
+                hints
+            }
+            TypeError::NegativeOccurrence { type_name, .. } => {
+                vec![
+                    format!("Type '{}' occurs in a negative position", type_name),
+                    "This breaks the positivity requirement for recursive types".to_string(),
+                    "Recursive types must occur only in positive positions (e.g., as return types, not as function arguments)".to_string(),
+                ]
+            }
+            _ => Vec::new(),
+        }
+    }
 }
 
 // ---------- Error Suggestion Helpers ----------
