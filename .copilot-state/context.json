@@ -1,0 +1,10 @@
+{
+  "phase": "refactoring",
+  "focus": [
+    "AST refactoring",
+    "Phase 5 Record Field Spans",
+    "PatternKind::Record"
+  ],
+  "priority": "high",
+  "mode": "normal"
+}

@@ -141,7 +141,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             PatternKind::Record(fields) => {
                 let inner = fields
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, print_pattern(v)))
+                    .map(|f| format!("{}: {}", f.name, print_pattern(&f.pattern)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{}}}", inner)

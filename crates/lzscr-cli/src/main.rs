@@ -2027,8 +2027,12 @@ fn rebase_pattern_with_minus(p: &Pattern, add: usize, minus: usize) -> Pattern {
         PatternKind::Char(c) => PatternKind::Char(*c),
         PatternKind::Record(fields) => {
             let mut new = Vec::with_capacity(fields.len());
-            for (k, v) in fields.iter() {
-                new.push((k.clone(), rebase_pattern_with_minus(v, add, minus)));
+            for f in fields.iter() {
+                new.push(lzscr_ast::ast::PatternRecordField::new(
+                    f.name.clone(),
+                    f.name_span,
+                    rebase_pattern_with_minus(&f.pattern, add, minus),
+                ));
             }
             PatternKind::Record(new)
         }

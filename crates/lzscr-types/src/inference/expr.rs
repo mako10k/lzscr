@@ -66,8 +66,8 @@ pub(crate) fn infer_expr(
                 None
             }
             PatternKind::Record(fs) => {
-                for (_k, v) in fs {
-                    if let Some(sp) = find_ctor_symbol_span_in_pattern(v) {
+                for f in fs {
+                    if let Some(sp) = find_ctor_symbol_span_in_pattern(&f.pattern) {
                         return Some(sp);
                     }
                 }

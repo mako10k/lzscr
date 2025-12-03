@@ -257,7 +257,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset),
                         )
                     } else {
-                        let mut fields: Vec<(String, Pattern)> = Vec::new();
+                        let mut fields: Vec<lzscr_ast::ast::PatternRecordField> = Vec::new();
                         loop {
                             let k = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
                                 msg: "expected key in record pattern".into(),
@@ -274,6 +274,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                     })
                                 }
                             };
+                            let key_span = k.span; // Phase 5: Capture field name span
                             let col = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
                                 msg: ": expected after key in record pattern".into(),
                                 span_offset: t.span.offset,
@@ -287,7 +288,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 });
                             }
                             let p = parse_pattern(i, toks)?;
-                            fields.push((key, p));
+                            fields.push(lzscr_ast::ast::PatternRecordField::new(key, key_span, p));
                             let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
                                 msg: ", or } expected in record pattern".into(),
                                 span_offset: t.span.offset,
@@ -696,8 +697,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 collect_binders(t, names);
             }
             PatternKind::Record(fields) => {
-                for (_, v) in fields {
-                    collect_binders(v, names);
+                for f in fields {
+                    collect_binders(&f.pattern, names);
                 }
             }
             PatternKind::As(a, b) => {

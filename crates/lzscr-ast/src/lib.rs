@@ -61,7 +61,7 @@ pub mod ast {
         Float(f64),
         Str(String),
         Char(i32),
-        Record(Vec<(String, Pattern)>), // { k: p, ... }
+        Record(Vec<PatternRecordField>), // { k: p, ... } - Phase 5: Now tracks field name spans
         As(Box<Pattern>, Box<Pattern>), // p1 @ p2
         // List patterns
         List(Vec<Pattern>),               // [p1, p2, ...]
@@ -93,6 +93,21 @@ pub mod ast {
     impl ExprRecordField {
         pub fn new(name: String, name_span: Span, value: Expr) -> Self {
             Self { name, name_span, value }
+        }
+    }
+
+    /// Record field in a pattern with field name span tracking.
+    /// Phase 5: Diagnostics Improvement - enables precise error reporting for pattern record fields.
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct PatternRecordField {
+        pub name: String,
+        pub name_span: Span,
+        pub pattern: Pattern,
+    }
+
+    impl PatternRecordField {
+        pub fn new(name: String, name_span: Span, pattern: Pattern) -> Self {
+            Self { name, name_span, pattern }
         }
     }
 
@@ -176,7 +191,7 @@ pub mod pretty {
             PatternKind::Record(fields) => {
                 let inner = fields
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, print_pattern(v)))
+                    .map(|f| format!("{}: {}", f.name, print_pattern(&f.pattern)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{}}}", inner)

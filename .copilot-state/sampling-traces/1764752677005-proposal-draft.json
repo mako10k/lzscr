@@ -1,0 +1,57 @@
+{
+  "intent": "proposal-draft",
+  "timestamp": "2025-12-03T09:04:37.005Z",
+  "request": {
+    "prompt": "You are creating a migration proposal for Copilot instructions onboarding.\n\nProposal data:\n```json\n{\n  \"pattern\": \"structured\",\n  \"proposal\": {\n    \"title\": \"No Migration Needed\",\n    \"summary\": \"既存の指示書は構造化されています (sections: 3). そのまま利用可能です。\",\n    \"steps\": [\n      \"1. 変更なし。既存ファイルを尊重して利用\",\n      \"2. 必要に応じて instructions_structure でセクション編集\",\n      \"3. change_context でセクション抽出・生成を活用\"\n    ],\n    \"risk\": \"low\",\n    \"backupFile\": \".copilot-state/backup/copilot-instructions.md.bak-2025-12-03T09-04-26-525Z\",\n    \"rollbackUntil\": \"2025-12-10T09:04:26.525Z\"\n  }\n}\n```\n\nGenerate a clear, human-friendly proposal explaining:\n1. The proposed migration plan title and summary\n2. Step-by-step migration process\n3. Risk level and why\n4. Backup strategy and rollback deadline\n5. Suggested sections (if applicable)\n6. Next actions (approve/migrate/skip)\n\nKeep the tone encouraging and explain technical details clearly.",
+    "context": {
+      "analysis": {
+        "exists": true,
+        "pattern": "structured",
+        "structured": {
+          "sections": [
+            {
+              "heading": "現在のタスク: main関数のリファクタリング",
+              "lineCount": 153,
+              "startLine": 3,
+              "content": "### 背景\n- 現在のmain関数: 1105行（巨大すぎる）\n- 目標: 200行程度（準備＋ルーティングのみ）\n- 既に完了: エラー表示ヘルパー、フォーマットモード抽出\n\n### 次のステップ: パースエラー表示の関数化\n\n#### タスク詳細\nファイル: `crates/lzscr-cli/src/main.rs`\n\n**実施内容:**\n\n1. **新しい関数を追加** (handle_format_mode()の後に配置)\n\n```rust\n/// Handle parse error display with detailed caret positioning.\nfn display_parse_error(\n    code: &str,\n    input_name: &str,\n    msg: &str,\n    span_offset: usize,\n    span_len: usize,\n) {\n    eprintln!(\"parse error: {}\", msg);\n    \n    // Opening '(' detection logic\n    let mut open_paren_block: Option<String> = None;\n    if let Some(idx) = msg.find(\"Opening '(' at line \") {\n        let tail = &msg[idx + \"Opening '(' at line \".len()..];\n        let mut lchars = tail.chars();\n        let mut line_s = String::new();\n        for ch in lchars.by_ref() {\n            if ch.is_ascii_digit() {\n                line_s.push(ch);\n            } else if ch == ':' {\n                break;\n            } else {\n                line_s.clear();\n                break;\n            }\n        }\n        let mut col_s = String::new();\n        for ch in lchars.by_ref() {\n            if ch.is_ascii_digit() {\n                col_s.push(ch);\n            } else {\n                break;\n            }\n        }\n        if !line_s.is_empty() && !col_s.is_empty() {\n            if let (Ok(_line), Ok(_col)) = (line_s.parse::<usize>(), col_s.parse::<usize>()) {\n                let offset_match = tail.find(\"(offset \");\n                if let Some(off_idx) = offset_match {\n                    let off_tail = &tail[off_idx + \"(offset \".len()..];\n                    let mut off_s = String::new();\n                    for ch in off_tail.chars() {\n                        if ch.is_ascii_digit() {\n                            off_s.push(ch);\n                        } else {\n                            break;\n                        }\n                    }\n                    if let Ok(open_offset) = off_s.parse::<usize>() {\n                        let open_caret = format_span_caret(code, input_name, open_offset, 1);\n                        open_paren_block = Some(open_caret);\n                    }\n                }\n            }\n        }\n    }\n    \n    // Main error location\n    let caret = format_span_caret(code, input_name, span_offset, span_len);\n    eprintln!(\"{}\", caret);\n    \n    // Opening paren location if found\n    if let Some(ob) = open_paren_block {\n        eprintln!(\"\\nOpening parenthesis:\");\n        eprintln!(\"{}\", ob);\n    }\n}\n```\n\n2. **main関数内の置換対象** (約630-780行付近)\n\n**現在のコード:**\n```rust\nlet ast0 = match lzscr_parser::parse_expr(&code) {\n    Ok(x) => x,\n    Err(e) => {\n        use lzscr_parser::ParseError;\n        match e {\n            ParseError::WithSpan { msg, span_offset, span_len } => {\n                eprintln!(\"parse error: {}\", msg);\n                // ... 約150行のエラー表示ロジック ...\n            }\n            other => {\n                eprintln!(\"parse error: {}\", other);\n            }\n        }\n        std::process::exit(2);\n    }\n};\n```\n\n**置き換え後:**\n```rust\nlet ast0 = match lzscr_parser::parse_expr(&code) {\n    Ok(x) => x,\n    Err(e) => {\n        use lzscr_parser::ParseError;\n        match e {\n            ParseError::WithSpan { msg, span_offset, span_len } => {\n                display_parse_error(&code, &input_name, &msg, span_offset, span_len);\n            }\n            other => {\n                eprintln!(\"parse error: {}\", other);\n            }\n        }\n        std::process::exit(2);\n    }\n};\n```\n\n3. **テスト実行**\n```bash\ncargo test --package lzscr-cli\n```\n\n4. **コミット**\n```bash\ngit add crates/lzscr-cli/src/main.rs\ngit commit -m \"refactor(cli): extract parse error display function\n\n- Added display_parse_error() to handle ParseError::WithSpan\n- Reduces main() by ~150 lines\n- Consolidates opening paren detection logic\n- All tests passing\"\n```\n\n### 期待される効果\n- main関数: 1105行 → 約950行（155行削減）\n- パースエラー処理の一元化\n- 可読性の向上\n\n### 注意点\n- `format_span_caret()` は既存の関数をそのまま使用\n- エラー表示の動作は完全に同一に保つ\n- std::process::exit(2) は維持\n\n---"
+            },
+            {
+              "heading": "次の次のステップ（このタスク完了後）",
+              "lineCount": 15,
+              "startLine": 157,
+              "content": "### Phase 2: ソースレジストリ構築の関数化\n- `build_source_registry()` 関数を抽出\n- 約60行削減可能\n\n### Phase 3: 型チェック処理の分離\n- `handle_type_debug()` と `handle_type_inference()` を抽出\n- 約300行削減可能\n\n### Phase 4: サブコマンド分離\n- `handle_eval_mode()`, `handle_dump_mode()`, `handle_analyze_mode()`\n- 約400行削減可能\n\n---"
+            },
+            {
+              "heading": "参考情報",
+              "lineCount": 4,
+              "startLine": 173,
+              "content": "- 静的解析レポート: `docs/static-analysis-report.md`\n- リファクタリングプラン: 前回の会話で提供済み\n- 現在のコミット: `8ac72e2`"
+            }
+          ],
+          "compatible": true
+        },
+        "recommendation": "既存の指示書を検出しました。そのまま利用できます。"
+      },
+      "proposalData": {
+        "title": "No Migration Needed",
+        "summary": "既存の指示書は構造化されています (sections: 3). そのまま利用可能です。",
+        "steps": [
+          "1. 変更なし。既存ファイルを尊重して利用",
+          "2. 必要に応じて instructions_structure でセクション編集",
+          "3. change_context でセクション抽出・生成を活用"
+        ],
+        "risk": "low",
+        "backupFile": ".copilot-state/backup/copilot-instructions.md.bak-2025-12-03T09-04-26-525Z",
+        "rollbackUntil": "2025-12-10T09:04:26.525Z"
+      }
+    }
+  },
+  "response": {
+    "role": "assistant",
+    "content": {
+      "type": "text",
+      "text": "# 📋 Copilot Instructions Migration Proposal\n\n## **No Migration Needed** ✅\n\nGood news! Your existing Copilot instructions file is already well-structured with **3 sections**. You can continue using it as-is without any changes.\n\n---\n\n## 📝 Migration Steps\n\nSince your instructions are already in good shape, here's what you can do:\n\n1. **Keep using your current file** - No changes required; your existing structure will be respected\n2. **Edit sections as needed** - Use the `instructions_structure` command to modify individual sections when you want to update them\n3. **Leverage AI assistance** - Use the `change_context` command to extract or generate new sections based on your needs\n\n---\n\n## ⚡ Risk Assessment\n\n**Risk Level: LOW** 🟢\n\nWhy? Your instructions are already properly structured, so there's nothing to migrate or rewrite. You're simply continuing with what's already working.\n\n---\n\n## 💾 Backup & Safety\n\nYour current instructions have been automatically backed up:\n\n- **Backup Location**: `.copilot-state/backup/copilot-instructions.md.bak-2025-12-03T09-04-26-525Z`\n- **Rollback Deadline**: December 10, 2025 at 09:04 UTC (7 days from now)\n\nIf you need to revert any future changes, you can restore from this backup before the deadline.\n\n---\n\n## 🎯 Next Actions\n\nYou have a few options:\n\n- **Skip Migration** - Continue using your existing structured instructions (recommended ✨)\n- **Review Structure** - Check your current sections using `instructions_structure`\n- **Make Updates** - Use `change_context` to refine or add sections whenever needed\n\n**Recommendation**: Since your instructions are already well-organized, you can confidently skip the migration and start using the enhanced editing features right away!"
+    },
+    "model": "copilot/claude-sonnet-4.5"
+  }
+}

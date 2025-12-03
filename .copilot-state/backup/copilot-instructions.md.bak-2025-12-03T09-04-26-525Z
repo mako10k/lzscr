@@ -1,0 +1,154 @@
+# Copilot Instructions: Phase 5 - Record Field Spans
+
+## 現在のフェーズ: Refactoring
+
+**フォーカス**: AST Refactoring, Phase 5 Record Field Spans, PatternKind::Record Implementation  
+**優先度**: High  
+**モード**: Normal (段階的実装)
+
+---
+
+## 現在のタスク: Step 7 - PatternRecordField Implementation
+
+### 背景
+- **Phase 5目標**: レコードフィールド名の正確なスパン追跡による診断精度向上
+- **Step 1-6完了**: ExprKind::Record ✅ (コミット: 526024f)
+  - ExprRecordField構造体追加
+  - パーサーでフィールド名スパン取得
+  - 型チェッカーでフィールド名スパンを使用
+  - 全7クレート更新、全113テスト成功
+- **次**: PatternKind::Record を同様に更新
+
+### Step 7 実装手順
+
+**目標**: PatternKind::Record を ExprKind::Record と同様に更新
+
+#### 1. PatternRecordField 構造体の追加
+
+**ファイル**: `crates/lzscr-ast/src/lib.rs`
+
+ExprRecordField の直後に追加:
+
+```rust
+/// Record field in a pattern with field name span tracking.
+/// Phase 5: Diagnostics Improvement - enables precise error reporting for pattern record fields.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternRecordField {
+    pub name: String,
+    pub name_span: Span,
+    pub pattern: Pattern,
+}
+
+impl PatternRecordField {
+    pub fn new(name: String, name_span: Span, pattern: Pattern) -> Self {
+        Self { name, name_span, pattern }
+    }
+}
+```
+
+#### 2. PatternKind::Record 定義の更新
+
+**ファイル**: `crates/lzscr-ast/src/lib.rs`
+
+```rust
+// 変更前:
+Record(Vec<(String, Pattern)>),
+
+// 変更後:
+Record(Vec<PatternRecordField>),
+```
+
+#### 3. パーサー更新
+
+**ファイル**: `crates/lzscr-parser/src/lib.rs` (pattern parsing section)
+
+レコードパターンのパース箇所（約2000行付近）を更新し、フィールド名スパンを取得:
+
+```rust
+// key_span を保存して PatternRecordField を構築
+let key_span = ktok.span;
+fields.push(PatternRecordField::new(key, key_span, pattern));
+```
+
+#### 4. 影響範囲の更新
+
+以下のクレートで `PatternKind::Record` を使用している箇所を更新:
+
+- **lzscr-analyzer/src/lib.rs**: 
+  - `hash_pattern_shape()` 関数
+  - `collect_vars()` 関数（複数箇所）
+  - `pat_idents()` 関数（複数箇所）
+  - `binds_param()` 関数
+  - `binds_name()` 関数
+
+- **lzscr-cli/src/main.rs**:
+  - `rebase_pattern_with_minus()` 関数
+
+- **lzscr-types/src/inference/pattern.rs**:
+  - パターン型推論ロジック
+
+**パターン変更**: `for (k, v) in fields` → `for f in fields` with `f.name`, `f.name_span`, `&f.pattern`
+
+#### 5. テストとコミット
+
+```bash
+# ビルド確認
+cargo build
+
+# 全テスト実行
+cargo test
+
+# コミット
+git add -A
+git commit -m "feat(diagnostics): Phase 5 Step 7 - Add field name spans to PatternKind::Record
+
+- Added PatternRecordField struct with name, name_span, pattern fields
+- Updated PatternKind::Record to use Vec<PatternRecordField>
+- Parser captures pattern field name spans
+- Updated lzscr-analyzer, lzscr-cli, lzscr-types
+- All tests passing
+- Enables precise error reporting for pattern record fields"
+```
+
+### 期待される効果
+- パターンマッチエラー時にフィールド名を正確に指摘可能
+- ExprKind::Record と一貫性のある構造
+- 約25-30箇所の更新（Exprより少ない）
+
+### 注意点
+- ExprRecordField と同じ構造パターンを使用
+- `PatternRecordField` は `#[derive(PartialEq)]` が必要（パターンマッチで使用）
+- 型推論ロジックでフィールド名スパンを保存
+
+---
+
+## 次のステップ（Step 7 完了後）
+
+### Step 8: TypeExprRecordField Implementation
+- TypeExpr::Record を同様に更新
+- 推定作業量: 30-45分（最小スコープ）
+- 新構造体: `TypeExprRecordField { name: String, name_span: Span, type_expr: TypeExpr }`
+
+### Step 9: Error Display Improvements
+- TypeError 表示でフィールド名スパンを活用
+- `display_type_error_diagnostic()` 更新
+- ゴールデンテスト追加
+- 例: "Missing field 'age'" がフィールド名を正確に指摘
+
+---
+
+## Phase 5 全体進捗
+
+- ✅ Step 1-6: ExprKind::Record (完了)
+- 🔄 Step 7: PatternKind::Record (進行中)
+- ⏳ Step 8: TypeExpr::Record (未着手)
+- ⏳ Step 9: Error Display (未着手)
+
+進捗: 33% → 66% (Step 7完了時) → 100% (Phase 5完了時)
+
+---
+
+## 参考情報
+- Phase 5 コミット: `526024f` (ExprKind::Record完了)
+- 診断改善計画: `docs/diagnostics-improvement-plan.md`
+- 次フェーズ: Phase 6 (Error Message Style Guide)

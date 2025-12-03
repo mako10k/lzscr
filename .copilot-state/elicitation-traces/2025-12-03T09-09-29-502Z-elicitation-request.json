@@ -1,0 +1,32 @@
+{
+  "timestamp": "2025-12-03T09:09:29.502Z",
+  "action": "elicitation-request",
+  "message": "⚠️ **Final Confirmation for Migration Execution**\n\nThe following operations will be performed:\n\n1. Backup current instructions\n   → .copilot-state/backup/copilot-instructions.md.bak-2025-12-03T09-04-26-525Z\n\n2. Execute migration\n   → Instructions will be updated\n\n3. Rollback will be available\n   → Deadline: 2025-12-10T09:04:26.525Z\n\n**This operation will modify existing files.**\nAre you sure you want to proceed?",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "confirmed": {
+        "type": "boolean",
+        "title": "Execute migration?",
+        "description": "A backup will be created"
+      },
+      "understood_risks": {
+        "type": "boolean",
+        "title": "I understand the changes",
+        "description": "I understand that existing instructions will be updated"
+      }
+    },
+    "required": [
+      "confirmed",
+      "understood_risks"
+    ]
+  },
+  "response": {
+    "action": "accept",
+    "content": {
+      "confirmed": true,
+      "understood_risks": true
+    }
+  },
+  "duration_ms": 6492
+}

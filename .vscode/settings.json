@@ -22,6 +22,9 @@
   "chat.mcp.serverSampling": {
     "lzscr/.vscode/mcp.json: rca": {
       "allowedDuringChat": true
+    },
+    "lzscr/.vscode/mcp.json: copilot-instructions": {
+      "allowedDuringChat": true
     }
   },
   "files.associations": {
