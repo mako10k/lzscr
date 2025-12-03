@@ -60,7 +60,7 @@ pub fn result_list_str_type() -> Type {
 /// Fields:
 /// - `is_dir`: Bool
 /// - `is_file`: Bool
-/// - `modified_ms`: Option<Int>
+/// - `modified_ms`: `Option<Int>`
 /// - `readonly`: Bool
 /// - `size`: Int
 pub fn fs_metadata_record_type() -> Type {
@@ -86,11 +86,11 @@ pub fn result_metadata_type() -> Type {
 /// Construct the filesystem effects record type (`.fs`).
 ///
 /// Fields:
-/// - `read_text`: Str -> Result<Str, Str>
-/// - `write_text`: Str -> Str -> Result<Unit, Str>
-/// - `append_text`: Str -> Str -> Result<Unit, Str>
-/// - `list_dir`: Str -> Result<List<Str>, Str>
-/// - `remove_file`: Str -> Result<Unit, Str>
+/// - `read_text`: Str -> `Result<Str, Str>`
+/// - `write_text`: Str -> Str -> `Result<Unit, Str>`
+/// - `append_text`: Str -> Str -> `Result<Unit, Str>`
+/// - `list_dir`: Str -> `Result<List<Str>, Str>`
+/// - `remove_file`: Str -> `Result<Unit, Str>`
 /// - `create_dir`: Str -> Result<Unit, Str>
 /// - `metadata`: Str -> Result<Metadata, Str>
 pub fn fs_effects_record_type() -> Type {

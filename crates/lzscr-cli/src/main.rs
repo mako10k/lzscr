@@ -143,10 +143,13 @@ impl SourceRegistry {
     /// Normalize a span for diagnostic display.
     /// - If span_len == 1: expands to the first meaningful token or last top-level {...} block
     /// - Otherwise: uses the span as-is
-    /// Returns (adjusted_offset, adjusted_len).
+    ///
+    ///   Returns (adjusted_offset, adjusted_len).
     fn normalize_span(&self, offset: usize, len: usize) -> (usize, usize) {
         if len == 1 {
-            if let Some((block_off, _block_len)) = self.last_top_level_brace_block_in_same_source(offset) {
+            if let Some((block_off, _block_len)) =
+                self.last_top_level_brace_block_in_same_source(offset)
+            {
                 (self.first_non_comment_offset_from(block_off), 1)
             } else {
                 (self.first_non_comment_offset_from(offset), 1)
@@ -1071,7 +1074,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let b1 = src_reg.format_span_block(eo, el);
                                 let b2 = src_reg.format_span_block(ao, al);
                                 eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
-                                let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                let hints =
+                                    lzscr_types::suggest_fixes_for_mismatch(expected, actual);
                                 for hint in hints {
                                     eprintln!("  hint: {}", hint);
                                 }
@@ -1091,7 +1095,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let b1 = src_reg.format_span_block(eo, el);
                                 let b2 = src_reg.format_span_block(ao, al);
                                 eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
-                                let hints = lzscr_types::suggest_fixes_for_record_field(&field, expected, actual);
+                                let hints = lzscr_types::suggest_fixes_for_record_field(
+                                    field, expected, actual,
+                                );
                                 for hint in hints {
                                     eprintln!("  hint: {}", hint);
                                 }
@@ -1129,7 +1135,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ..
                             } => {
                                 eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                let (adj_off, adj_len) =
+                                    src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
                                 if !suggestions.is_empty() {
@@ -1141,7 +1148,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             TypeError::EffectNotAllowed { span_offset, span_len } => {
                                 eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                let (adj_off, adj_len) =
+                                    src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
                                 eprintln!("  hint: effects require explicit sequencing");
@@ -1152,7 +1160,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             TypeError::MixedAltBranches { span_offset, span_len } => {
                                 eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                let (adj_off, adj_len) =
+                                    src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
                                 eprintln!("  hint: AltLambda requires consistent pattern style");
@@ -1164,22 +1173,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 );
                                 eprintln!("    Cannot mix both styles in one AltLambda.");
                             }
-                            TypeError::Mismatch { ref expected, ref actual, span_offset, span_len } => {
+                            TypeError::Mismatch {
+                                ref expected,
+                                ref actual,
+                                span_offset,
+                                span_len,
+                            } => {
                                 eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                let (adj_off, adj_len) =
+                                    src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
-                                let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                let hints =
+                                    lzscr_types::suggest_fixes_for_mismatch(expected, actual);
                                 for hint in hints {
                                     eprintln!("  hint: {}", hint);
                                 }
                             }
-                            TypeError::RecordFieldMismatch { ref field, ref expected, ref actual, span_offset, span_len } => {
+                            TypeError::RecordFieldMismatch {
+                                ref field,
+                                ref expected,
+                                ref actual,
+                                span_offset,
+                                span_len,
+                            } => {
                                 eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                let (adj_off, adj_len) =
+                                    src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
-                                let hints = lzscr_types::suggest_fixes_for_record_field(&field, expected, actual);
+                                let hints = lzscr_types::suggest_fixes_for_record_field(
+                                    field, expected, actual,
+                                );
                                 for hint in hints {
                                     eprintln!("  hint: {}", hint);
                                 }
@@ -1188,7 +1213,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                             | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                 eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                let (adj_off, adj_len) =
+                                    src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
                             }
@@ -1201,12 +1227,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 expr_span_len,
                             } => {
                                 eprintln!("type error: {}", e);
-                                let b1 = src_reg
-                                    .format_span_block(annot_span_offset, annot_span_len);
-                                let b2 =
-                                    src_reg.format_span_block(expr_span_offset, expr_span_len);
+                                let b1 =
+                                    src_reg.format_span_block(annot_span_offset, annot_span_len);
+                                let b2 = src_reg.format_span_block(expr_span_offset, expr_span_len);
                                 eprintln!("annotation:\n{}\nexpression:\n{}", b1, b2);
-                                let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                let hints =
+                                    lzscr_types::suggest_fixes_for_mismatch(expected, actual);
                                 for hint in hints {
                                     eprintln!("  hint: {}", hint);
                                 }
@@ -1243,7 +1269,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let b1 = src_reg.format_span_block(eo, el);
                                     let b2 = src_reg.format_span_block(ao, al);
                                     eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
-                                    let hints = lzscr_types::suggest_fixes_for_mismatch(expected, actual);
+                                    let hints =
+                                        lzscr_types::suggest_fixes_for_mismatch(expected, actual);
                                     for hint in hints {
                                         eprintln!("  hint: {}", hint);
                                     }
@@ -1263,12 +1290,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let b1 = src_reg.format_span_block(eo, el);
                                     let b2 = src_reg.format_span_block(ao, al);
                                     eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
-                                    let hints = lzscr_types::suggest_fixes_for_mismatch(expected, actual);
+                                    let hints =
+                                        lzscr_types::suggest_fixes_for_mismatch(expected, actual);
                                     for hint in hints {
                                         eprintln!("  hint: {}", hint);
                                     }
                                 }
-                                | TypeError::Occurs {
+                                TypeError::Occurs {
                                     var_span_offset: expected_span_offset,
                                     var_span_len: expected_span_len,
                                     ty_span_offset: actual_span_offset,
@@ -1301,7 +1329,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     ..
                                 } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                    let (adj_off, adj_len) =
+                                        src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                     if !suggestions.is_empty() {
@@ -1313,7 +1342,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 TypeError::EffectNotAllowed { span_offset, span_len } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                    let (adj_off, adj_len) =
+                                        src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                     eprintln!("  hint: effects require explicit sequencing");
@@ -1328,7 +1358,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                                 | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                    let (adj_off, adj_len) =
+                                        src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                 }
@@ -1346,7 +1377,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let b2 =
                                         src_reg.format_span_block(expr_span_offset, expr_span_len);
                                     eprintln!("annotation:\n{}\nexpression:\n{}", b1, b2);
-                                    let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                    let hints =
+                                        lzscr_types::suggest_fixes_for_mismatch(expected, actual);
                                     for hint in hints {
                                         eprintln!("  hint: {}", hint);
                                     }
@@ -1423,7 +1455,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     ..
                                 } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                    let (adj_off, adj_len) =
+                                        src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                     if !suggestions.is_empty() {
@@ -1435,7 +1468,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 TypeError::EffectNotAllowed { span_offset, span_len } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                    let (adj_off, adj_len) =
+                                        src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                     eprintln!("  hint: effects require explicit sequencing");
@@ -1450,7 +1484,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                                 | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
                                     eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                    let (adj_off, adj_len) =
+                                        src_reg.normalize_span(span_offset, span_len);
                                     let block = src_reg.format_span_block(adj_off, adj_len);
                                     eprintln!("{}", block);
                                 }

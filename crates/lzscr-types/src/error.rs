@@ -198,19 +198,14 @@ pub fn format_field_path(parent: &str, child: &str) -> String {
 /// Generate specific hints for record field errors.
 ///
 /// Provides suggestions for missing fields, extra fields, or type mismatches.
-pub fn suggest_fixes_for_record_field(
-    field: &str,
-    expected: &Type,
-    actual: &Type,
-) -> Vec<String> {
+pub fn suggest_fixes_for_record_field(_field: &str, expected: &Type, actual: &Type) -> Vec<String> {
     use crate::types::Type as T;
     let mut hints = Vec::new();
 
     // Extract field sets if both are records
     match (expected, actual) {
         (T::Record(expected_fields), T::Record(actual_fields)) => {
-            let expected_keys: std::collections::HashSet<_> =
-                expected_fields.keys().collect();
+            let expected_keys: std::collections::HashSet<_> = expected_fields.keys().collect();
             let actual_keys: std::collections::HashSet<_> = actual_fields.keys().collect();
 
             // Find missing and extra fields
@@ -218,21 +213,15 @@ pub fn suggest_fixes_for_record_field(
             let extra: Vec<_> = actual_keys.difference(&expected_keys).collect();
 
             if !missing.is_empty() {
-                let missing_str = missing
-                    .iter()
-                    .map(|k| format!("'{}'", k))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let missing_str =
+                    missing.iter().map(|k| format!("'{}'", k)).collect::<Vec<_>>().join(", ");
                 hints.push(format!("Missing field(s): {}", missing_str));
                 hints.push("Add the missing field(s) to the record literal".to_string());
             }
 
             if !extra.is_empty() {
-                let extra_str = extra
-                    .iter()
-                    .map(|k| format!("'{}'", k))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let extra_str =
+                    extra.iter().map(|k| format!("'{}'", k)).collect::<Vec<_>>().join(", ");
                 hints.push(format!("Extra field(s): {}", extra_str));
                 hints.push("Remove the extra field(s) from the record literal".to_string());
             }
@@ -243,10 +232,7 @@ pub fn suggest_fixes_for_record_field(
                     for e in &extra {
                         let dist = edit_distance(m, e);
                         if dist <= 2 {
-                            hints.push(format!(
-                                "Did you mean '{}' instead of '{}'?",
-                                m, e
-                            ));
+                            hints.push(format!("Did you mean '{}' instead of '{}'?", m, e));
                         }
                     }
                 }
@@ -311,7 +297,9 @@ pub fn suggest_fixes_for_mismatch(expected: &Type, actual: &Type) -> Vec<String>
             hints.push("Apply the function to its arguments".to_string());
         }
         // Tuple length mismatch
-        (T::Tuple(expected_elems), T::Tuple(actual_elems)) if expected_elems.len() != actual_elems.len() => {
+        (T::Tuple(expected_elems), T::Tuple(actual_elems))
+            if expected_elems.len() != actual_elems.len() =>
+        {
             hints.push(format!(
                 "Tuple length mismatch: expected {} elements but got {}",
                 expected_elems.len(),

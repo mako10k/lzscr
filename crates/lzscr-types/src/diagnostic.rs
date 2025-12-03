@@ -115,9 +115,7 @@ mod tests {
 
     #[test]
     fn diagnostic_span_builder() {
-        let span = DiagnosticSpan::new(10, 5)
-            .with_label("expected here")
-            .as_primary();
+        let span = DiagnosticSpan::new(10, 5).with_label("expected here").as_primary();
 
         assert_eq!(span.offset, 10);
         assert_eq!(span.len, 5);
@@ -127,8 +125,7 @@ mod tests {
 
     #[test]
     fn dual_span_creation() {
-        let dual = DualSpan::from_offsets(10, 5, 20, 3)
-            .with_labels("expected here", "actual here");
+        let dual = DualSpan::from_offsets(10, 5, 20, 3).with_labels("expected here", "actual here");
 
         assert_eq!(dual.primary.offset, 10);
         assert_eq!(dual.primary.len, 5);
