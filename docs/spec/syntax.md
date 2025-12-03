@@ -18,6 +18,7 @@
 - **List literal**: `[1, 2, 3]` or `[]`
 - **Record literal**: `{a: 1, b: 2}` or `{}` (keys must be identifiers)
 - **Tuple** (via sugar): `(a, b, c)` parsed as tuple pattern/expression
+- **Raise**: `^(expr)` (raises an exception/control flow signal)
 
 ### Sugar and special forms
 
@@ -98,7 +99,7 @@ Return value is a Bool (`.True` | `.False`).
 - **Type**: `%`
 - **Grouping**: `(`, `)`, `{`, `}`, `[`, `]`
 - **Separators**: `,`, `;`
-- **Operators**: `->`, `<-`, `|`, `||`, `^|`, `:`, `@`
+- **Operators**: `->`, `<-`, `|`, `||`, `^|`, `^(`, `:`, `@`
 - **Lambda**: `\`
 
 ### Examples
@@ -125,6 +126,11 @@ Return value is a Bool (`.True` | `.False`).
 !println "ok"                      # effect call
 (~seq () (!println "ok"))          # explicit sequencing
 !{ ~x <- !read_line; !println ~x } # do-notation
+
+# Exception handling
+^("error message")                 # raise exception
+~try_action || ^("fallback")       # catch with ||
+~try_action ^| ~handle_error       # catch with ^|
 
 # Lambdas and application
 (\~x -> ~x) 10       # => 10

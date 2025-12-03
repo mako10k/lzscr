@@ -17,6 +17,9 @@
       "include": "#lambda"
     },
     {
+      "include": "#type-annotations"
+    },
+    {
       "include": "#operators"
     },
     {
@@ -24,6 +27,9 @@
     },
     {
       "include": "#record"
+    },
+    {
+      "include": "#reserved"
     },
     {
       "include": "#punctuation"
@@ -57,19 +63,33 @@
           "patterns": [
             {
               "name": "constant.character.escape.lzscr",
-              "match": "\\\\."
+              "match": "\\\\[nrt\\\\\"']"
             }
           ]
         },
         {
           "name": "string.quoted.single.lzscr",
           "begin": "'",
-          "end": "'"
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.lzscr",
+              "match": "\\\\[nrt\\\\\"']"
+            }
+          ]
         }
       ]
     },
     "numbers": {
       "patterns": [
+        {
+          "name": "constant.numeric.hex.lzscr",
+          "match": "\\b0x[0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.lzscr",
+          "match": "\\b0b[01]+\\b"
+        },
         {
           "name": "constant.numeric.float.lzscr",
           "match": "\\b[0-9]+\\.[0-9]+\\b"
@@ -84,7 +104,54 @@
       "patterns": [
         {
           "name": "keyword.control.lzscr",
-          "match": "\\b(let|in|if|then|else|match|with|fun|rec)\\b"
+          "match": "\\b(let|in|if|then|else|match|with|fun|rec|handle|resume)\\b"
+        }
+      ]
+    },
+    "type-annotations": {
+      "patterns": [
+        {
+          "name": "meta.type.annotation.lzscr",
+          "begin": "%\\{",
+          "beginCaptures": {
+            "0": {
+              "name": "keyword.operator.type.begin.lzscr"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "keyword.operator.type.end.lzscr"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#type-annotations"
+            },
+            {
+              "name": "entity.name.type.lzscr",
+              "match": "[A-Z][A-Za-z0-9_]*"
+            },
+            {
+              "name": "variable.other.type.lzscr",
+              "match": "[a-z_][A-Za-z0-9_]*"
+            },
+            {
+              "include": "#operators"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        },
+        {
+          "name": "meta.type.prefix.lzscr",
+          "match": "%([A-Z][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "entity.name.type.lzscr"
+            }
+          }
         }
       ]
     },
@@ -132,6 +199,10 @@
         {
           "name": "keyword.operator.caret.catch.lzscr",
           "match": "\\^\\|"
+        },
+        {
+          "name": "keyword.operator.raise.caret-paren.lzscr",
+          "match": "\\^\\("
         },
         {
           "name": "keyword.operator.bind.arrow.lzscr",
@@ -302,6 +373,14 @@
         {
           "name": "punctuation.section.parens.end.lzscr",
           "match": "\\)"
+        }
+      ]
+    },
+    "reserved": {
+      "patterns": [
+        {
+          "name": "invalid.illegal.reserved.lzscr",
+          "match": "[@$]"
         }
       ]
     }

@@ -2,7 +2,7 @@
   "name": "lzscr-vscode",
   "displayName": "lzscr Language Support",
   "description": "Syntax highlighting and formatting for lzscr (.lzscr).",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "mako10k",
   "license": "MIT",
   "engines": {

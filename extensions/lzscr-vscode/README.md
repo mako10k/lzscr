@@ -40,6 +40,15 @@ Then install the VSIX in VS Code via `Extensions` > `â€¦` > `Install from VSIXâ€
 
 ## Changelog
 
+### 0.0.5 (2025-12-03)
+- Add syntax highlighting for `^(` raise operator
+- Add type annotation syntax: `%{...}` and `%TypeName`
+- Add reserved token highlighting: `@`, `$`
+- Add hex/binary number support
+- Add char literal escape sequences
+- Keyword additions: `handle`, `resume`
+- Complete grammar alignment with syntax.md spec
+
 ### 0.0.4 (2025-12-03)
 - Add syntax highlighting for Float operators (`.+`, `.-`, `.*`, `./`)
 - Add syntax highlighting for Float comparison operators (`.<`, `.<=`, `.>`, `.>=`)
