@@ -512,6 +512,41 @@ struct Opt {
     analyze_trace: bool,
 }
 
+/// Display a type error with dual spans and hints.
+fn display_dual_span_error(
+    src_reg: &SourceRegistry,
+    error_msg: &str,
+    label1: &str,
+    span1: (usize, usize),
+    label2: &str,
+    span2: (usize, usize),
+    hints: Vec<String>,
+) {
+    eprintln!("type error: {}", error_msg);
+    let b1 = src_reg.format_span_block(span1.0, span1.1);
+    let b2 = src_reg.format_span_block(span2.0, span2.1);
+    eprintln!("{}:\n{}\n{}:\n{}", label1, b1, label2, b2);
+    for hint in hints {
+        eprintln!("  hint: {}", hint);
+    }
+}
+
+/// Display a type error with single span and hints.
+fn display_single_span_error(
+    src_reg: &SourceRegistry,
+    error_msg: &str,
+    span: (usize, usize),
+    hints: Vec<String>,
+) {
+    eprintln!("type error: {}", error_msg);
+    let (adj_off, adj_len) = src_reg.normalize_span(span.0, span.1);
+    let block = src_reg.format_span_block(adj_off, adj_len);
+    eprintln!("{}", block);
+    for hint in hints {
+        eprintln!("  hint: {}", hint);
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
     // Select input source: -e or --file
@@ -1068,17 +1103,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 actual_span_offset,
                                 actual_span_len,
                             } => {
-                                eprintln!("type error: {}", e);
-                                let (eo, el) = (expected_span_offset, expected_span_len);
-                                let (ao, al) = (actual_span_offset, actual_span_len);
-                                let b1 = src_reg.format_span_block(eo, el);
-                                let b2 = src_reg.format_span_block(ao, al);
-                                eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
                                 let hints =
                                     lzscr_types::suggest_fixes_for_mismatch(expected, actual);
-                                for hint in hints {
-                                    eprintln!("  hint: {}", hint);
-                                }
+                                display_dual_span_error(
+                                    &src_reg,
+                                    &e.to_string(),
+                                    "expected type",
+                                    (expected_span_offset, expected_span_len),
+                                    "actual type",
+                                    (actual_span_offset, actual_span_len),
+                                    hints,
+                                );
                             }
                             TypeError::RecordFieldMismatchBoth {
                                 ref field,
@@ -1089,18 +1124,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 actual_span_offset,
                                 actual_span_len,
                             } => {
-                                eprintln!("type error: {}", e);
-                                let (eo, el) = (expected_span_offset, expected_span_len);
-                                let (ao, al) = (actual_span_offset, actual_span_len);
-                                let b1 = src_reg.format_span_block(eo, el);
-                                let b2 = src_reg.format_span_block(ao, al);
-                                eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
                                 let hints = lzscr_types::suggest_fixes_for_record_field(
                                     field, expected, actual,
                                 );
-                                for hint in hints {
-                                    eprintln!("  hint: {}", hint);
-                                }
+                                display_dual_span_error(
+                                    &src_reg,
+                                    &e.to_string(),
+                                    "expected type",
+                                    (expected_span_offset, expected_span_len),
+                                    "actual type",
+                                    (actual_span_offset, actual_span_len),
+                                    hints,
+                                );
                             }
                             TypeError::Occurs {
                                 var_span_offset: expected_span_offset,
@@ -1116,17 +1151,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 actual_span_len,
                                 ..
                             } => {
-                                eprintln!("type error: {}", e);
-                                let (eo, el) = (expected_span_offset, expected_span_len);
-                                let (ao, al) = (actual_span_offset, actual_span_len);
-                                let b1 = src_reg.format_span_block(eo, el);
-                                let b2 = src_reg.format_span_block(ao, al);
-                                eprintln!(
-                                    "type variable introduced here:\n{}\nwould occur within its own definition here:\n{}",
-                                    b1, b2
+                                let hints = vec![
+                                    "this creates an infinite type (recursive definition without fixpoint)".to_string(),
+                                    "Consider restructuring to avoid self-reference or using an explicit recursive type".to_string(),
+                                ];
+                                display_dual_span_error(
+                                    &src_reg,
+                                    &e.to_string(),
+                                    "type variable introduced here",
+                                    (expected_span_offset, expected_span_len),
+                                    "would occur within its own definition here",
+                                    (actual_span_offset, actual_span_len),
+                                    hints,
                                 );
-                                eprintln!("  hint: this creates an infinite type (recursive definition without fixpoint)");
-                                eprintln!("    Consider restructuring to avoid self-reference or using an explicit recursive type");
                             }
                             TypeError::UnboundRef {
                                 span_offset,
@@ -1134,44 +1171,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ref suggestions,
                                 ..
                             } => {
-                                eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) =
-                                    src_reg.normalize_span(span_offset, span_len);
-                                let block = src_reg.format_span_block(adj_off, adj_len);
-                                eprintln!("{}", block);
+                                let mut hints = Vec::new();
                                 if !suggestions.is_empty() {
-                                    eprintln!("  hint: did you mean one of these?");
+                                    hints.push("did you mean one of these?".to_string());
                                     for suggestion in suggestions {
-                                        eprintln!("    - {}", suggestion);
+                                        hints.push(format!("  - {}", suggestion));
                                     }
                                 }
+                                display_single_span_error(
+                                    &src_reg,
+                                    &e.to_string(),
+                                    (span_offset, span_len),
+                                    hints,
+                                );
                             }
                             TypeError::EffectNotAllowed { span_offset, span_len } => {
-                                eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) =
-                                    src_reg.normalize_span(span_offset, span_len);
-                                let block = src_reg.format_span_block(adj_off, adj_len);
-                                eprintln!("{}", block);
-                                eprintln!("  hint: effects require explicit sequencing");
-                                eprintln!("    Use ~seq or ~chain to enable effects:");
-                                eprintln!("      (~seq () (!effect-call ...))");
-                                eprintln!("    or");
-                                eprintln!("      (~chain (!effect-call ...) (\\~result -> ...))");
+                                let hints = vec![
+                                    "effects require explicit sequencing".to_string(),
+                                    "Use ~seq or ~chain to enable effects:".to_string(),
+                                    "  (~seq () (!effect-call ...))".to_string(),
+                                    "or".to_string(),
+                                    "  (~chain (!effect-call ...) (\\~result -> ...))".to_string(),
+                                ];
+                                display_single_span_error(
+                                    &src_reg,
+                                    &e.to_string(),
+                                    (span_offset, span_len),
+                                    hints,
+                                );
                             }
                             TypeError::MixedAltBranches { span_offset, span_len } => {
-                                eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) =
-                                    src_reg.normalize_span(span_offset, span_len);
-                                let block = src_reg.format_span_block(adj_off, adj_len);
-                                eprintln!("{}", block);
-                                eprintln!("  hint: AltLambda requires consistent pattern style");
-                                eprintln!("    Either use:");
-                                eprintln!("      - Constructor patterns: (\\SomeTag ... | OtherTag ... -> ...)");
-                                eprintln!("    or");
-                                eprintln!(
-                                    "      - Wildcard/default only: (\\~x -> ... | \\_ -> ...)"
+                                let hints = vec![
+                                    "AltLambda requires consistent pattern style".to_string(),
+                                    "Either use:".to_string(),
+                                    "  - Constructor patterns: (\\SomeTag ... | OtherTag ... -> ...)".to_string(),
+                                    "or".to_string(),
+                                    "  - Wildcard/default only: (\\~x -> ... | \\_ -> ...)".to_string(),
+                                    "  Cannot mix both styles in one AltLambda.".to_string(),
+                                ];
+                                display_single_span_error(
+                                    &src_reg,
+                                    &e.to_string(),
+                                    (span_offset, span_len),
+                                    hints,
                                 );
-                                eprintln!("    Cannot mix both styles in one AltLambda.");
                             }
                             TypeError::Mismatch {
                                 ref expected,
@@ -1179,16 +1222,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 span_offset,
                                 span_len,
                             } => {
-                                eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) =
-                                    src_reg.normalize_span(span_offset, span_len);
-                                let block = src_reg.format_span_block(adj_off, adj_len);
-                                eprintln!("{}", block);
                                 let hints =
                                     lzscr_types::suggest_fixes_for_mismatch(expected, actual);
-                                for hint in hints {
-                                    eprintln!("  hint: {}", hint);
-                                }
+                                display_single_span_error(
+                                    &src_reg,
+                                    &e.to_string(),
+                                    (span_offset, span_len),
+                                    hints,
+                                );
                             }
                             TypeError::RecordFieldMismatch {
                                 ref field,
@@ -1197,26 +1238,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 span_offset,
                                 span_len,
                             } => {
-                                eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) =
-                                    src_reg.normalize_span(span_offset, span_len);
-                                let block = src_reg.format_span_block(adj_off, adj_len);
-                                eprintln!("{}", block);
                                 let hints = lzscr_types::suggest_fixes_for_record_field(
                                     field, expected, actual,
                                 );
-                                for hint in hints {
-                                    eprintln!("  hint: {}", hint);
-                                }
+                                display_single_span_error(
+                                    &src_reg,
+                                    &e.to_string(),
+                                    (span_offset, span_len),
+                                    hints,
+                                );
                             }
                             TypeError::NegativeOccurrence { span_offset, span_len, .. }
                             | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                             | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
-                                eprintln!("type error: {}", e);
-                                let (adj_off, adj_len) =
-                                    src_reg.normalize_span(span_offset, span_len);
-                                let block = src_reg.format_span_block(adj_off, adj_len);
-                                eprintln!("{}", block);
+                                display_single_span_error(
+                                    &src_reg,
+                                    &e.to_string(),
+                                    (span_offset, span_len),
+                                    Vec::new(),
+                                );
                             }
                             TypeError::AnnotMismatch {
                                 ref expected,
@@ -1226,16 +1266,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 expr_span_offset,
                                 expr_span_len,
                             } => {
-                                eprintln!("type error: {}", e);
-                                let b1 =
-                                    src_reg.format_span_block(annot_span_offset, annot_span_len);
-                                let b2 = src_reg.format_span_block(expr_span_offset, expr_span_len);
-                                eprintln!("annotation:\n{}\nexpression:\n{}", b1, b2);
                                 let hints =
                                     lzscr_types::suggest_fixes_for_mismatch(expected, actual);
-                                for hint in hints {
-                                    eprintln!("  hint: {}", hint);
-                                }
+                                display_dual_span_error(
+                                    &src_reg,
+                                    &e.to_string(),
+                                    "annotation",
+                                    (annot_span_offset, annot_span_len),
+                                    "expression",
+                                    (expr_span_offset, expr_span_len),
+                                    hints,
+                                );
                             }
                             other => {
                                 eprintln!("type error: {}", other);
@@ -1263,17 +1304,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     actual_span_offset,
                                     actual_span_len,
                                 } => {
-                                    eprintln!("type error: {}", e);
-                                    let (eo, el) = (expected_span_offset, expected_span_len);
-                                    let (ao, al) = (actual_span_offset, actual_span_len);
-                                    let b1 = src_reg.format_span_block(eo, el);
-                                    let b2 = src_reg.format_span_block(ao, al);
-                                    eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
                                     let hints =
                                         lzscr_types::suggest_fixes_for_mismatch(expected, actual);
-                                    for hint in hints {
-                                        eprintln!("  hint: {}", hint);
-                                    }
+                                    display_dual_span_error(
+                                        &src_reg,
+                                        &e.to_string(),
+                                        "expected type",
+                                        (expected_span_offset, expected_span_len),
+                                        "actual type",
+                                        (actual_span_offset, actual_span_len),
+                                        hints,
+                                    );
                                 }
                                 TypeError::RecordFieldMismatchBoth {
                                     ref expected,
@@ -1284,17 +1325,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     actual_span_len,
                                     ..
                                 } => {
-                                    eprintln!("type error: {}", e);
-                                    let (eo, el) = (expected_span_offset, expected_span_len);
-                                    let (ao, al) = (actual_span_offset, actual_span_len);
-                                    let b1 = src_reg.format_span_block(eo, el);
-                                    let b2 = src_reg.format_span_block(ao, al);
-                                    eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
                                     let hints =
                                         lzscr_types::suggest_fixes_for_mismatch(expected, actual);
-                                    for hint in hints {
-                                        eprintln!("  hint: {}", hint);
-                                    }
+                                    display_dual_span_error(
+                                        &src_reg,
+                                        &e.to_string(),
+                                        "expected type",
+                                        (expected_span_offset, expected_span_len),
+                                        "actual type",
+                                        (actual_span_offset, actual_span_len),
+                                        hints,
+                                    );
                                 }
                                 TypeError::Occurs {
                                     var_span_offset: expected_span_offset,
@@ -1310,17 +1351,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     actual_span_len,
                                     ..
                                 } => {
-                                    eprintln!("type error: {}", e);
-                                    let (eo, el) = (expected_span_offset, expected_span_len);
-                                    let (ao, al) = (actual_span_offset, actual_span_len);
-                                    let b1 = src_reg.format_span_block(eo, el);
-                                    let b2 = src_reg.format_span_block(ao, al);
-                                    eprintln!(
-                                        "type variable introduced here:\n{}\nwould occur within its own definition here:\n{}",
-                                        b1, b2
+                                    let hints = vec![
+                                        "this creates an infinite type (recursive definition without fixpoint)".to_string(),
+                                        "Consider restructuring to avoid self-reference or using an explicit recursive type".to_string(),
+                                    ];
+                                    display_dual_span_error(
+                                        &src_reg,
+                                        &e.to_string(),
+                                        "type variable introduced here",
+                                        (expected_span_offset, expected_span_len),
+                                        "would occur within its own definition here",
+                                        (actual_span_offset, actual_span_len),
+                                        hints,
                                     );
-                                    eprintln!("  hint: this creates an infinite type (recursive definition without fixpoint)");
-                                    eprintln!("    Consider restructuring to avoid self-reference or using an explicit recursive type");
                                 }
                                 TypeError::UnboundRef {
                                     span_offset,
@@ -1328,40 +1371,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     ref suggestions,
                                     ..
                                 } => {
-                                    eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) =
-                                        src_reg.normalize_span(span_offset, span_len);
-                                    let block = src_reg.format_span_block(adj_off, adj_len);
-                                    eprintln!("{}", block);
+                                    let mut hints = Vec::new();
                                     if !suggestions.is_empty() {
-                                        eprintln!("  hint: did you mean one of these?");
+                                        hints.push("did you mean one of these?".to_string());
                                         for suggestion in suggestions {
-                                            eprintln!("    - {}", suggestion);
+                                            hints.push(format!("  - {}", suggestion));
                                         }
                                     }
+                                    display_single_span_error(
+                                        &src_reg,
+                                        &e.to_string(),
+                                        (span_offset, span_len),
+                                        hints,
+                                    );
                                 }
                                 TypeError::EffectNotAllowed { span_offset, span_len } => {
-                                    eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) =
-                                        src_reg.normalize_span(span_offset, span_len);
-                                    let block = src_reg.format_span_block(adj_off, adj_len);
-                                    eprintln!("{}", block);
-                                    eprintln!("  hint: effects require explicit sequencing");
-                                    eprintln!("    Use ~seq or ~chain to enable effects:");
-                                    eprintln!("      (~seq () (!effect-call ...))");
-                                    eprintln!("    or");
-                                    eprintln!(
-                                        "      (~chain (!effect-call ...) (\\\\~result -> ...))"
+                                    let hints = vec![
+                                        "effects require explicit sequencing".to_string(),
+                                        "Use ~seq or ~chain to enable effects:".to_string(),
+                                        "  (~seq () (!effect-call ...))".to_string(),
+                                        "or".to_string(),
+                                        "  (~chain (!effect-call ...) (\\\\~result -> ...))".to_string(),
+                                    ];
+                                    display_single_span_error(
+                                        &src_reg,
+                                        &e.to_string(),
+                                        (span_offset, span_len),
+                                        hints,
                                     );
                                 }
                                 TypeError::NegativeOccurrence { span_offset, span_len, .. }
                                 | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
                                 | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
-                                    eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) =
-                                        src_reg.normalize_span(span_offset, span_len);
-                                    let block = src_reg.format_span_block(adj_off, adj_len);
-                                    eprintln!("{}", block);
+                                    display_single_span_error(
+                                        &src_reg,
+                                        &e.to_string(),
+                                        (span_offset, span_len),
+                                        Vec::new(),
+                                    );
                                 }
                                 TypeError::AnnotMismatch {
                                     ref expected,
@@ -1371,17 +1418,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     expr_span_offset,
                                     expr_span_len,
                                 } => {
-                                    eprintln!("type error: {}", e);
-                                    let b1 = src_reg
-                                        .format_span_block(annot_span_offset, annot_span_len);
-                                    let b2 =
-                                        src_reg.format_span_block(expr_span_offset, expr_span_len);
-                                    eprintln!("annotation:\n{}\nexpression:\n{}", b1, b2);
                                     let hints =
                                         lzscr_types::suggest_fixes_for_mismatch(expected, actual);
-                                    for hint in hints {
-                                        eprintln!("  hint: {}", hint);
-                                    }
+                                    display_dual_span_error(
+                                        &src_reg,
+                                        &e.to_string(),
+                                        "annotation",
+                                        (annot_span_offset, annot_span_len),
+                                        "expression",
+                                        (expr_span_offset, expr_span_len),
+                                        hints,
+                                    );
                                 }
                                 other => {
                                     eprintln!("type error: {}", other);
