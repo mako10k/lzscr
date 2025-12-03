@@ -95,9 +95,9 @@ pub(crate) fn infer_expr(
             TypeExpr::Record(fs) => {
                 let mut m = BTreeMap::new();
                 for f in fs {
-                    m.insert(f.name.clone(), conv_typeexpr(ctx, &f.type_expr, holes));
+                    m.insert(f.name.clone(), (conv_typeexpr(ctx, &f.type_expr, holes), Some(f.name_span)));
                 }
-                Type::Record(m.into_iter().map(|(k, v)| (k, (v, None))).collect())
+                Type::Record(m)
             }
             TypeExpr::Fun(a, b) => {
                 Type::fun(conv_typeexpr(ctx, a, holes), conv_typeexpr(ctx, b, holes))
