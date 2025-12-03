@@ -237,3 +237,168 @@ RUST_BACKTRACE=1 cargo run --bin lzscr-cli -- -e 'expr'
 cargo run --bin lzscr-cli -- -f test.lzscr --analyze
 ```
 
+
+---
+
+## 📋 Project Rules and Standards
+
+### Git Workflow (詳細はメモリに保存済み)
+
+**ブランチ戦略**:
+- `main`: プロダクション対応コード (保護ブランチ)
+- `feature/<name>`: 機能開発ブランチ
+- `hotfix/<issue>`: 緊急修正ブランチ
+
+**PRプロセス** (必須: `gh` CLI使用):
+```bash
+# PR作成前チェック
+cargo test
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
+
+# PR作成 (推奨方法)
+gh pr create \
+  --title "feat(scope): description" \
+  --body-file /tmp/pr_description.md \
+  --base main
+
+# CI確認
+gh pr checks
+
+# マージ (承認後)
+gh pr merge --squash --delete-branch
+```
+
+**コミット規約** (Conventional Commits):
+- `feat(scope)`: 新機能
+- `fix(scope)`: バグ修正
+- `docs(scope)`: ドキュメント
+- `style(scope)`: フォーマット
+- `refactor(scope)`: リファクタリング
+- `test(scope)`: テスト追加
+- `chore(scope)`: メンテナンス
+
+### 品質ゲート (必須)
+
+**マージ前の必須チェック**:
+1. ✅ 全テスト合格 (113+)
+2. ✅ `cargo fmt --all -- --check`
+3. ✅ `cargo clippy --all-targets -- -D warnings`
+4. ✅ `cargo build --workspace --all-features`
+5. ✅ VS Code extension build (該当時)
+
+**オプションチェック** (continue-on-error):
+- Security audit (cargo-audit)
+- License check (cargo-deny)
+- Coverage (tarpaulin)
+- Unused deps (cargo-udeps)
+
+### 開発標準
+
+**コードスタイル**:
+- Rust標準スタイル (rustfmt)
+- 最大行長: 100文字
+- 説明的な変数名 (単一文字は避ける)
+
+**テスト要件**:
+- 新機能には必ずテストを追加
+- テストカバレッジ: 現状維持または改善
+- 成功ケースとエラーケースの両方をテスト
+
+**ドキュメント**:
+- 全publicAPIにdocコメント
+- 例を含む
+- パニック、エラー、安全性を文書化
+
+### CI/CD
+
+**必須チェック** (must pass):
+- build: Rust build & test
+- vsix: VS Code extension packaging
+
+**CIトリガー**:
+- mainへのpush
+- mainへのPR
+- 手動実行
+- 週次スケジュール (月曜3:00 UTC)
+
+**CI監視コマンド**:
+```bash
+gh pr checks          # PRのCI状態
+gh run watch          # リアルタイム監視
+gh run list           # 実行履歴
+gh run rerun          # 失敗したチェックの再実行
+```
+
+### リリースプロセス
+
+**バージョニング**: SemVer (MAJOR.MINOR.PATCH)
+
+**リリース手順**:
+```bash
+# リリース作成
+gh release create v0.1.0 \
+  --title "v0.1.0: Phase 5 Complete" \
+  --notes-file CHANGELOG.md
+
+# 成果物アップロード
+gh release upload v0.1.0 target/release/lzscr-cli
+```
+
+### 緊急対応
+
+**ホットフィックス**:
+1. mainからhotfixブランチ作成
+2. 修正とテスト
+3. `gh pr create --title "hotfix: description"`
+4. Fast-track review
+5. `gh pr merge --squash --delete-branch`
+
+**ロールバック**:
+1. 問題のあるコミットを特定
+2. `git revert <commit-hash>`
+3. `gh pr create --title "revert: description"`
+4. マージ後にホットフィックス
+
+### GitHub CLI セットアップ
+
+**インストール**:
+```bash
+# macOS
+brew install gh
+
+# Linux (Debian/Ubuntu)
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
+  sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
+  sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+sudo apt update
+sudo apt install gh
+
+# Windows
+winget install GitHub.cli
+```
+
+**認証**:
+```bash
+gh auth login
+gh auth status
+```
+
+**設定**:
+```bash
+gh config set editor vim
+gh config set git_protocol ssh
+```
+
+---
+
+## 📚 詳細ドキュメント
+
+上記ルールの詳細版は以下に保存されています (MCPメモリシステム):
+
+1. **Git Workflow Rules**: Git戦略、PR管理、CI/CD、マージ戦略の詳細
+2. **Development Standards**: コーディング規約、テスト標準、エラーハンドリング、パフォーマンス考慮事項
+3. **Quality Gates**: 品質チェック、リリース基準、インシデント対応、品質モニタリング
+
+これらはメモリシステムに保存され、全ての開発セッションで参照可能です。
