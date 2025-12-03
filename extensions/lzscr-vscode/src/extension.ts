@@ -12,7 +12,12 @@ async function runFormatterWithTempFile(cmd: string, input: string, cwd?: string
   const args = ['--format-code', '--file', tmpPath];
   if (typeof indent === 'number') args.push('--fmt-indent', String(indent));
   if (typeof width === 'number') args.push('--fmt-width', String(width));
-    const child = cp.spawn(cmd, args, { cwd });
+    // Extend PATH to include ~/.cargo/bin for Rust binaries
+    const env = { ...process.env };
+    const homeDir = os.homedir();
+    const cargoBin = path.join(homeDir, '.cargo', 'bin');
+    env.PATH = env.PATH ? `${cargoBin}${path.delimiter}${env.PATH}` : cargoBin;
+    const child = cp.spawn(cmd, args, { cwd, env });
     let stdout = '';
     let stderr = '';
   child.stdout.on('data', (d: any) => (stdout += d.toString()));
