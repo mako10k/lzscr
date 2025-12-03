@@ -573,6 +573,7 @@ fn handle_format_mode(
 }
 
 /// Handle parse error display with detailed caret positioning.
+#[allow(clippy::too_many_arguments)]
 fn display_parse_error(
     code: &str,
     input_name: &str,
@@ -584,7 +585,7 @@ fn display_parse_error(
     user_wrapped_parens: bool,
 ) {
     eprintln!("parse error: {}", msg);
-    
+
     // Opening '(' detection logic
     let mut open_paren_block: Option<String> = None;
     if let Some(idx) = msg.find("Opening '(' at line ") {
@@ -623,11 +624,9 @@ fn display_parse_error(
                 }
             }
         }
-        if let (Ok(_line_no), Ok(_col_no), Ok(off_no)) = (
-            line_s.parse::<usize>(),
-            col_s.parse::<usize>(),
-            off_s.parse::<usize>(),
-        ) {
+        if let (Ok(_line_no), Ok(_col_no), Ok(off_no)) =
+            (line_s.parse::<usize>(), col_s.parse::<usize>(), off_s.parse::<usize>())
+        {
             let raw_block = format_span_caret(code, input_name, off_no, 1);
             let toks = _lexer_for_caret::lex(code);
             if let Some(tok) = toks.iter().find(|t| t.span.offset == off_no) {
@@ -644,7 +643,7 @@ fn display_parse_error(
             }
         }
     }
-    
+
     // Main error location
     if let Some((ref pre_src, ref pre_name)) = prelude_for_diag {
         let pre_start = 1;
@@ -663,7 +662,7 @@ fn display_parse_error(
     } else {
         eprintln!("{}", format_span_caret(code, input_name, span_offset, span_len));
     }
-    
+
     // Opening paren location if found
     if let Some(block) = open_paren_block {
         eprintln!("\n{}", block);
@@ -671,6 +670,7 @@ fn display_parse_error(
 }
 
 /// Handle parse error with two spans.
+#[allow(clippy::too_many_arguments)]
 fn display_parse_error_dual(
     code: &str,
     input_name: &str,
@@ -684,7 +684,7 @@ fn display_parse_error_dual(
     user_wrapped_parens: bool,
 ) {
     eprintln!("parse error: {}", msg);
-    
+
     let print_block = |off: usize, len: usize| {
         if let Some((ref pre_src, ref pre_name)) = prelude_for_diag {
             let pre_start = 1;
@@ -705,7 +705,7 @@ fn display_parse_error_dual(
         }
         eprintln!("{}", format_span_caret(code, input_name, off, len));
     };
-    
+
     print_block(span1_offset, span1_len);
     print_block(span2_offset, span2_len);
 }
@@ -782,13 +782,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         user_wrapped_parens,
                     );
                 }
-                ParseError::WithSpan2 {
-                    msg,
-                    span1_offset,
-                    span1_len,
-                    span2_offset,
-                    span2_len,
-                } => {
+                ParseError::WithSpan2 { msg, span1_offset, span1_len, span2_offset, span2_len } => {
                     display_parse_error_dual(
                         &code,
                         &input_name,
@@ -809,326 +803,508 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(2);
         }
     };
-        // Build source registry and expand requires while rebasing spans for modules
-        // Build SourceRegistry with precise segment mapping back to prelude and original user file
-        let (prelude_seg, user_seg) = {
-            // Compute prelude segment if present
-            let prelude_seg = prelude_for_diag.as_ref().map(|(pre_src, pre_name)| {
-                // Combined buffer layout when prelude is enabled:
-                //   '(' + prelude + '\n' + (optional '(') + user + (optional ')') + ' )'
-                let prelude_start = 1usize; // after leading '('
-                (pre_name.clone(), pre_src.clone(), prelude_start)
-            });
-            // Compute user segment start in the combined buffer
-            let user_start = if let Some((pre_src, _)) = prelude_for_diag.as_ref() {
-                let mut s = 1 + pre_src.len() + 1; // '(' + prelude + '\n'
-                if user_wrapped_parens {
-                    s += 1; // the extra '('
-                }
-                s
-            } else {
-                // No prelude; we may still have wrapped parens for file input
-                if user_wrapped_parens {
-                    1
-                } else {
-                    0
-                }
-            };
-            let user_seg = Some((input_name.clone(), user_raw.clone(), user_start));
-            (prelude_seg, user_seg)
-        };
-        let mut src_reg =
-            SourceRegistry::with_segments(input_name.clone(), code.clone(), prelude_seg, user_seg);
-        let ast = match expand_requires_in_expr(
-            &ast0,
-            &module_search_paths,
-            &mut Vec::new(),
-            &mut src_reg,
-            opt.stdlib_mode,
-        ) {
-            Ok(x) => x,
-            Err(e) => {
-                eprintln!("require error: {}", e);
-                std::process::exit(2);
+    // Build source registry and expand requires while rebasing spans for modules
+    // Build SourceRegistry with precise segment mapping back to prelude and original user file
+    let (prelude_seg, user_seg) = {
+        // Compute prelude segment if present
+        let prelude_seg = prelude_for_diag.as_ref().map(|(pre_src, pre_name)| {
+            // Combined buffer layout when prelude is enabled:
+            //   '(' + prelude + '\n' + (optional '(') + user + (optional ')') + ' )'
+            let prelude_start = 1usize; // after leading '('
+            (pre_name.clone(), pre_src.clone(), prelude_start)
+        });
+        // Compute user segment start in the combined buffer
+        let user_start = if let Some((pre_src, _)) = prelude_for_diag.as_ref() {
+            let mut s = 1 + pre_src.len() + 1; // '(' + prelude + '\n'
+            if user_wrapped_parens {
+                s += 1; // the extra '('
             }
+            s
+        } else {
+            // No prelude; we may still have wrapped parens for file input
+            if user_wrapped_parens {
+                1
+            } else {
+                0
+            }
+        };
+        let user_seg = Some((input_name.clone(), user_raw.clone(), user_start));
+        (prelude_seg, user_seg)
+    };
+    let mut src_reg =
+        SourceRegistry::with_segments(input_name.clone(), code.clone(), prelude_seg, user_seg);
+    let ast = match expand_requires_in_expr(
+        &ast0,
+        &module_search_paths,
+        &mut Vec::new(),
+        &mut src_reg,
+        opt.stdlib_mode,
+    ) {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!("require error: {}", e);
+            std::process::exit(2);
+        }
+    };
+    if opt.analyze_trace {
+        eprintln!("trace: require-expand+parse {} ms", t_req_start.elapsed().as_millis());
+    }
+    let ast_nodes = {
+        fn count(e: &Expr) -> usize {
+            use ExprKind::*;
+            match &e.kind {
+                Unit | Int(_) | Float(_) | Str(_) | Char(_) | Ref(_) | Symbol(_) | TypeVal(_) => 1,
+                Annot { expr, .. } => 1 + count(expr),
+                Lambda { body, .. } => 1 + count(body),
+                Apply { func, arg } => 1 + count(func) + count(arg),
+                Block(inner) => 1 + count(inner),
+                List(xs) => 1 + xs.iter().map(count).sum::<usize>(),
+                Record(fs) => 1 + fs.iter().map(|(_, v)| count(v)).sum::<usize>(),
+                LetGroup { bindings, body, .. } => {
+                    1 + count(body) + bindings.iter().map(|(_, ex)| count(ex)).sum::<usize>()
+                }
+                Raise(inner) => 1 + count(inner),
+                OrElse { left, right } | AltLambda { left, right } | Catch { left, right } => {
+                    1 + count(left) + count(right)
+                }
+            }
+        }
+        count(&ast)
+    };
+    if opt.analyze_trace {
+        eprintln!("trace: ast-nodes {}", ast_nodes);
+    }
+    // Core IR dump/eval modes take precedence over analyze/execute
+    if opt.dump_coreir || opt.dump_coreir_json || opt.eval_coreir {
+        let term = lower_expr_to_core(&ast);
+        if opt.dump_coreir_json {
+            println!("{}", serde_json::to_string_pretty(&term)?);
+        } else if opt.dump_coreir {
+            println!("{}", print_term(&term));
+        } else if opt.eval_coreir {
+            match eval_term(&term) {
+                Ok(v) => println!("{}", print_ir_value(&v)),
+                Err(e) => {
+                    eprintln!("coreir eval error: {}", e);
+                    std::process::exit(2);
+                }
+            }
+        }
+        return Ok(());
+    }
+    if opt.analyze {
+        #[derive(Serialize)]
+        struct AnalyzeOut<'a> {
+            duplicates: &'a [lzscr_analyzer::DupFinding],
+            unbound_refs: &'a [lzscr_analyzer::UnboundRef],
+            shadowing: &'a [lzscr_analyzer::Shadowing],
+            unused_params: &'a [lzscr_analyzer::UnusedParam],
+            unused_let: &'a [lzscr_analyzer::UnusedLet],
+            let_collisions: &'a [lzscr_analyzer::LetCollision],
+            ctor_arity: Vec<lzscr_analyzer::CtorArityIssue>,
+        }
+        // duplicates (optionally skipped)
+        let t_dup_start = Instant::now();
+        let dups = if opt.no_dup {
+            Vec::new()
+        } else {
+            analyze_duplicates(
+                &ast,
+                AnalyzeOptions { min_size: opt.dup_min_size, min_count: opt.dup_min_count },
+            )
         };
         if opt.analyze_trace {
-            eprintln!("trace: require-expand+parse {} ms", t_req_start.elapsed().as_millis());
+            eprintln!(
+                "trace: duplicates {} ms ({} findings)",
+                t_dup_start.elapsed().as_millis(),
+                dups.len()
+            );
         }
-        let ast_nodes = {
-            fn count(e: &Expr) -> usize {
-                use ExprKind::*;
-                match &e.kind {
-                    Unit | Int(_) | Float(_) | Str(_) | Char(_) | Ref(_) | Symbol(_)
-                    | TypeVal(_) => 1,
-                    Annot { expr, .. } => 1 + count(expr),
-                    Lambda { body, .. } => 1 + count(body),
-                    Apply { func, arg } => 1 + count(func) + count(arg),
-                    Block(inner) => 1 + count(inner),
-                    List(xs) => 1 + xs.iter().map(count).sum::<usize>(),
-                    Record(fs) => 1 + fs.iter().map(|(_, v)| count(v)).sum::<usize>(),
-                    LetGroup { bindings, body, .. } => {
-                        1 + count(body) + bindings.iter().map(|(_, ex)| count(ex)).sum::<usize>()
-                    }
-                    Raise(inner) => 1 + count(inner),
-                    OrElse { left, right } | AltLambda { left, right } | Catch { left, right } => {
-                        1 + count(left) + count(right)
-                    }
-                }
-            }
-            count(&ast)
-        };
+        // unbound refs
+        let t_unb_start = Instant::now();
+        let unb = analyze_unbound_refs(&ast, &default_allowlist());
         if opt.analyze_trace {
-            eprintln!("trace: ast-nodes {}", ast_nodes);
+            eprintln!(
+                "trace: unbound-refs {} ms ({} findings)",
+                t_unb_start.elapsed().as_millis(),
+                unb.len()
+            );
         }
-        // Core IR dump/eval modes take precedence over analyze/execute
-        if opt.dump_coreir || opt.dump_coreir_json || opt.eval_coreir {
-            let term = lower_expr_to_core(&ast);
-            if opt.dump_coreir_json {
-                println!("{}", serde_json::to_string_pretty(&term)?);
-            } else if opt.dump_coreir {
-                println!("{}", print_term(&term));
-            } else if opt.eval_coreir {
-                match eval_term(&term) {
-                    Ok(v) => println!("{}", print_ir_value(&v)),
-                    Err(e) => {
-                        eprintln!("coreir eval error: {}", e);
-                        std::process::exit(2);
-                    }
+        // shadowing
+        let t_sh_start = Instant::now();
+        let sh = analyze_shadowing(&ast);
+        if opt.analyze_trace {
+            eprintln!(
+                "trace: shadowing {} ms ({} findings)",
+                t_sh_start.elapsed().as_millis(),
+                sh.len()
+            );
+        }
+        // unused params
+        let t_up_start = Instant::now();
+        let up = analyze_unused_params(&ast);
+        if opt.analyze_trace {
+            eprintln!(
+                "trace: unused-params {} ms ({} findings)",
+                t_up_start.elapsed().as_millis(),
+                up.len()
+            );
+        }
+        // unused let bindings
+        let t_ul_start = Instant::now();
+        let ul = lzscr_analyzer::analyze_unused_let_bindings(&ast);
+        if opt.analyze_trace {
+            eprintln!(
+                "trace: unused-let {} ms ({} findings)",
+                t_ul_start.elapsed().as_millis(),
+                ul.len()
+            );
+        }
+        // let binding name collisions
+        let t_lc_start = Instant::now();
+        let lc = lzscr_analyzer::analyze_let_collisions(&ast);
+        if opt.analyze_trace {
+            eprintln!(
+                "trace: let-collisions {} ms ({} findings)",
+                t_lc_start.elapsed().as_millis(),
+                lc.len()
+            );
+        }
+        let arities = {
+            let mut m = HashMap::new();
+            if let Some(spec) = &opt.ctor_arity {
+                let (parsed, warns) = parse_ctor_arity_spec(spec);
+                for w in warns {
+                    eprintln!("warning: {}", w);
                 }
+                m = parsed;
             }
-            return Ok(());
+            m
+        };
+        let t_ca_start = Instant::now();
+        let ca = analyze_ctor_arity(&ast, &arities);
+        if opt.analyze_trace {
+            eprintln!(
+                "trace: ctor-arity {} ms ({} findings)",
+                t_ca_start.elapsed().as_millis(),
+                ca.len()
+            );
         }
-        if opt.analyze {
-            #[derive(Serialize)]
-            struct AnalyzeOut<'a> {
-                duplicates: &'a [lzscr_analyzer::DupFinding],
-                unbound_refs: &'a [lzscr_analyzer::UnboundRef],
-                shadowing: &'a [lzscr_analyzer::Shadowing],
-                unused_params: &'a [lzscr_analyzer::UnusedParam],
-                unused_let: &'a [lzscr_analyzer::UnusedLet],
-                let_collisions: &'a [lzscr_analyzer::LetCollision],
-                ctor_arity: Vec<lzscr_analyzer::CtorArityIssue>,
-            }
-            // duplicates (optionally skipped)
-            let t_dup_start = Instant::now();
-            let dups = if opt.no_dup {
-                Vec::new()
-            } else {
-                analyze_duplicates(
-                    &ast,
-                    AnalyzeOptions { min_size: opt.dup_min_size, min_count: opt.dup_min_count },
-                )
+        if opt.format == "json" {
+            let out = AnalyzeOut {
+                duplicates: &dups,
+                unbound_refs: &unb,
+                shadowing: &sh,
+                unused_params: &up,
+                unused_let: &ul,
+                let_collisions: &lc,
+                ctor_arity: ca,
             };
-            if opt.analyze_trace {
+            println!("{}", serde_json::to_string_pretty(&out)?);
+        } else {
+            for f in &dups {
                 eprintln!(
-                    "trace: duplicates {} ms ({} findings)",
-                    t_dup_start.elapsed().as_millis(),
-                    dups.len()
+                    "duplicate: size={} count={} span=({},{}) repr={}",
+                    f.size, f.count, f.span.offset, f.span.len, f.repr
                 );
+                let block = src_reg.format_span_block(f.span.offset, f.span.len);
+                eprintln!("{}", block);
             }
-            // unbound refs
-            let t_unb_start = Instant::now();
-            let unb = analyze_unbound_refs(&ast, &default_allowlist());
-            if opt.analyze_trace {
+            for u in &unb {
+                eprintln!("unbound-ref: name={} span=({},{})", u.name, u.span.offset, u.span.len);
+                let block = src_reg.format_span_block(u.span.offset, u.span.len);
+                eprintln!("{}", block);
+            }
+            for s in &sh {
                 eprintln!(
-                    "trace: unbound-refs {} ms ({} findings)",
-                    t_unb_start.elapsed().as_millis(),
-                    unb.len()
+                    "shadowing: name={} lambda_span=({},{})",
+                    s.name, s.lambda_span.offset, s.lambda_span.len
                 );
+                let block = src_reg.format_span_block(s.lambda_span.offset, s.lambda_span.len);
+                eprintln!("{}", block);
             }
-            // shadowing
-            let t_sh_start = Instant::now();
-            let sh = analyze_shadowing(&ast);
-            if opt.analyze_trace {
+            for u in &up {
                 eprintln!(
-                    "trace: shadowing {} ms ({} findings)",
-                    t_sh_start.elapsed().as_millis(),
-                    sh.len()
+                    "unused-param: name={} lambda_span=({},{})",
+                    u.name, u.lambda_span.offset, u.lambda_span.len
                 );
+                let block = src_reg.format_span_block(u.lambda_span.offset, u.lambda_span.len);
+                eprintln!("{}", block);
             }
-            // unused params
-            let t_up_start = Instant::now();
-            let up = analyze_unused_params(&ast);
-            if opt.analyze_trace {
+            for u in &ul {
                 eprintln!(
-                    "trace: unused-params {} ms ({} findings)",
-                    t_up_start.elapsed().as_millis(),
-                    up.len()
+                    "unused-let: name={} binding_span=({},{})",
+                    u.name, u.binding_span.offset, u.binding_span.len
                 );
+                let block = src_reg.format_span_block(u.binding_span.offset, u.binding_span.len);
+                eprintln!("{}", block);
             }
-            // unused let bindings
-            let t_ul_start = Instant::now();
-            let ul = lzscr_analyzer::analyze_unused_let_bindings(&ast);
-            if opt.analyze_trace {
+            for c in &lc {
                 eprintln!(
-                    "trace: unused-let {} ms ({} findings)",
-                    t_ul_start.elapsed().as_millis(),
-                    ul.len()
+                    "let-collision: name={} group_span=({},{})",
+                    c.name, c.group_span.offset, c.group_span.len
                 );
+                let block = src_reg.format_span_block(c.group_span.offset, c.group_span.len);
+                eprintln!("{}", block);
             }
-            // let binding name collisions
-            let t_lc_start = Instant::now();
-            let lc = lzscr_analyzer::analyze_let_collisions(&ast);
-            if opt.analyze_trace {
+            for c in &ca {
                 eprintln!(
-                    "trace: let-collisions {} ms ({} findings)",
-                    t_lc_start.elapsed().as_millis(),
-                    lc.len()
+                    "ctor-arity: name={} expected={} got={} span=({}, {}) kind={}",
+                    c.name, c.expected, c.got, c.span.offset, c.span.len, c.kind
                 );
+                let block = src_reg.format_span_block(c.span.offset, c.span.len);
+                eprintln!("{}", block);
             }
-            let arities = {
-                let mut m = HashMap::new();
-                if let Some(spec) = &opt.ctor_arity {
-                    let (parsed, warns) = parse_ctor_arity_spec(spec);
-                    for w in warns {
-                        eprintln!("warning: {}", w);
-                    }
-                    m = parsed;
-                }
-                m
-            };
-            let t_ca_start = Instant::now();
-            let ca = analyze_ctor_arity(&ast, &arities);
-            if opt.analyze_trace {
-                eprintln!(
-                    "trace: ctor-arity {} ms ({} findings)",
-                    t_ca_start.elapsed().as_millis(),
-                    ca.len()
-                );
-            }
-            if opt.format == "json" {
-                let out = AnalyzeOut {
-                    duplicates: &dups,
-                    unbound_refs: &unb,
-                    shadowing: &sh,
-                    unused_params: &up,
-                    unused_let: &ul,
-                    let_collisions: &lc,
-                    ctor_arity: ca,
-                };
-                println!("{}", serde_json::to_string_pretty(&out)?);
-            } else {
-                for f in &dups {
-                    eprintln!(
-                        "duplicate: size={} count={} span=({},{}) repr={}",
-                        f.size, f.count, f.span.offset, f.span.len, f.repr
-                    );
-                    let block = src_reg.format_span_block(f.span.offset, f.span.len);
-                    eprintln!("{}", block);
-                }
-                for u in &unb {
-                    eprintln!(
-                        "unbound-ref: name={} span=({},{})",
-                        u.name, u.span.offset, u.span.len
-                    );
-                    let block = src_reg.format_span_block(u.span.offset, u.span.len);
-                    eprintln!("{}", block);
-                }
-                for s in &sh {
-                    eprintln!(
-                        "shadowing: name={} lambda_span=({},{})",
-                        s.name, s.lambda_span.offset, s.lambda_span.len
-                    );
-                    let block = src_reg.format_span_block(s.lambda_span.offset, s.lambda_span.len);
-                    eprintln!("{}", block);
-                }
-                for u in &up {
-                    eprintln!(
-                        "unused-param: name={} lambda_span=({},{})",
-                        u.name, u.lambda_span.offset, u.lambda_span.len
-                    );
-                    let block = src_reg.format_span_block(u.lambda_span.offset, u.lambda_span.len);
-                    eprintln!("{}", block);
-                }
-                for u in &ul {
-                    eprintln!(
-                        "unused-let: name={} binding_span=({},{})",
-                        u.name, u.binding_span.offset, u.binding_span.len
-                    );
-                    let block =
-                        src_reg.format_span_block(u.binding_span.offset, u.binding_span.len);
-                    eprintln!("{}", block);
-                }
-                for c in &lc {
-                    eprintln!(
-                        "let-collision: name={} group_span=({},{})",
-                        c.name, c.group_span.offset, c.group_span.len
-                    );
-                    let block = src_reg.format_span_block(c.group_span.offset, c.group_span.len);
-                    eprintln!("{}", block);
-                }
-                for c in &ca {
-                    eprintln!(
-                        "ctor-arity: name={} expected={} got={} span=({}, {}) kind={}",
-                        c.name, c.expected, c.got, c.span.offset, c.span.len, c.kind
-                    );
-                    let block = src_reg.format_span_block(c.span.offset, c.span.len);
-                    eprintln!("{}", block);
-                }
-            }
-            return Ok(());
         }
-        // Optional typechecking phase
-        let mut inferred_type_pretty: Option<String> = None; // for --types pretty: print on same line with value later
-        if !opt.no_typecheck {
-            if opt.type_debug > 0 {
-                // Parse flags
-                let mut log_unify = false;
-                let mut log_env = false;
-                let mut log_schemes = false;
-                for f in opt.type_debug_flags.split(',').map(|s| s.trim()).filter(|s| !s.is_empty())
-                {
-                    match f {
-                        "unify" => log_unify = true,
-                        "env" => log_env = true,
-                        "schemes" => log_schemes = true,
-                        "all" => {
-                            log_unify = true;
-                            log_env = true;
-                            log_schemes = true;
+        return Ok(());
+    }
+    // Optional typechecking phase
+    let mut inferred_type_pretty: Option<String> = None; // for --types pretty: print on same line with value later
+    if !opt.no_typecheck {
+        if opt.type_debug > 0 {
+            // Parse flags
+            let mut log_unify = false;
+            let mut log_env = false;
+            let mut log_schemes = false;
+            for f in opt.type_debug_flags.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                match f {
+                    "unify" => log_unify = true,
+                    "env" => log_env = true,
+                    "schemes" => log_schemes = true,
+                    "all" => {
+                        log_unify = true;
+                        log_env = true;
+                        log_schemes = true;
+                    }
+                    _ => {}
+                }
+            }
+            match lzscr_types::api::infer_ast_debug_with(
+                &ast,
+                opt.type_debug,
+                opt.type_debug_depth,
+                log_unify,
+                log_env,
+                log_schemes,
+            ) {
+                Ok((t, logs)) => {
+                    if opt.types == "json" {
+                        #[derive(Serialize)]
+                        struct TypeOut {
+                            ty: String,
                         }
-                        _ => {}
+                        println!("{}", serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?);
+                    } else if opt.types == "pretty" {
+                        // Defer printing to combine with value on one line
+                        inferred_type_pretty = Some(t.clone());
+                    } else if opt.types == "legacy" {
+                        // 再推論 (pretty=false) — オーバーヘッドは小さいので許容
+                        match lzscr_types::api::infer_ast_with_opts(
+                            &ast,
+                            lzscr_types::api::InferOptions { pretty: false },
+                        ) {
+                            Ok(raw) => println!("{}", raw),
+                            Err(e) => {
+                                eprintln!("type error: {}", e);
+                                std::process::exit(2);
+                            }
+                        }
+                    }
+                    for line in logs {
+                        eprintln!("[type-debug] {}", line);
                     }
                 }
-                match lzscr_types::api::infer_ast_debug_with(
-                    &ast,
-                    opt.type_debug,
-                    opt.type_debug_depth,
-                    log_unify,
-                    log_env,
-                    log_schemes,
-                ) {
-                    Ok((t, logs)) => {
-                        if opt.types == "json" {
-                            #[derive(Serialize)]
-                            struct TypeOut {
-                                ty: String,
-                            }
-                            println!(
-                                "{}",
-                                serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
+                Err(e) => {
+                    use lzscr_types::TypeError;
+                    match e {
+                        TypeError::MismatchBoth {
+                            ref expected,
+                            ref actual,
+                            expected_span_offset,
+                            expected_span_len,
+                            actual_span_offset,
+                            actual_span_len,
+                        } => {
+                            let hints = lzscr_types::suggest_fixes_for_mismatch(expected, actual);
+                            display_dual_span_error(
+                                &src_reg,
+                                &e.to_string(),
+                                "expected type",
+                                (expected_span_offset, expected_span_len),
+                                "actual type",
+                                (actual_span_offset, actual_span_len),
+                                hints,
                             );
-                        } else if opt.types == "pretty" {
-                            // Defer printing to combine with value on one line
-                            inferred_type_pretty = Some(t.clone());
-                        } else if opt.types == "legacy" {
-                            // 再推論 (pretty=false) — オーバーヘッドは小さいので許容
-                            match lzscr_types::api::infer_ast_with_opts(
-                                &ast,
-                                lzscr_types::api::InferOptions { pretty: false },
-                            ) {
-                                Ok(raw) => println!("{}", raw),
-                                Err(e) => {
-                                    eprintln!("type error: {}", e);
-                                    std::process::exit(2);
+                        }
+                        TypeError::RecordFieldMismatchBoth {
+                            ref field,
+                            ref expected,
+                            ref actual,
+                            expected_span_offset,
+                            expected_span_len,
+                            actual_span_offset,
+                            actual_span_len,
+                        } => {
+                            let hints = lzscr_types::suggest_fixes_for_record_field(
+                                field, expected, actual,
+                            );
+                            display_dual_span_error(
+                                &src_reg,
+                                &e.to_string(),
+                                "expected type",
+                                (expected_span_offset, expected_span_len),
+                                "actual type",
+                                (actual_span_offset, actual_span_len),
+                                hints,
+                            );
+                        }
+                        TypeError::Occurs {
+                            var_span_offset: expected_span_offset,
+                            var_span_len: expected_span_len,
+                            ty_span_offset: actual_span_offset,
+                            ty_span_len: actual_span_len,
+                            ..
+                        }
+                        | TypeError::AltLambdaArityMismatch {
+                            expected_span_offset,
+                            expected_span_len,
+                            actual_span_offset,
+                            actual_span_len,
+                            ..
+                        } => {
+                            let hints = vec![
+                                    "this creates an infinite type (recursive definition without fixpoint)".to_string(),
+                                    "Consider restructuring to avoid self-reference or using an explicit recursive type".to_string(),
+                                ];
+                            display_dual_span_error(
+                                &src_reg,
+                                &e.to_string(),
+                                "type variable introduced here",
+                                (expected_span_offset, expected_span_len),
+                                "would occur within its own definition here",
+                                (actual_span_offset, actual_span_len),
+                                hints,
+                            );
+                        }
+                        TypeError::UnboundRef {
+                            span_offset, span_len, ref suggestions, ..
+                        } => {
+                            let mut hints = Vec::new();
+                            if !suggestions.is_empty() {
+                                hints.push("did you mean one of these?".to_string());
+                                for suggestion in suggestions {
+                                    hints.push(format!("  - {}", suggestion));
                                 }
                             }
+                            display_single_span_error(
+                                &src_reg,
+                                &e.to_string(),
+                                (span_offset, span_len),
+                                hints,
+                            );
                         }
-                        for line in logs {
-                            eprintln!("[type-debug] {}", line);
+                        TypeError::EffectNotAllowed { span_offset, span_len } => {
+                            let hints = vec![
+                                "effects require explicit sequencing".to_string(),
+                                "Use ~seq or ~chain to enable effects:".to_string(),
+                                "  (~seq () (!effect-call ...))".to_string(),
+                                "or".to_string(),
+                                "  (~chain (!effect-call ...) (\\~result -> ...))".to_string(),
+                            ];
+                            display_single_span_error(
+                                &src_reg,
+                                &e.to_string(),
+                                (span_offset, span_len),
+                                hints,
+                            );
+                        }
+                        TypeError::MixedAltBranches { span_offset, span_len } => {
+                            let hints = vec![
+                                "AltLambda requires consistent pattern style".to_string(),
+                                "Either use:".to_string(),
+                                "  - Constructor patterns: (\\SomeTag ... | OtherTag ... -> ...)"
+                                    .to_string(),
+                                "or".to_string(),
+                                "  - Wildcard/default only: (\\~x -> ... | \\_ -> ...)".to_string(),
+                                "  Cannot mix both styles in one AltLambda.".to_string(),
+                            ];
+                            display_single_span_error(
+                                &src_reg,
+                                &e.to_string(),
+                                (span_offset, span_len),
+                                hints,
+                            );
+                        }
+                        TypeError::Mismatch { ref expected, ref actual, span_offset, span_len } => {
+                            let hints = lzscr_types::suggest_fixes_for_mismatch(expected, actual);
+                            display_single_span_error(
+                                &src_reg,
+                                &e.to_string(),
+                                (span_offset, span_len),
+                                hints,
+                            );
+                        }
+                        TypeError::RecordFieldMismatch {
+                            ref field,
+                            ref expected,
+                            ref actual,
+                            span_offset,
+                            span_len,
+                        } => {
+                            let hints = lzscr_types::suggest_fixes_for_record_field(
+                                field, expected, actual,
+                            );
+                            display_single_span_error(
+                                &src_reg,
+                                &e.to_string(),
+                                (span_offset, span_len),
+                                hints,
+                            );
+                        }
+                        TypeError::NegativeOccurrence { span_offset, span_len, .. }
+                        | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
+                        | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
+                            display_single_span_error(
+                                &src_reg,
+                                &e.to_string(),
+                                (span_offset, span_len),
+                                Vec::new(),
+                            );
+                        }
+                        TypeError::AnnotMismatch {
+                            ref expected,
+                            ref actual,
+                            annot_span_offset,
+                            annot_span_len,
+                            expr_span_offset,
+                            expr_span_len,
+                        } => {
+                            let hints = lzscr_types::suggest_fixes_for_mismatch(expected, actual);
+                            display_dual_span_error(
+                                &src_reg,
+                                &e.to_string(),
+                                "annotation",
+                                (annot_span_offset, annot_span_len),
+                                "expression",
+                                (expr_span_offset, expr_span_len),
+                                hints,
+                            );
+                        }
+                        other => {
+                            eprintln!("type error: {}", other);
                         }
                     }
+                    std::process::exit(2);
+                }
+            }
+        } else {
+            // 非デバッグ: 選択された表示モードで推論
+            if opt.types == "legacy" {
+                match lzscr_types::api::infer_ast_with_opts(
+                    &ast,
+                    lzscr_types::api::InferOptions { pretty: false },
+                ) {
+                    Ok(t) => println!("{}", t),
                     Err(e) => {
                         use lzscr_types::TypeError;
                         match e {
@@ -1153,17 +1329,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 );
                             }
                             TypeError::RecordFieldMismatchBoth {
-                                ref field,
                                 ref expected,
                                 ref actual,
                                 expected_span_offset,
                                 expected_span_len,
                                 actual_span_offset,
                                 actual_span_len,
+                                ..
                             } => {
-                                let hints = lzscr_types::suggest_fixes_for_record_field(
-                                    field, expected, actual,
-                                );
+                                let hints =
+                                    lzscr_types::suggest_fixes_for_mismatch(expected, actual);
                                 display_dual_span_error(
                                     &src_reg,
                                     &e.to_string(),
@@ -1189,9 +1364,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ..
                             } => {
                                 let hints = vec![
-                                    "this creates an infinite type (recursive definition without fixpoint)".to_string(),
-                                    "Consider restructuring to avoid self-reference or using an explicit recursive type".to_string(),
-                                ];
+                                        "this creates an infinite type (recursive definition without fixpoint)".to_string(),
+                                        "Consider restructuring to avoid self-reference or using an explicit recursive type".to_string(),
+                                    ];
                                 display_dual_span_error(
                                     &src_reg,
                                     &e.to_string(),
@@ -1228,56 +1403,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     "Use ~seq or ~chain to enable effects:".to_string(),
                                     "  (~seq () (!effect-call ...))".to_string(),
                                     "or".to_string(),
-                                    "  (~chain (!effect-call ...) (\\~result -> ...))".to_string(),
+                                    "  (~chain (!effect-call ...) (\\\\~result -> ...))"
+                                        .to_string(),
                                 ];
-                                display_single_span_error(
-                                    &src_reg,
-                                    &e.to_string(),
-                                    (span_offset, span_len),
-                                    hints,
-                                );
-                            }
-                            TypeError::MixedAltBranches { span_offset, span_len } => {
-                                let hints = vec![
-                                    "AltLambda requires consistent pattern style".to_string(),
-                                    "Either use:".to_string(),
-                                    "  - Constructor patterns: (\\SomeTag ... | OtherTag ... -> ...)".to_string(),
-                                    "or".to_string(),
-                                    "  - Wildcard/default only: (\\~x -> ... | \\_ -> ...)".to_string(),
-                                    "  Cannot mix both styles in one AltLambda.".to_string(),
-                                ];
-                                display_single_span_error(
-                                    &src_reg,
-                                    &e.to_string(),
-                                    (span_offset, span_len),
-                                    hints,
-                                );
-                            }
-                            TypeError::Mismatch {
-                                ref expected,
-                                ref actual,
-                                span_offset,
-                                span_len,
-                            } => {
-                                let hints =
-                                    lzscr_types::suggest_fixes_for_mismatch(expected, actual);
-                                display_single_span_error(
-                                    &src_reg,
-                                    &e.to_string(),
-                                    (span_offset, span_len),
-                                    hints,
-                                );
-                            }
-                            TypeError::RecordFieldMismatch {
-                                ref field,
-                                ref expected,
-                                ref actual,
-                                span_offset,
-                                span_len,
-                            } => {
-                                let hints = lzscr_types::suggest_fixes_for_record_field(
-                                    field, expected, actual,
-                                );
                                 display_single_span_error(
                                     &src_reg,
                                     &e.to_string(),
@@ -1323,382 +1451,221 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             } else {
-                // 非デバッグ: 選択された表示モードで推論
-                if opt.types == "legacy" {
-                    match lzscr_types::api::infer_ast_with_opts(
-                        &ast,
-                        lzscr_types::api::InferOptions { pretty: false },
-                    ) {
-                        Ok(t) => println!("{}", t),
-                        Err(e) => {
-                            use lzscr_types::TypeError;
-                            match e {
-                                TypeError::MismatchBoth {
-                                    ref expected,
-                                    ref actual,
-                                    expected_span_offset,
-                                    expected_span_len,
-                                    actual_span_offset,
-                                    actual_span_len,
-                                } => {
-                                    let hints =
-                                        lzscr_types::suggest_fixes_for_mismatch(expected, actual);
-                                    display_dual_span_error(
-                                        &src_reg,
-                                        &e.to_string(),
-                                        "expected type",
-                                        (expected_span_offset, expected_span_len),
-                                        "actual type",
-                                        (actual_span_offset, actual_span_len),
-                                        hints,
-                                    );
-                                }
-                                TypeError::RecordFieldMismatchBoth {
-                                    ref expected,
-                                    ref actual,
-                                    expected_span_offset,
-                                    expected_span_len,
-                                    actual_span_offset,
-                                    actual_span_len,
-                                    ..
-                                } => {
-                                    let hints =
-                                        lzscr_types::suggest_fixes_for_mismatch(expected, actual);
-                                    display_dual_span_error(
-                                        &src_reg,
-                                        &e.to_string(),
-                                        "expected type",
-                                        (expected_span_offset, expected_span_len),
-                                        "actual type",
-                                        (actual_span_offset, actual_span_len),
-                                        hints,
-                                    );
-                                }
-                                TypeError::Occurs {
-                                    var_span_offset: expected_span_offset,
-                                    var_span_len: expected_span_len,
-                                    ty_span_offset: actual_span_offset,
-                                    ty_span_len: actual_span_len,
-                                    ..
-                                }
-                                | TypeError::AltLambdaArityMismatch {
-                                    expected_span_offset,
-                                    expected_span_len,
-                                    actual_span_offset,
-                                    actual_span_len,
-                                    ..
-                                } => {
-                                    let hints = vec![
-                                        "this creates an infinite type (recursive definition without fixpoint)".to_string(),
-                                        "Consider restructuring to avoid self-reference or using an explicit recursive type".to_string(),
-                                    ];
-                                    display_dual_span_error(
-                                        &src_reg,
-                                        &e.to_string(),
-                                        "type variable introduced here",
-                                        (expected_span_offset, expected_span_len),
-                                        "would occur within its own definition here",
-                                        (actual_span_offset, actual_span_len),
-                                        hints,
-                                    );
-                                }
-                                TypeError::UnboundRef {
-                                    span_offset,
-                                    span_len,
-                                    ref suggestions,
-                                    ..
-                                } => {
-                                    let mut hints = Vec::new();
-                                    if !suggestions.is_empty() {
-                                        hints.push("did you mean one of these?".to_string());
-                                        for suggestion in suggestions {
-                                            hints.push(format!("  - {}", suggestion));
-                                        }
-                                    }
-                                    display_single_span_error(
-                                        &src_reg,
-                                        &e.to_string(),
-                                        (span_offset, span_len),
-                                        hints,
-                                    );
-                                }
-                                TypeError::EffectNotAllowed { span_offset, span_len } => {
-                                    let hints = vec![
-                                        "effects require explicit sequencing".to_string(),
-                                        "Use ~seq or ~chain to enable effects:".to_string(),
-                                        "  (~seq () (!effect-call ...))".to_string(),
-                                        "or".to_string(),
-                                        "  (~chain (!effect-call ...) (\\\\~result -> ...))".to_string(),
-                                    ];
-                                    display_single_span_error(
-                                        &src_reg,
-                                        &e.to_string(),
-                                        (span_offset, span_len),
-                                        hints,
-                                    );
-                                }
-                                TypeError::NegativeOccurrence { span_offset, span_len, .. }
-                                | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
-                                | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
-                                    display_single_span_error(
-                                        &src_reg,
-                                        &e.to_string(),
-                                        (span_offset, span_len),
-                                        Vec::new(),
-                                    );
-                                }
-                                TypeError::AnnotMismatch {
-                                    ref expected,
-                                    ref actual,
-                                    annot_span_offset,
-                                    annot_span_len,
-                                    expr_span_offset,
-                                    expr_span_len,
-                                } => {
-                                    let hints =
-                                        lzscr_types::suggest_fixes_for_mismatch(expected, actual);
-                                    display_dual_span_error(
-                                        &src_reg,
-                                        &e.to_string(),
-                                        "annotation",
-                                        (annot_span_offset, annot_span_len),
-                                        "expression",
-                                        (expr_span_offset, expr_span_len),
-                                        hints,
-                                    );
-                                }
-                                other => {
-                                    eprintln!("type error: {}", other);
-                                }
+                match lzscr_types::api::infer_ast(&ast) {
+                    Ok(t) => {
+                        if opt.types == "json" {
+                            #[derive(Serialize)]
+                            struct TypeOut {
+                                ty: String,
                             }
-                            std::process::exit(2);
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
+                            );
+                        } else if opt.types == "pretty" {
+                            // Defer printing to combine with value on one line
+                            inferred_type_pretty = Some(t.clone());
                         }
                     }
-                } else {
-                    match lzscr_types::api::infer_ast(&ast) {
-                        Ok(t) => {
-                            if opt.types == "json" {
-                                #[derive(Serialize)]
-                                struct TypeOut {
-                                    ty: String,
-                                }
-                                println!(
-                                    "{}",
-                                    serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?
+                    Err(e) => {
+                        use lzscr_types::TypeError;
+                        match e {
+                            TypeError::MismatchBoth {
+                                expected_span_offset,
+                                expected_span_len,
+                                actual_span_offset,
+                                actual_span_len,
+                                ..
+                            }
+                            | TypeError::RecordFieldMismatchBoth {
+                                expected_span_offset,
+                                expected_span_len,
+                                actual_span_offset,
+                                actual_span_len,
+                                ..
+                            }
+                            | TypeError::Occurs {
+                                var_span_offset: expected_span_offset,
+                                var_span_len: expected_span_len,
+                                ty_span_offset: actual_span_offset,
+                                ty_span_len: actual_span_len,
+                                ..
+                            }
+                            | TypeError::AltLambdaArityMismatch {
+                                expected_span_offset,
+                                expected_span_len,
+                                actual_span_offset,
+                                actual_span_len,
+                                ..
+                            } => {
+                                eprintln!("type error: {}", e);
+                                let (eo, el) = (expected_span_offset, expected_span_len);
+                                let (ao, al) = (actual_span_offset, actual_span_len);
+                                let b1 = src_reg.format_span_block(eo, el);
+                                let b2 = src_reg.format_span_block(ao, al);
+                                eprintln!(
+                                    "type variable defined here:\n{}\noccurs inside here:\n{}",
+                                    b1, b2
                                 );
-                            } else if opt.types == "pretty" {
-                                // Defer printing to combine with value on one line
-                                inferred_type_pretty = Some(t.clone());
                             }
-                        }
-                        Err(e) => {
-                            use lzscr_types::TypeError;
-                            match e {
-                                TypeError::MismatchBoth {
-                                    expected_span_offset,
-                                    expected_span_len,
-                                    actual_span_offset,
-                                    actual_span_len,
-                                    ..
-                                }
-                                | TypeError::RecordFieldMismatchBoth {
-                                    expected_span_offset,
-                                    expected_span_len,
-                                    actual_span_offset,
-                                    actual_span_len,
-                                    ..
-                                }
-                                | TypeError::Occurs {
-                                    var_span_offset: expected_span_offset,
-                                    var_span_len: expected_span_len,
-                                    ty_span_offset: actual_span_offset,
-                                    ty_span_len: actual_span_len,
-                                    ..
-                                }
-                                | TypeError::AltLambdaArityMismatch {
-                                    expected_span_offset,
-                                    expected_span_len,
-                                    actual_span_offset,
-                                    actual_span_len,
-                                    ..
-                                } => {
-                                    eprintln!("type error: {}", e);
-                                    let (eo, el) = (expected_span_offset, expected_span_len);
-                                    let (ao, al) = (actual_span_offset, actual_span_len);
-                                    let b1 = src_reg.format_span_block(eo, el);
-                                    let b2 = src_reg.format_span_block(ao, al);
-                                    eprintln!(
-                                        "type variable defined here:\n{}\noccurs inside here:\n{}",
-                                        b1, b2
-                                    );
-                                }
-                                TypeError::UnboundRef {
-                                    span_offset,
-                                    span_len,
-                                    ref suggestions,
-                                    ..
-                                } => {
-                                    eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) =
-                                        src_reg.normalize_span(span_offset, span_len);
-                                    let block = src_reg.format_span_block(adj_off, adj_len);
-                                    eprintln!("{}", block);
-                                    if !suggestions.is_empty() {
-                                        eprintln!("  hint: did you mean one of these?");
-                                        for suggestion in suggestions {
-                                            eprintln!("    - {}", suggestion);
-                                        }
+                            TypeError::UnboundRef {
+                                span_offset,
+                                span_len,
+                                ref suggestions,
+                                ..
+                            } => {
+                                eprintln!("type error: {}", e);
+                                let (adj_off, adj_len) =
+                                    src_reg.normalize_span(span_offset, span_len);
+                                let block = src_reg.format_span_block(adj_off, adj_len);
+                                eprintln!("{}", block);
+                                if !suggestions.is_empty() {
+                                    eprintln!("  hint: did you mean one of these?");
+                                    for suggestion in suggestions {
+                                        eprintln!("    - {}", suggestion);
                                     }
                                 }
-                                TypeError::EffectNotAllowed { span_offset, span_len } => {
-                                    eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) =
-                                        src_reg.normalize_span(span_offset, span_len);
-                                    let block = src_reg.format_span_block(adj_off, adj_len);
-                                    eprintln!("{}", block);
-                                    eprintln!("  hint: effects require explicit sequencing");
-                                    eprintln!("    Use ~seq or ~chain to enable effects:");
-                                    eprintln!("      (~seq () (!effect-call ...))");
-                                    eprintln!("    or");
-                                    eprintln!(
-                                        "      (~chain (!effect-call ...) (\\\\~result -> ...))"
-                                    );
-                                }
-                                TypeError::NegativeOccurrence { span_offset, span_len, .. }
-                                | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
-                                | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
-                                    eprintln!("type error: {}", e);
-                                    let (adj_off, adj_len) =
-                                        src_reg.normalize_span(span_offset, span_len);
-                                    let block = src_reg.format_span_block(adj_off, adj_len);
-                                    eprintln!("{}", block);
-                                }
-                                TypeError::AnnotMismatch {
-                                    annot_span_offset,
-                                    annot_span_len,
-                                    expr_span_offset,
-                                    expr_span_len,
-                                    ..
-                                } => {
-                                    eprintln!("type error: {}", e);
-                                    let b1 = src_reg
-                                        .format_span_block(annot_span_offset, annot_span_len);
-                                    let b2 =
-                                        src_reg.format_span_block(expr_span_offset, expr_span_len);
-                                    eprintln!("{}\n{}", b1, b2);
-                                }
-                                other => {
-                                    eprintln!("type error: {}", other);
-                                }
                             }
-                            std::process::exit(2);
-                        }
-                    }
-                    // end non-debug type inference output handling
-                } // end else (non-debug type inference branch)
-            } // end if opt.type_debug > 0
-        } // end if !opt.no_typecheck
-        let mut env = Env::with_builtins();
-        if let Some(spec) = &opt.ctor_arity {
-            let (parsed, warns) = parse_ctor_arity_spec(spec);
-            for w in warns {
-                eprintln!("warning: {}", w);
-            }
-            for (name, k) in parsed {
-                env.declare_ctor_arity(name.trim(), k);
-            }
-        }
-        if opt.strict_effects {
-            env.strict_effects = true;
-        }
-        let val = match eval(&env, &ast) {
-            Ok(v) => v,
-            Err(e) => {
-                // Pretty-print traced errors if available
-                match e {
-                    lzscr_runtime::EvalError::Traced { kind, spans } => {
-                        eprintln!("runtime error: {kind}");
-                        // Use source registry so spans from required modules show correct filenames
-                        for (idx, sp) in spans.iter().enumerate() {
-                            let block = src_reg.format_span_block(sp.offset, sp.len);
-                            eprintln!("  {}", block.replace('\n', "\n  "));
-                            if idx + 1 == spans.len() {
-                                eprintln!("  (most recent call last)");
+                            TypeError::EffectNotAllowed { span_offset, span_len } => {
+                                eprintln!("type error: {}", e);
+                                let (adj_off, adj_len) =
+                                    src_reg.normalize_span(span_offset, span_len);
+                                let block = src_reg.format_span_block(adj_off, adj_len);
+                                eprintln!("{}", block);
+                                eprintln!("  hint: effects require explicit sequencing");
+                                eprintln!("    Use ~seq or ~chain to enable effects:");
+                                eprintln!("      (~seq () (!effect-call ...))");
+                                eprintln!("    or");
+                                eprintln!("      (~chain (!effect-call ...) (\\\\~result -> ...))");
+                            }
+                            TypeError::NegativeOccurrence { span_offset, span_len, .. }
+                            | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
+                            | TypeError::DuplicateCtorTag { span_offset, span_len, .. } => {
+                                eprintln!("type error: {}", e);
+                                let (adj_off, adj_len) =
+                                    src_reg.normalize_span(span_offset, span_len);
+                                let block = src_reg.format_span_block(adj_off, adj_len);
+                                eprintln!("{}", block);
+                            }
+                            TypeError::AnnotMismatch {
+                                annot_span_offset,
+                                annot_span_len,
+                                expr_span_offset,
+                                expr_span_len,
+                                ..
+                            } => {
+                                eprintln!("type error: {}", e);
+                                let b1 =
+                                    src_reg.format_span_block(annot_span_offset, annot_span_len);
+                                let b2 = src_reg.format_span_block(expr_span_offset, expr_span_len);
+                                eprintln!("{}\n{}", b1, b2);
+                            }
+                            other => {
+                                eprintln!("type error: {}", other);
                             }
                         }
                         std::process::exit(2);
                     }
-                    other => {
-                        eprintln!("runtime error: {}", other);
-                        std::process::exit(2);
+                }
+                // end non-debug type inference output handling
+            } // end else (non-debug type inference branch)
+        } // end if opt.type_debug > 0
+    } // end if !opt.no_typecheck
+    let mut env = Env::with_builtins();
+    if let Some(spec) = &opt.ctor_arity {
+        let (parsed, warns) = parse_ctor_arity_spec(spec);
+        for w in warns {
+            eprintln!("warning: {}", w);
+        }
+        for (name, k) in parsed {
+            env.declare_ctor_arity(name.trim(), k);
+        }
+    }
+    if opt.strict_effects {
+        env.strict_effects = true;
+    }
+    let val = match eval(&env, &ast) {
+        Ok(v) => v,
+        Err(e) => {
+            // Pretty-print traced errors if available
+            match e {
+                lzscr_runtime::EvalError::Traced { kind, spans } => {
+                    eprintln!("runtime error: {kind}");
+                    // Use source registry so spans from required modules show correct filenames
+                    for (idx, sp) in spans.iter().enumerate() {
+                        let block = src_reg.format_span_block(sp.offset, sp.len);
+                        eprintln!("  {}", block.replace('\n', "\n  "));
+                        if idx + 1 == spans.len() {
+                            eprintln!("  (most recent call last)");
+                        }
                     }
+                    std::process::exit(2);
                 }
-            }
-        };
-        fn val_to_string(env: &Env, v: &Value) -> String {
-            fn char_literal_string(c: i32) -> String {
-                let ch = char::from_u32(c as u32).unwrap_or('\u{FFFD}');
-                let mut tmp = String::new();
-                tmp.push(ch);
-                format!("'{}'", tmp.escape_default())
-            }
-            match v {
-                Value::Unit => "()".into(),
-                Value::Int(n) => n.to_string(),
-                Value::Float(f) => f.to_string(),
-                Value::Str(s) => s.to_string(),
-                Value::Char(c) => char_literal_string(*c),
-                Value::Symbol(id) => env.symbol_name(*id),
-                Value::Raised(b) => format!("^({})", val_to_string(env, b)),
-                Value::Thunk { .. } => "<thunk>".into(),
-                Value::Ctor { name, args } => {
-                    if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
-                        format!(
-                            "({})",
-                            args.iter()
-                                .map(|x| val_to_string(env, x))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
-                    } else if args.is_empty() {
-                        name.clone()
-                    } else {
-                        format!(
-                            "{}({})",
-                            name,
-                            args.iter()
-                                .map(|x| val_to_string(env, x))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
-                    }
+                other => {
+                    eprintln!("runtime error: {}", other);
+                    std::process::exit(2);
                 }
-                Value::List(xs) => format!(
-                    "[{}]",
-                    xs.iter().map(|x| val_to_string(env, x)).collect::<Vec<_>>().join(", ")
-                ),
-                Value::Tuple(xs) => format!(
-                    "({})",
-                    xs.iter().map(|x| val_to_string(env, x)).collect::<Vec<_>>().join(", ")
-                ),
-                Value::Record(map) => {
-                    let inner = map
-                        .iter()
-                        .map(|(k, v)| format!("{}: {}", k, val_to_string(env, v)))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!("{{{}}}", inner)
-                }
-                Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
             }
         }
-        let out = val_to_string(&env, &val);
-        if opt.types == "pretty" {
-            if let Some(tp) = inferred_type_pretty {
-                println!("{} {}", tp, out);
-            } else {
-                println!("{out}");
+    };
+    fn val_to_string(env: &Env, v: &Value) -> String {
+        fn char_literal_string(c: i32) -> String {
+            let ch = char::from_u32(c as u32).unwrap_or('\u{FFFD}');
+            let mut tmp = String::new();
+            tmp.push(ch);
+            format!("'{}'", tmp.escape_default())
+        }
+        match v {
+            Value::Unit => "()".into(),
+            Value::Int(n) => n.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Str(s) => s.to_string(),
+            Value::Char(c) => char_literal_string(*c),
+            Value::Symbol(id) => env.symbol_name(*id),
+            Value::Raised(b) => format!("^({})", val_to_string(env, b)),
+            Value::Thunk { .. } => "<thunk>".into(),
+            Value::Ctor { name, args } => {
+                if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
+                    format!(
+                        "({})",
+                        args.iter().map(|x| val_to_string(env, x)).collect::<Vec<_>>().join(", ")
+                    )
+                } else if args.is_empty() {
+                    name.clone()
+                } else {
+                    format!(
+                        "{}({})",
+                        name,
+                        args.iter().map(|x| val_to_string(env, x)).collect::<Vec<_>>().join(", ")
+                    )
+                }
             }
+            Value::List(xs) => format!(
+                "[{}]",
+                xs.iter().map(|x| val_to_string(env, x)).collect::<Vec<_>>().join(", ")
+            ),
+            Value::Tuple(xs) => format!(
+                "({})",
+                xs.iter().map(|x| val_to_string(env, x)).collect::<Vec<_>>().join(", ")
+            ),
+            Value::Record(map) => {
+                let inner = map
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, val_to_string(env, v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", inner)
+            }
+            Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
+        }
+    }
+    let out = val_to_string(&env, &val);
+    if opt.types == "pretty" {
+        if let Some(tp) = inferred_type_pretty {
+            println!("{} {}", tp, out);
+        } else {
+            println!("{out}");
+        }
     } else {
         println!("{out}");
     }
