@@ -1,0 +1,59 @@
+# Test: stdlib/core/option.lzscr
+
+~Opt = (~require .core .option);
+
+# Test is_some / is_none
+~test_predicates = (
+  (~assert ((~Opt .is_some .Some 42) == .True) "is_some detects Some");
+  (~assert ((~Opt .is_some .None) == .False) "is_some rejects None");
+  (~assert ((~Opt .is_none .None) == .True) "is_none detects None");
+  (~assert ((~Opt .is_none .Some 42) == .False) "is_none rejects Some")
+);
+
+# Test map
+~test_map = (
+  ~inc = \~n -> ~n + 1;
+  (~assert ((~Opt .map ~inc .Some 5) == .Some 6) "map Some applies function");
+  (~assert ((~Opt .map ~inc .None) == .None) "map None stays None")
+);
+
+# Test and_then
+~test_and_then = (
+  ~safe_div = \~n -> ((\.True -> .None | \.False -> .Some (10 / ~n)) (~n == 0));
+  (~assert ((~Opt .and_then ~safe_div .Some 2) == .Some 5) "and_then Some computes");
+  (~assert ((~Opt .and_then ~safe_div .Some 0) == .None) "and_then Some can fail");
+  (~assert ((~Opt .and_then ~safe_div .None) == .None) "and_then None propagates")
+);
+
+# Test unwrap_or
+~test_unwrap_or = (
+  (~assert ((~Opt .unwrap_or .Some 42 99) == 42) "unwrap_or Some returns value");
+  (~assert ((~Opt .unwrap_or .None 99) == 99) "unwrap_or None returns default")
+);
+
+# Test to_list
+~test_to_list = (
+  (~assert ((~Opt .to_list .Some 42) == [42]) "to_list Some wraps in list");
+  (~assert ((~Opt .to_list .None) == []) "to_list None returns empty")
+);
+
+# Test filter
+~test_filter = (
+  ~is_even = \~n -> ((~n % 2) == 0);
+  (~assert ((~Opt .filter ~is_even .Some 4) == .Some 4) "filter Some passes predicate");
+  (~assert ((~Opt .filter ~is_even .Some 3) == .None) "filter Some fails predicate");
+  (~assert ((~Opt .filter ~is_even .None) == .None) "filter None stays None")
+);
+
+# Run all tests
+~run_tests = (
+  ~test_predicates;
+  ~test_map;
+  ~test_and_then;
+  ~test_unwrap_or;
+  ~test_to_list;
+  ~test_filter;
+  (~log "✓ All option tests passed")
+);
+
+~run_tests

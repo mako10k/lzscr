@@ -1,0 +1,26 @@
+# stdlib/core/primitives.lzscr
+# Core primitive utilities and fundamental functions
+# Pure, effect-free functions only
+
+# Identity function
+~id ~x = ~x;
+
+# Function composition: (f ∘ g)(x) = f(g(x))
+~compose ~f ~g ~x = ~f (~g ~x);
+
+# Constant function: always returns first argument, ignoring second
+~const ~x ~_ = ~x;
+
+# Flip: reverse the order of arguments for a binary function
+~flip ~f ~x ~y = ~f ~y ~x;
+
+# Apply: function application (mostly for partial application patterns)
+~apply ~f ~x = ~f ~x;
+
+{
+  id: ~id,
+  compose: ~compose,
+  const: ~const,
+  flip: ~flip,
+  apply: ~apply
+}

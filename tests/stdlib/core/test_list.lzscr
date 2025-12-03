@@ -1,0 +1,120 @@
+# Test: stdlib/core/list.lzscr
+
+~List = (~require .core .list);
+
+# Test length
+~test_length = (
+  (~assert ((~List .length []) == 0) "length of empty list is 0");
+  (~assert ((~List .length [1, 2, 3]) == 3) "length of [1,2,3] is 3")
+);
+
+# Test append
+~test_append = (
+  (~assert ((~List .append [1, 2] [3, 4]) == [1, 2, 3, 4]) "append concatenates lists");
+  (~assert ((~List .append [] [1, 2]) == [1, 2]) "append with empty left");
+  (~assert ((~List .append [1, 2] []) == [1, 2]) "append with empty right")
+);
+
+# Test reverse
+~test_reverse = (
+  (~assert ((~List .reverse [1, 2, 3]) == [3, 2, 1]) "reverse reverses order");
+  (~assert ((~List .reverse []) == []) "reverse of empty is empty")
+);
+
+# Test map
+~test_map = (
+  ~inc = \~n -> ~n + 1;
+  (~assert ((~List .map ~inc [1, 2, 3]) == [2, 3, 4]) "map applies function");
+  (~assert ((~List .map ~inc []) == []) "map of empty is empty")
+);
+
+# Test filter
+~test_filter = (
+  ~is_even = \~n -> ((~n % 2) == 0);
+  (~assert ((~List .filter ~is_even [1, 2, 3, 4]) == [2, 4]) "filter keeps matching");
+  (~assert ((~List .filter ~is_even []) == []) "filter of empty is empty")
+);
+
+# Test foldl
+~test_foldl = (
+  ~sub = \~acc ~x -> ~acc - ~x;
+  (~assert ((~List .foldl ~sub 10 [1, 2, 3]) == 4) "foldl: ((10-1)-2)-3 = 4");
+  (~assert ((~List .foldl ~sub 10 []) == 10) "foldl of empty returns accumulator")
+);
+
+# Test foldr
+~test_foldr = (
+  ~sub = \~x ~acc -> ~x - ~acc;
+  (~assert ((~List .foldr ~sub 10 [1, 2, 3]) == -8) "foldr: 1-(2-(3-10)) = -8");
+  (~assert ((~List .foldr ~sub 10 []) == 10) "foldr of empty returns accumulator")
+);
+
+# Test take and drop
+~test_take_drop = (
+  (~assert ((~List .take 2 [1, 2, 3, 4]) == [1, 2]) "take extracts first n");
+  (~assert ((~List .drop 2 [1, 2, 3, 4]) == [3, 4]) "drop skips first n");
+  (~assert ((~List .take 10 [1, 2]) == [1, 2]) "take more than length");
+  (~assert ((~List .drop 10 [1, 2]) == []) "drop more than length")
+);
+
+# Test any and all
+~test_any_all = (
+  ~is_even = \~n -> ((~n % 2) == 0);
+  (~assert ((~List .any ~is_even [1, 3, 5]) == .False) "any finds no match");
+  (~assert ((~List .any ~is_even [1, 2, 3]) == .True) "any finds match");
+  (~assert ((~List .all ~is_even [2, 4, 6]) == .True) "all satisfied");
+  (~assert ((~List .all ~is_even [2, 3, 4]) == .False) "all not satisfied")
+);
+
+# Test sum and product
+~test_sum_product = (
+  (~assert ((~List .sum [1, 2, 3, 4]) == 10) "sum computes total");
+  (~assert ((~List .product [2, 3, 4]) == 24) "product computes result")
+);
+
+# Test head and tail
+~test_head_tail = (
+  (~assert ((~List .head [1, 2, 3]) == .Some 1) "head of non-empty");
+  (~assert ((~List .head []) == .None) "head of empty");
+  (~assert ((~List .tail [1, 2, 3]) == .Some [2, 3]) "tail of non-empty");
+  (~assert ((~List .tail []) == .None) "tail of empty")
+);
+
+# Test zip
+~test_zip = (
+  (~assert ((~List .zip [1, 2] ["a", "b"]) == [(1, "a"), (2, "b")]) "zip pairs elements");
+  (~assert ((~List .zip [1, 2, 3] ["a", "b"]) == [(1, "a"), (2, "b")]) "zip truncates to shorter")
+);
+
+# Test range
+~test_range = (
+  (~assert ((~List .range 1 5) == [1, 2, 3, 4, 5]) "range generates inclusive sequence");
+  (~assert ((~List .range 5 3) == []) "range with a>b is empty")
+);
+
+# Test elem
+~test_elem = (
+  (~assert ((~List .elem 2 [1, 2, 3]) == .True) "elem finds element");
+  (~assert ((~List .elem 5 [1, 2, 3]) == .False) "elem doesn't find element")
+);
+
+# Run all tests
+~run_tests = (
+  ~test_length;
+  ~test_append;
+  ~test_reverse;
+  ~test_map;
+  ~test_filter;
+  ~test_foldl;
+  ~test_foldr;
+  ~test_take_drop;
+  ~test_any_all;
+  ~test_sum_product;
+  ~test_head_tail;
+  ~test_zip;
+  ~test_range;
+  ~test_elem;
+  (~log "✓ All list tests passed")
+);
+
+~run_tests

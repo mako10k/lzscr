@@ -1,0 +1,48 @@
+# Test: stdlib/core/primitives.lzscr
+
+~Prim = (~require .core .primitives);
+
+# Test id function
+~test_id = (
+  ~x = 42;
+  (~assert ((~Prim .id ~x) == ~x) "id should return input unchanged")
+);
+
+# Test compose function
+~test_compose = (
+  ~add1 = \~n -> ~n + 1;
+  ~mul2 = \~n -> ~n * 2;
+  ~f = (~Prim .compose ~mul2 ~add1);
+  (~assert ((~f 5) == 12) "compose: (mul2 ∘ add1)(5) = mul2(6) = 12")
+);
+
+# Test const function
+~test_const = (
+  ~c = (~Prim .const 42);
+  (~assert ((~c 100) == 42) "const should always return first argument")
+);
+
+# Test flip function
+~test_flip = (
+  ~sub = \~a ~b -> ~a - ~b;
+  ~flipped = (~Prim .flip ~sub);
+  (~assert ((~flipped 3 10) == 7) "flip: (10 - 3) = 7")
+);
+
+# Test apply function
+~test_apply = (
+  ~inc = \~n -> ~n + 1;
+  (~assert ((~Prim .apply ~inc 5) == 6) "apply should apply function to argument")
+);
+
+# Run all tests
+~run_tests = (
+  ~test_id;
+  ~test_compose;
+  ~test_const;
+  ~test_flip;
+  ~test_apply;
+  (~log "✓ All primitives tests passed")
+);
+
+~run_tests
