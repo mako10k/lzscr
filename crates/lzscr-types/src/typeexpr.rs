@@ -166,7 +166,10 @@ pub(crate) fn conv_typeexpr_with_subst(
         TypeExpr::Record(fs) => {
             let mut m = BTreeMap::new();
             for f in fs {
-                m.insert(f.name.clone(), (conv_typeexpr_with_subst(ctx, &f.type_expr, subst)?, None));
+                m.insert(
+                    f.name.clone(),
+                    (conv_typeexpr_with_subst(ctx, &f.type_expr, subst)?, None),
+                );
             }
             Type::Record(m)
         }

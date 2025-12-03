@@ -77,7 +77,7 @@ pub mod ast {
         Str(String),
         Char(i32),
         Record(Vec<PatternRecordField>), // { k: p, ... } - Phase 5: Now tracks field name spans
-        As(Box<Pattern>, Box<Pattern>), // p1 @ p2
+        As(Box<Pattern>, Box<Pattern>),  // p1 @ p2
         // List patterns
         List(Vec<Pattern>),               // [p1, p2, ...]
         Cons(Box<Pattern>, Box<Pattern>), // h : t

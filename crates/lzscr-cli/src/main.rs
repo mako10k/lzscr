@@ -1868,7 +1868,13 @@ fn expand_requires_in_expr(
                     Ok(ExprRecordField::new(
                         f.name.clone(),
                         f.name_span,
-                        expand_requires_in_expr(&f.value, search_paths, stack, src_reg, stdlib_mode)?,
+                        expand_requires_in_expr(
+                            &f.value,
+                            search_paths,
+                            stack,
+                            src_reg,
+                            stdlib_mode,
+                        )?,
                     ))
                 })
                 .collect::<Result<Vec<_>, String>>()?,
