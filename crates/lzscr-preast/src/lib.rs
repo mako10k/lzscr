@@ -65,7 +65,8 @@ fn needs_space_before(out: &str) -> bool {
         return false;
     }
     let c = out.chars().last().unwrap();
-    matches!(c, ')' | ']' | '}' | '"' | '_' | '.' | '0'..='9' | 'a'..='z' | 'A'..='Z')
+    // Insert space after most tokens, but NOT after . ~ ! (they bind tightly to following identifier)
+    matches!(c, ')' | ']' | '}' | '"' | '_' | '0'..='9' | 'a'..='z' | 'A'..='Z')
 }
 
 fn needs_space_before_token(s: &str) -> bool {
@@ -73,7 +74,8 @@ fn needs_space_before_token(s: &str) -> bool {
         return false;
     }
     let c = s.chars().next().unwrap();
-    matches!(c, '(' | '[' | '{' | '"' | '_' | '.' | '0'..='9' | 'a'..='z' | 'A'..='Z')
+    // Insert space before most tokens (including . ~ !)
+    matches!(c, '(' | '[' | '{' | '"' | '_' | '.' | '~' | '!' | '0'..='9' | 'a'..='z' | 'A'..='Z')
 }
 
 fn is_operator_token(s: &str) -> bool {

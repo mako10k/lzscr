@@ -1,10 +1,8 @@
 {
-  "phase": "refactoring",
+  "phase": "development",
   "focus": [
-    "Error Display",
-    "Phase 5 Record Field Spans",
-    "TypeError diagnostics",
-    "Step 9"
+    "lzscrフォーマッタ実装",
+    "VSIXパッケージ状態更新"
   ],
   "priority": "high",
   "mode": "normal"
