@@ -2,20 +2,30 @@
   "name": "lzscr-vscode",
   "displayName": "lzscr Language Support",
   "description": "Syntax highlighting and formatting for lzscr (.lzscr).",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "mako10k",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Programming Languages", "Formatters"],
+  "categories": [
+    "Programming Languages",
+    "Formatters"
+  ],
   "contributes": {
     "languages": [
       {
         "id": "lzscr",
-        "aliases": ["lzscr", "LZSCR"],
-        "extensions": [".lzscr"],
-        "mimetypes": ["text/vnd.lzscr"],
+        "aliases": [
+          "lzscr",
+          "LZSCR"
+        ],
+        "extensions": [
+          ".lzscr"
+        ],
+        "mimetypes": [
+          "text/vnd.lzscr"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],

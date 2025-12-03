@@ -134,8 +134,20 @@
           "match": "\\^\\|"
         },
         {
+          "name": "keyword.operator.bind.arrow.lzscr",
+          "match": "<-"
+        },
+        {
           "name": "keyword.operator.lambda.arrow.lzscr",
           "match": "->"
+        },
+        {
+          "name": "keyword.operator.float.compare.lte.lzscr",
+          "match": "\\.<="
+        },
+        {
+          "name": "keyword.operator.float.compare.gte.lzscr",
+          "match": "\\.>="
         },
         {
           "name": "keyword.operator.compare.eq.lzscr",
@@ -154,12 +166,36 @@
           "match": ">="
         },
         {
+          "name": "keyword.operator.float.compare.lt.lzscr",
+          "match": "\\.<"
+        },
+        {
+          "name": "keyword.operator.float.compare.gt.lzscr",
+          "match": "\\.>"
+        },
+        {
           "name": "keyword.operator.assignment.equals.lzscr",
           "match": "="
         },
         {
           "name": "keyword.operator.compare.ltgt.lzscr",
           "match": "[<>]"
+        },
+        {
+          "name": "keyword.operator.float.mul.lzscr",
+          "match": "\\.\\*"
+        },
+        {
+          "name": "keyword.operator.float.div.lzscr",
+          "match": "\\.\/"
+        },
+        {
+          "name": "keyword.operator.float.add.lzscr",
+          "match": "\\.\\+"
+        },
+        {
+          "name": "keyword.operator.float.sub.lzscr",
+          "match": "\\.-"
         },
         {
           "name": "keyword.operator.raise.caret.lzscr",
@@ -182,6 +218,10 @@
           "match": "!"
         },
         {
+          "name": "keyword.operator.type.percent.lzscr",
+          "match": "%"
+        },
+        {
           "name": "keyword.operator.math.lzscr",
           "match": "[+\\-*/]"
         },
@@ -194,8 +234,17 @@
     "member": {
       "patterns": [
         {
+          "name": "meta.constructor.lzscr",
+          "match": "\\.([A-Z][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "entity.name.type.constructor.lzscr"
+            }
+          }
+        },
+        {
           "name": "meta.member.access.lzscr",
-          "match": "\\.([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\.([a-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "variable.other.member.lzscr"

@@ -40,6 +40,14 @@ Then install the VSIX in VS Code via `Extensions` > `â€¦` > `Install from VSIXâ€
 
 ## Changelog
 
+### 0.0.4 (2025-12-03)
+- Add syntax highlighting for Float operators (`.+`, `.-`, `.*`, `./`)
+- Add syntax highlighting for Float comparison operators (`.<`, `.<=`, `.>`, `.>=`)
+- Add syntax highlighting for `%` type symbol
+- Add syntax highlighting for `<-` bind operator
+- Distinguish constructors (`.True`, `.False`, `.Some`) from methods
+- Improved TextMate grammar alignment with current language spec
+
 ### 0.0.3 (2025-12-03)
 - Fix space insertion rules for lzscr syntax
 - Proper handling of `.` `~` `!` symbol spacing
