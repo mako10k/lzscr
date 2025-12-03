@@ -512,7 +512,47 @@ struct Opt {
     analyze_trace: bool,
 }
 
-/// Display a type error with dual spans and hints.
+/// Display a type error using structured diagnostic information.
+///
+/// This is the new standardized way to display type errors with dual-span support.
+/// Automatically handles dual-span errors (expected vs actual) with proper labeling.
+#[allow(dead_code)] // Phase 1: Infrastructure in place, will be used in Phase 2
+fn display_type_error_diagnostic(
+    src_reg: &SourceRegistry,
+    error: &lzscr_types::TypeError,
+    hints: Vec<String>,
+) {
+    // Try dual-span first
+    if let Some(dual_span) = error.as_dual_span() {
+        eprintln!("type error: {}", error);
+        
+        let primary_label = dual_span.primary.label.as_deref().unwrap_or("expected here");
+        let secondary_label = dual_span.secondary.label.as_deref().unwrap_or("actual here");
+        
+        let b1 = src_reg.format_span_block(dual_span.primary.offset, dual_span.primary.len);
+        let b2 = src_reg.format_span_block(dual_span.secondary.offset, dual_span.secondary.len);
+        
+        eprintln!("{}:\n{}\n{}:\n{}", primary_label, b1, secondary_label, b2);
+    } else if let Some(span) = error.primary_span() {
+        // Single span
+        eprintln!("type error: {}", error);
+        let (adj_off, adj_len) = src_reg.normalize_span(span.offset, span.len);
+        let block = src_reg.format_span_block(adj_off, adj_len);
+        eprintln!("{}", block);
+    } else {
+        // No span information
+        eprintln!("type error: {}", error);
+    }
+    
+    // Display hints
+    for hint in hints {
+        eprintln!("  hint: {}", hint);
+    }
+}
+
+/// Display a type error with dual spans and hints (legacy).
+///
+/// Deprecated: Use `display_type_error_diagnostic` instead.
 fn display_dual_span_error(
     src_reg: &SourceRegistry,
     error_msg: &str,

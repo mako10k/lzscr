@@ -6,6 +6,7 @@
 //!
 //! Errors support dual-span reporting for better diagnostics (e.g., expected vs actual).
 
+use crate::diagnostic::{DiagnosticSpan, DualSpan};
 use crate::types::{TvId, Type};
 
 /// Type inference errors with detailed span information for diagnostics.
@@ -100,6 +101,102 @@ pub enum TypeError {
     /// Invalid type declaration
     #[error("invalid type declaration: {msg} at ({span_offset},{span_len})")]
     InvalidTypeDecl { msg: String, span_offset: usize, span_len: usize },
+}
+
+impl TypeError {
+    /// Convert this error to a DualSpan diagnostic if it has dual-span information.
+    ///
+    /// Returns `Some(DualSpan)` for errors with both expected and actual locations,
+    /// `None` for single-span or non-span errors.
+    pub fn as_dual_span(&self) -> Option<DualSpan> {
+        match self {
+            TypeError::MismatchBoth {
+                expected_span_offset,
+                expected_span_len,
+                actual_span_offset,
+                actual_span_len,
+                ..
+            }
+            | TypeError::RecordFieldMismatchBoth {
+                expected_span_offset,
+                expected_span_len,
+                actual_span_offset,
+                actual_span_len,
+                ..
+            }
+            | TypeError::AnnotMismatch {
+                annot_span_offset: expected_span_offset,
+                annot_span_len: expected_span_len,
+                expr_span_offset: actual_span_offset,
+                expr_span_len: actual_span_len,
+                ..
+            }
+            | TypeError::AltLambdaArityMismatch {
+                expected_span_offset,
+                expected_span_len,
+                actual_span_offset,
+                actual_span_len,
+                ..
+            } => Some(
+                DualSpan::from_offsets(
+                    *expected_span_offset,
+                    *expected_span_len,
+                    *actual_span_offset,
+                    *actual_span_len,
+                )
+                .with_labels("expected here", "actual here"),
+            ),
+            TypeError::Occurs {
+                var_span_offset,
+                var_span_len,
+                ty_span_offset,
+                ty_span_len,
+                ..
+            } => Some(
+                DualSpan::from_offsets(*var_span_offset, *var_span_len, *ty_span_offset, *ty_span_len)
+                    .with_labels("type variable defined here", "occurs inside here"),
+            ),
+            _ => None,
+        }
+    }
+
+    /// Get the primary span for this error.
+    ///
+    /// Returns the most relevant span for single-span errors, or the actual/effect
+    /// span for dual-span errors.
+    pub fn primary_span(&self) -> Option<DiagnosticSpan> {
+        match self {
+            TypeError::Mismatch { span_offset, span_len, .. }
+            | TypeError::RecordFieldMismatch { span_offset, span_len, .. }
+            | TypeError::DuplicateCtorTag { span_offset, span_len, .. }
+            | TypeError::MixedAltBranches { span_offset, span_len, .. }
+            | TypeError::UnboundRef { span_offset, span_len, .. }
+            | TypeError::EffectNotAllowed { span_offset, span_len, .. }
+            | TypeError::NegativeOccurrence { span_offset, span_len, .. }
+            | TypeError::InvalidTypeDecl { span_offset, span_len, .. } => {
+                Some(DiagnosticSpan::new(*span_offset, *span_len))
+            }
+            TypeError::MismatchBoth { actual_span_offset, actual_span_len, .. }
+            | TypeError::RecordFieldMismatchBoth { actual_span_offset, actual_span_len, .. }
+            | TypeError::AnnotMismatch {
+                expr_span_offset: actual_span_offset,
+                expr_span_len: actual_span_len,
+                ..
+            }
+            | TypeError::AltLambdaArityMismatch { actual_span_offset, actual_span_len, .. }
+            | TypeError::Occurs {
+                ty_span_offset: actual_span_offset,
+                ty_span_len: actual_span_len,
+                ..
+            } => Some(DiagnosticSpan::new(*actual_span_offset, *actual_span_len)),
+            TypeError::NotFunction { .. } => None,
+        }
+    }
+
+    /// Check if this error supports dual-span reporting.
+    pub fn has_dual_span(&self) -> bool {
+        self.as_dual_span().is_some()
+    }
 }
 
 // ---------- Error Suggestion Helpers ----------
