@@ -547,6 +547,31 @@ fn display_single_span_error(
     }
 }
 
+/// Handle formatting mode: format code and exit.
+fn handle_format_mode(
+    code: &str,
+    from_file: bool,
+    indent: usize,
+    max_width: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fmt_opts = lzscr_format::FormatOptions { indent, max_width };
+    let out = if from_file {
+        lzscr_format::format_file_source_with_options(code, fmt_opts)
+    } else {
+        lzscr_format::format_source_with_options(code, fmt_opts)
+    };
+    match out {
+        Ok(s) => {
+            println!("{}", s);
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("format error: {}", e);
+            std::process::exit(2);
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
     // Select input source: -e or --file
@@ -588,36 +613,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    {
-        // Formatting mode: run formatter first and exit
-        if opt.format_code {
-            let from_file = opt.file.is_some();
-            let fmt_opts = lzscr_format::FormatOptions {
-                indent: opt.fmt_indent.unwrap_or(2),
-                max_width: opt.fmt_width.unwrap_or(100),
-            };
-            let out = if from_file {
-                lzscr_format::format_file_source_with_options(&code, fmt_opts)
-            } else {
-                lzscr_format::format_source_with_options(&code, fmt_opts)
-            };
-            match out {
-                Ok(s) => {
-                    println!("{}", s);
-                    return Ok(());
-                }
-                Err(e) => {
-                    eprintln!("format error: {}", e);
-                    std::process::exit(2);
-                }
-            }
-        }
+    // Formatting mode: run formatter first and exit
+    if opt.format_code {
+        return handle_format_mode(
+            &code,
+            opt.file.is_some(),
+            opt.fmt_indent.unwrap_or(2),
+            opt.fmt_width.unwrap_or(100),
+        );
+    }
 
-        // Parse first to surface nice errors with caret; then expand ~require
-        let t_req_start = Instant::now();
-        let module_search_paths =
-            build_module_search_paths(&resolved_stdlib_dir, opt.module_path.as_deref());
-        let ast0 = match lzscr_parser::parse_expr(&code) {
+    // Parse first to surface nice errors with caret; then expand ~require
+    let t_req_start = Instant::now();
+    let module_search_paths =
+        build_module_search_paths(&resolved_stdlib_dir, opt.module_path.as_deref());
+    let ast0 = match lzscr_parser::parse_expr(&code) {
             Ok(x) => x,
             Err(e) => {
                 use lzscr_parser::ParseError;
@@ -1662,11 +1672,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 println!("{out}");
             }
-        } else {
-            println!("{out}");
-        }
-        Ok(())
+    } else {
+        println!("{out}");
     }
+    Ok(())
 } // end of main()
 
 // ---------- ~require expansion ----------
