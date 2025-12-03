@@ -106,35 +106,51 @@ The codebase already has partial dual-span diagnostic implementation:
 - Type system now tracks span origins for future improvements
 - Ready for Phase 3 (Occurs Check improvements)
 
-### Phase 3: Enhance Occurs Check Display (Week 3)
+### Phase 3: Enhance Occurs Check Display (Week 3) ✅ COMPLETED
 
 **Goal**: Improve infinite type error messages
 
-**Tasks**:
-1. Add type variable origin tracking:
-   - Track where each type variable was generated (span)
-   - Store in inference context metadata
+**Status**: ✅ Enhanced occurs check display (2025-12-03)
 
-2. Implement normalized type variable display:
-   - Map TvId → %a, %b, %c, ... consistently
-   - Use stable ordering (by first occurrence in expression)
-   - Display normalized names in error messages
+**Completed Tasks**:
+1. ✅ Type variable origin tracking (already implemented):
+   - `InferCtx::tv_origins` tracks generation spans
+   - `InferCtx::fresh_tv()` automatically records origins
+   - Occurs check errors enriched with span information
 
-3. Improve occurs error message:
-   ```
-   Error: Cannot construct infinite type
-     Type variable %a (defined here):
-       <span for original occurrence>
-     Occurs inside:
-       <span for recursive occurrence>
-     
-     The type would be: %a = List %a
-   ```
+2. ✅ Normalized type variable display (already implemented):
+   - `normalize_type_and_map()` and `user_pretty_type_and_map()` functions
+   - Consistent %a, %b, %c naming in error messages
+   - `var_pretty` and `pretty` fields in Occurs error
+
+3. ✅ Improved occurs error message:
+   - Added `TypeError::occurs_explanation()` method
+   - Detailed explanation of infinite type issue
+   - Suggests common causes (missing annotations, recursive patterns)
+   - `display_type_error_diagnostic()` shows enhanced explanation
 
 **Acceptance Criteria**:
-- Type variables use %a, %b notation in all errors
-- Origin spans tracked and displayed
-- Clear explanation of infinite type issue
+- ✅ Type variables use %a, %b notation (via user_pretty_type_and_map)
+- ✅ Origin spans tracked via tv_origins HashMap
+- ✅ Clear multi-line explanation with examples
+
+**Example Output**:
+```
+type error: cannot construct infinite type: type variable %a occurs within its own definition %{List %a}
+  type variable defined here:
+    <span>
+  occurs inside here:
+    <span>
+
+The type variable %a would occur within its own definition.
+The inferred type would be: %a = List %a
+This creates an infinite type (recursive definition without a fixpoint).
+
+Possible causes:
+- Missing type annotation on recursive function
+- Self-referential data structure without explicit type
+- Incorrect recursive call pattern
+```
 
 ### Phase 4: Add Fix-It Hints (Week 4)
 

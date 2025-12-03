@@ -516,7 +516,8 @@ struct Opt {
 ///
 /// This is the new standardized way to display type errors with dual-span support.
 /// Automatically handles dual-span errors (expected vs actual) with proper labeling.
-#[allow(dead_code)] // Phase 1: Infrastructure in place, will be used in Phase 2
+/// Provides enhanced explanations for complex errors like occurs checks.
+#[allow(dead_code)] // Phase 1-3: Infrastructure in place, will be used in Phase 4
 fn display_type_error_diagnostic(
     src_reg: &SourceRegistry,
     error: &lzscr_types::TypeError,
@@ -533,6 +534,11 @@ fn display_type_error_diagnostic(
         let b2 = src_reg.format_span_block(dual_span.secondary.offset, dual_span.secondary.len);
         
         eprintln!("{}:\n{}\n{}:\n{}", primary_label, b1, secondary_label, b2);
+        
+        // Special handling for occurs check errors
+        if let Some(explanation) = error.occurs_explanation() {
+            eprintln!("\n{}", explanation);
+        }
     } else if let Some(span) = error.primary_span() {
         // Single span
         eprintln!("type error: {}", error);

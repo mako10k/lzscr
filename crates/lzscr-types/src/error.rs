@@ -197,6 +197,27 @@ impl TypeError {
     pub fn has_dual_span(&self) -> bool {
         self.as_dual_span().is_some()
     }
+
+    /// Get a user-friendly explanation for occurs check errors.
+    ///
+    /// Returns a detailed explanation of what went wrong and why the type cannot be constructed.
+    pub fn occurs_explanation(&self) -> Option<String> {
+        if let TypeError::Occurs { var_pretty, pretty, .. } = self {
+            Some(format!(
+                "The type variable {} would occur within its own definition.\n\
+                 The inferred type would be: {} = {}\n\
+                 This creates an infinite type (recursive definition without a fixpoint).\n\
+                 \n\
+                 Possible causes:\n\
+                 - Missing type annotation on recursive function\n\
+                 - Self-referential data structure without explicit type\n\
+                 - Incorrect recursive call pattern",
+                var_pretty, var_pretty, pretty
+            ))
+        } else {
+            None
+        }
+    }
 }
 
 // ---------- Error Suggestion Helpers ----------
