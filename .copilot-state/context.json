@@ -1,0 +1,11 @@
+{
+  "phase": "refactoring",
+  "focus": [
+    "Error Display",
+    "Phase 5 Record Field Spans",
+    "TypeError diagnostics",
+    "Step 9"
+  ],
+  "priority": "high",
+  "mode": "normal"
+}

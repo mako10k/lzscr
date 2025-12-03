@@ -66,8 +66,8 @@ pub(crate) fn infer_expr(
                 None
             }
             PatternKind::Record(fs) => {
-                for (_k, v) in fs {
-                    if let Some(sp) = find_ctor_symbol_span_in_pattern(v) {
+                for f in fs {
+                    if let Some(sp) = find_ctor_symbol_span_in_pattern(&f.pattern) {
                         return Some(sp);
                     }
                 }
@@ -94,10 +94,13 @@ pub(crate) fn infer_expr(
             }
             TypeExpr::Record(fs) => {
                 let mut m = BTreeMap::new();
-                for (k, v) in fs {
-                    m.insert(k.clone(), conv_typeexpr(ctx, v, holes));
+                for f in fs {
+                    m.insert(
+                        f.name.clone(),
+                        (conv_typeexpr(ctx, &f.type_expr, holes), Some(f.name_span)),
+                    );
                 }
-                Type::Record(m.into_iter().map(|(k, v)| (k, (v, None))).collect())
+                Type::Record(m)
             }
             TypeExpr::Fun(a, b) => {
                 Type::fun(conv_typeexpr(ctx, a, holes), conv_typeexpr(ctx, b, holes))
@@ -458,12 +461,14 @@ pub(crate) fn infer_expr(
             Ok((Type::List(Box::new(a.apply(&s))), s))
         }
         ExprKind::Record(fields) => {
+            // Phase 5: Now uses field name spans for better diagnostics
             let mut subst = Subst::new();
             let mut map = BTreeMap::new();
-            for (k, v) in fields {
-                let (tv, sv) = infer_expr(ctx, v, allow_effects)?;
+            for f in fields {
+                let (tv, sv) = infer_expr(ctx, &f.value, allow_effects)?;
                 subst = sv.compose(subst);
-                map.insert(k.clone(), (tv.apply(&subst), Some(v.span)));
+                // Use field name span instead of value span for record field diagnostics
+                map.insert(f.name.clone(), (tv.apply(&subst), Some(f.name_span)));
             }
             Ok((Type::Record(map), subst))
         }

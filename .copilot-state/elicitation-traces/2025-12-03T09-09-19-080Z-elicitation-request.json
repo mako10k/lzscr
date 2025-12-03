@@ -1,0 +1,30 @@
+{
+  "timestamp": "2025-12-03T09:09:19.080Z",
+  "action": "elicitation-request",
+  "message": "🔍 **Migration Proposal Approval**\n\nDo you approve this migration plan?\n\nNo proposal details available\n\n**Risk**: unknown\n**Backup**: .copilot-state/backup/copilot-instructions.md.bak-2025-12-03T09-04-26-525Z\n**Rollback Deadline**: 2025-12-10T09:04:26.525Z\n\nOnce approved, you can proceed with migration in the next step.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "approved": {
+        "type": "boolean",
+        "title": "Approve this proposal?",
+        "description": "Once approved, you can execute migration in the next step"
+      },
+      "comment": {
+        "type": "string",
+        "title": "Comment (optional)",
+        "description": "Please provide your reason for approval/rejection"
+      }
+    },
+    "required": [
+      "approved"
+    ]
+  },
+  "response": {
+    "action": "accept",
+    "content": {
+      "approved": true
+    }
+  },
+  "duration_ms": 5360
+}

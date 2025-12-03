@@ -113,9 +113,9 @@ pub fn match_pattern(
             Value::Record(map) => {
                 // all fields in pattern must exist in value
                 let mut acc = HashMap::new();
-                for (k, pv) in fields {
-                    let vv = map.get(k)?;
-                    let bi = match_pattern(env, pv, vv)?;
+                for f in fields {
+                    let vv = map.get(&f.name)?;
+                    let bi = match_pattern(env, &f.pattern, vv)?;
                     acc = merge(acc, bi)?;
                 }
                 Some(acc)
@@ -317,7 +317,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             TypeExpr::Record(fields) => {
                 let inner = fields
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, print_type_expr(v)))
+                    .map(|f| format!("{}: {}", f.name, print_type_expr(&f.type_expr)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{}}}", inner)
@@ -350,9 +350,9 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Record(fields) => {
             // Eagerly evaluate field expressions (could later be lazy if desired)
             let mut map = std::collections::BTreeMap::new();
-            for (k, v) in fields {
-                let val = eval(env, v)?;
-                map.insert(k.clone(), val);
+            for f in fields {
+                let val = eval(env, &f.value)?;
+                map.insert(f.name.clone(), val);
             }
             Ok(Value::Record(map))
         }
@@ -390,8 +390,8 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         }
                     }
                     PatternKind::Record(fs) => {
-                        for (_, v) in fs {
-                            collect_vars(v, out);
+                        for f in fs {
+                            collect_vars(&f.pattern, out);
                         }
                     }
                     PatternKind::Ctor { args, .. } => {

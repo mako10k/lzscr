@@ -1,0 +1,35 @@
+{
+  "intent": "migration-execution-trace",
+  "timestamp": "2025-12-03T09:09:35.071Z",
+  "request": {
+    "prompt": "You are summarizing a completed migration.\n\nExecution Steps:\n1. ✓ Backup created: .copilot-state/backup/copilot-instructions.md.bak-2025-12-03T09-04-26-525Z\n2. ✓ Read 3501 characters from existing file\n3. ✓ Added migration marker to instructions\n4. ✓ Status updated to completed\n\nFinal Status:\n- Status: completed\n- Backup: .copilot-state/backup/copilot-instructions.md.bak-2025-12-03T09-04-26-525Z\n- Rollback Until: 2025-12-10T09:04:26.525Z\n- Restricted Mode: false\n\nGenerate a completion message explaining:\n1. What was executed\n2. Where backup is stored\n3. That system is now in normal operation mode\n4. How to rollback if needed\n\nKeep it concise and reassuring.",
+    "context": {
+      "steps": [
+        "✓ Backup created: .copilot-state/backup/copilot-instructions.md.bak-2025-12-03T09-04-26-525Z",
+        "✓ Read 3501 characters from existing file",
+        "✓ Added migration marker to instructions",
+        "✓ Status updated to completed"
+      ],
+      "status": {
+        "version": "1.0.0",
+        "status": "completed",
+        "canRollback": true,
+        "restrictedMode": false,
+        "pattern": "structured",
+        "analyzedAt": "2025-12-03T09:02:15.739Z",
+        "backupPath": ".copilot-state/backup/copilot-instructions.md.bak-2025-12-03T09-04-26-525Z",
+        "rollbackUntil": "2025-12-10T09:04:26.525Z",
+        "decidedAt": "2025-12-03T09:09:19.081Z",
+        "migratedAt": "2025-12-03T09:09:29.506Z"
+      }
+    }
+  },
+  "response": {
+    "role": "assistant",
+    "content": {
+      "type": "text",
+      "text": "# Migration Completed Successfully ✓\n\nYour Copilot instructions have been migrated and the system is now in **normal operation mode**.\n\n## What Was Done\n- Existing instructions (3,501 characters) were read and preserved\n- A migration marker was added to track the update\n- Backup was created before any changes were made\n\n## Backup Location\nYour original file is safely stored at:\n```\n.copilot-state/backup/copilot-instructions.md.bak-2025-12-03T09-04-26-525Z\n```\n\n## Rollback Option\nIf you need to revert these changes, you can rollback until **December 10, 2025**. The backup file will remain available until then.\n\n---\n\nEverything is working normally. You can continue using Copilot as usual! 🚀"
+    },
+    "model": "copilot/claude-sonnet-4.5"
+  }
+}

@@ -257,7 +257,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset),
                         )
                     } else {
-                        let mut fields: Vec<(String, Pattern)> = Vec::new();
+                        let mut fields: Vec<lzscr_ast::ast::PatternRecordField> = Vec::new();
                         loop {
                             let k = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
                                 msg: "expected key in record pattern".into(),
@@ -274,6 +274,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                     })
                                 }
                             };
+                            let key_span = k.span; // Phase 5: Capture field name span
                             let col = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
                                 msg: ": expected after key in record pattern".into(),
                                 span_offset: t.span.offset,
@@ -287,7 +288,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 });
                             }
                             let p = parse_pattern(i, toks)?;
-                            fields.push((key, p));
+                            fields.push(lzscr_ast::ast::PatternRecordField::new(key, key_span, p));
                             let sep = bump(i, toks).ok_or_else(|| ParseError::WithSpan {
                                 msg: ", or } expected in record pattern".into(),
                                 span_offset: t.span.offset,
@@ -696,8 +697,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 collect_binders(t, names);
             }
             PatternKind::Record(fields) => {
-                for (_, v) in fields {
-                    collect_binders(v, names);
+                for f in fields {
+                    collect_binders(&f.pattern, names);
                 }
             }
             PatternKind::As(a, b) => {
@@ -809,6 +810,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 ))
                             }
                         };
+                        let key_span = k.span; // Phase 5: Capture field name span
                         let col = bump(j, toks).ok_or_else(|| {
                             ParseError::Generic(": expected in type record".into())
                         })?;
@@ -816,7 +818,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             return Err(ParseError::Generic(": expected in type record".into()));
                         }
                         let tv = parse_type_expr(j, toks)?;
-                        fields.push((key, tv));
+                        fields.push(lzscr_ast::ast::TypeExprRecordField::new(key, key_span, tv));
                         let sep = bump(j, toks).ok_or_else(|| {
                             ParseError::Generic("expected , or } in type record".into())
                         })?;
@@ -1049,10 +1051,11 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 loop {
                                     let k = bump(j, toks).ok_or_else(|| ParseError::Generic("expected key in type record".into()))?;
                                     let key = match &k.tok { Tok::Ident => k.text.to_string(), _ => return Err(ParseError::Generic("expected ident key in type record".into())) };
+                                    let key_span = k.span; // Phase 5: Capture field name span
                                     let col = bump(j, toks).ok_or_else(|| ParseError::Generic(": expected in type record".into()))?;
                                     if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected in type record".into())); }
                                     let tv = parse_type(j, toks)?;
-                                    fields.push((key, tv));
+                                    fields.push(lzscr_ast::ast::TypeExprRecordField::new(key, key_span, tv));
                                     let sep = bump(j, toks).ok_or_else(|| ParseError::Generic("expected , or } in type record".into()))?;
                                     match sep.tok { Tok::Comma => continue, Tok::RBrace => break, _ => return Err(ParseError::Generic("expected , or } in type record".into())), }
                                 }
@@ -1663,14 +1666,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             },
             Tok::LBrace => {
                 // Direct record literal to ExprKind::Record
+                // Phase 5: Now captures field name spans for better diagnostics
                 if let Some(nxt) = peek(*i, toks) { if matches!(nxt.tok, Tok::RBrace) { let r = bump(i, toks).unwrap(); let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset); return Ok(Expr::new(ExprKind::Record(vec![]), span_all)); } }
-                let mut fields: Vec<(String, Expr)> = Vec::new();
+                let mut fields: Vec<lzscr_ast::ast::ExprRecordField> = Vec::new();
                 loop {
                     let ktok = bump(i, toks).ok_or_else(|| ParseError::Generic("expected key".into()))?;
                     let key = match &ktok.tok { Tok::Ident => ktok.text.to_string(), _ => return Err(ParseError::Generic("expected ident key".into())) };
+                    let key_span = ktok.span;
                     let col = bump(i, toks).ok_or_else(|| ParseError::Generic("expected :".into()))?; if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected".into())); }
                     let val = parse_expr_bp(i, toks, 0)?;
-                    fields.push((key, val));
+                    fields.push(lzscr_ast::ast::ExprRecordField::new(key, key_span, val));
                     let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("expected , or }".into()))?;
                     match sep.tok { Tok::Comma => continue, Tok::RBrace => { let span_all = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset); return Ok(Expr::new(ExprKind::Record(fields), span_all)); }, _ => return Err(ParseError::Generic("expected , or }".into())), }
                 }

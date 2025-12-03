@@ -17,6 +17,21 @@ pub mod ast {
     use crate::span::Span;
     use serde::{Deserialize, Serialize};
 
+    /// Record field in a type expression with field name span tracking.
+    /// Phase 5: Diagnostics Improvement - enables precise error reporting for type record fields.
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct TypeExprRecordField {
+        pub name: String,
+        pub name_span: Span,
+        pub type_expr: TypeExpr,
+    }
+
+    impl TypeExprRecordField {
+        pub fn new(name: String, name_span: Span, type_expr: TypeExpr) -> Self {
+            Self { name, name_span, type_expr }
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum TypeExpr {
         Unit,
@@ -27,7 +42,7 @@ pub mod ast {
         Char,
         List(Box<TypeExpr>),
         Tuple(Vec<TypeExpr>),
-        Record(Vec<(String, TypeExpr)>),
+        Record(Vec<TypeExprRecordField>), // Phase 5: Now tracks field name spans
         Fun(Box<TypeExpr>, Box<TypeExpr>),
         Ctor { tag: String, args: Vec<TypeExpr> },
         Var(String),          // %a etc. (only within %{...} syntax)
@@ -61,8 +76,8 @@ pub mod ast {
         Float(f64),
         Str(String),
         Char(i32),
-        Record(Vec<(String, Pattern)>), // { k: p, ... }
-        As(Box<Pattern>, Box<Pattern>), // p1 @ p2
+        Record(Vec<PatternRecordField>), // { k: p, ... } - Phase 5: Now tracks field name spans
+        As(Box<Pattern>, Box<Pattern>),  // p1 @ p2
         // List patterns
         List(Vec<Pattern>),               // [p1, p2, ...]
         Cons(Box<Pattern>, Box<Pattern>), // h : t
@@ -81,6 +96,36 @@ pub mod ast {
         }
     }
 
+    /// Record field in an expression with field name span tracking.
+    /// Phase 5: Diagnostics Improvement - enables precise error reporting for record fields.
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct ExprRecordField {
+        pub name: String,
+        pub name_span: Span,
+        pub value: Expr,
+    }
+
+    impl ExprRecordField {
+        pub fn new(name: String, name_span: Span, value: Expr) -> Self {
+            Self { name, name_span, value }
+        }
+    }
+
+    /// Record field in a pattern with field name span tracking.
+    /// Phase 5: Diagnostics Improvement - enables precise error reporting for pattern record fields.
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct PatternRecordField {
+        pub name: String,
+        pub name_span: Span,
+        pub pattern: Pattern,
+    }
+
+    impl PatternRecordField {
+        pub fn new(name: String, name_span: Span, pattern: Pattern) -> Self {
+            Self { name, name_span, pattern }
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum ExprKind {
         Unit,
@@ -91,7 +136,8 @@ pub mod ast {
         Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
         // Record literal: { k1: e1, k2: e2, ... }
-        Record(Vec<(String, Expr)>),
+        // Phase 5: Now tracks field name spans for better diagnostics
+        Record(Vec<ExprRecordField>),
         // Type annotation: %{T} e (identity)
         Annot { ty: TypeExpr, expr: Box<Expr> },
         // First-class type value: %{T}
@@ -160,7 +206,7 @@ pub mod pretty {
             PatternKind::Record(fields) => {
                 let inner = fields
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, print_pattern(v)))
+                    .map(|f| format!("{}: {}", f.name, print_pattern(&f.pattern)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{}}}", inner)
@@ -193,7 +239,7 @@ pub mod pretty {
             ExprKind::Record(fields) => {
                 let inner = fields
                     .iter()
-                    .map(|(k, v)| format!("{k}: {}", print_expr(v)))
+                    .map(|f| format!("{}: {}", f.name, print_expr(&f.value)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{ {inner} }}")
@@ -259,7 +305,7 @@ pub mod pretty {
             TypeExpr::Record(fields) => {
                 let inner = fields
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, print_type(v)))
+                    .map(|f| format!("{}: {}", f.name, print_type(&f.type_expr)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{}}}", inner)
