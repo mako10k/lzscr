@@ -810,6 +810,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 ))
                             }
                         };
+                        let key_span = k.span; // Phase 5: Capture field name span
                         let col = bump(j, toks).ok_or_else(|| {
                             ParseError::Generic(": expected in type record".into())
                         })?;
@@ -817,7 +818,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             return Err(ParseError::Generic(": expected in type record".into()));
                         }
                         let tv = parse_type_expr(j, toks)?;
-                        fields.push((key, tv));
+                        fields.push(lzscr_ast::ast::TypeExprRecordField::new(key, key_span, tv));
                         let sep = bump(j, toks).ok_or_else(|| {
                             ParseError::Generic("expected , or } in type record".into())
                         })?;
@@ -1050,10 +1051,11 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 loop {
                                     let k = bump(j, toks).ok_or_else(|| ParseError::Generic("expected key in type record".into()))?;
                                     let key = match &k.tok { Tok::Ident => k.text.to_string(), _ => return Err(ParseError::Generic("expected ident key in type record".into())) };
+                                    let key_span = k.span; // Phase 5: Capture field name span
                                     let col = bump(j, toks).ok_or_else(|| ParseError::Generic(": expected in type record".into()))?;
                                     if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected in type record".into())); }
                                     let tv = parse_type(j, toks)?;
-                                    fields.push((key, tv));
+                                    fields.push(lzscr_ast::ast::TypeExprRecordField::new(key, key_span, tv));
                                     let sep = bump(j, toks).ok_or_else(|| ParseError::Generic("expected , or } in type record".into()))?;
                                     match sep.tok { Tok::Comma => continue, Tok::RBrace => break, _ => return Err(ParseError::Generic("expected , or } in type record".into())), }
                                 }

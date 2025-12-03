@@ -317,7 +317,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             TypeExpr::Record(fields) => {
                 let inner = fields
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, print_type_expr(v)))
+                    .map(|f| format!("{}: {}", f.name, print_type_expr(&f.type_expr)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{}}}", inner)

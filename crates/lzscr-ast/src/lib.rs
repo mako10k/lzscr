@@ -17,6 +17,21 @@ pub mod ast {
     use crate::span::Span;
     use serde::{Deserialize, Serialize};
 
+    /// Record field in a type expression with field name span tracking.
+    /// Phase 5: Diagnostics Improvement - enables precise error reporting for type record fields.
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct TypeExprRecordField {
+        pub name: String,
+        pub name_span: Span,
+        pub type_expr: TypeExpr,
+    }
+
+    impl TypeExprRecordField {
+        pub fn new(name: String, name_span: Span, type_expr: TypeExpr) -> Self {
+            Self { name, name_span, type_expr }
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum TypeExpr {
         Unit,
@@ -27,7 +42,7 @@ pub mod ast {
         Char,
         List(Box<TypeExpr>),
         Tuple(Vec<TypeExpr>),
-        Record(Vec<(String, TypeExpr)>),
+        Record(Vec<TypeExprRecordField>), // Phase 5: Now tracks field name spans
         Fun(Box<TypeExpr>, Box<TypeExpr>),
         Ctor { tag: String, args: Vec<TypeExpr> },
         Var(String),          // %a etc. (only within %{...} syntax)
@@ -290,7 +305,7 @@ pub mod pretty {
             TypeExpr::Record(fields) => {
                 let inner = fields
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, print_type(v)))
+                    .map(|f| format!("{}: {}", f.name, print_type(&f.type_expr)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{}}}", inner)

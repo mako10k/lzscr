@@ -106,7 +106,7 @@ fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> boo
         TypeExpr::List(t) => check_positive_occurrence(t, target, polarity),
         TypeExpr::Tuple(xs) => xs.iter().all(|t| check_positive_occurrence(t, target, polarity)),
         TypeExpr::Record(fs) => {
-            fs.iter().all(|(_, t)| check_positive_occurrence(t, target, polarity))
+            fs.iter().all(|f| check_positive_occurrence(&f.type_expr, target, polarity))
         }
         TypeExpr::Fun(a, b) => {
             check_positive_occurrence(a, target, !polarity)
@@ -165,8 +165,8 @@ pub(crate) fn conv_typeexpr_with_subst(
         ),
         TypeExpr::Record(fs) => {
             let mut m = BTreeMap::new();
-            for (k, v) in fs {
-                m.insert(k.clone(), (conv_typeexpr_with_subst(ctx, v, subst)?, None));
+            for f in fs {
+                m.insert(f.name.clone(), (conv_typeexpr_with_subst(ctx, &f.type_expr, subst)?, None));
             }
             Type::Record(m)
         }
@@ -220,8 +220,8 @@ pub fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
         TypeExpr::Tuple(xs) => Type::Tuple(xs.iter().map(|t| conv_typeexpr_fresh(tv, t)).collect()),
         TypeExpr::Record(fs) => {
             let mut m = BTreeMap::new();
-            for (k, v) in fs {
-                m.insert(k.clone(), conv_typeexpr_fresh(tv, v));
+            for f in fs {
+                m.insert(f.name.clone(), conv_typeexpr_fresh(tv, &f.type_expr));
             }
             Type::Record(m.into_iter().map(|(k, v)| (k, (v, None))).collect())
         }

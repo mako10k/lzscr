@@ -3,7 +3,8 @@
   "focus": [
     "AST refactoring",
     "Phase 5 Record Field Spans",
-    "PatternKind::Record"
+    "TypeExpr::Record",
+    "Step 8"
   ],
   "priority": "high",
   "mode": "normal"
