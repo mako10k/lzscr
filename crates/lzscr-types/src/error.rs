@@ -195,6 +195,72 @@ pub fn format_field_path(parent: &str, child: &str) -> String {
     }
 }
 
+/// Generate specific hints for record field errors.
+///
+/// Provides suggestions for missing fields, extra fields, or type mismatches.
+pub fn suggest_fixes_for_record_field(
+    field: &str,
+    expected: &Type,
+    actual: &Type,
+) -> Vec<String> {
+    use crate::types::Type as T;
+    let mut hints = Vec::new();
+
+    // Extract field sets if both are records
+    match (expected, actual) {
+        (T::Record(expected_fields), T::Record(actual_fields)) => {
+            let expected_keys: std::collections::HashSet<_> =
+                expected_fields.keys().collect();
+            let actual_keys: std::collections::HashSet<_> = actual_fields.keys().collect();
+
+            // Find missing and extra fields
+            let missing: Vec<_> = expected_keys.difference(&actual_keys).collect();
+            let extra: Vec<_> = actual_keys.difference(&expected_keys).collect();
+
+            if !missing.is_empty() {
+                let missing_str = missing
+                    .iter()
+                    .map(|k| format!("'{}'", k))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                hints.push(format!("Missing field(s): {}", missing_str));
+                hints.push("Add the missing field(s) to the record literal".to_string());
+            }
+
+            if !extra.is_empty() {
+                let extra_str = extra
+                    .iter()
+                    .map(|k| format!("'{}'", k))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                hints.push(format!("Extra field(s): {}", extra_str));
+                hints.push("Remove the extra field(s) from the record literal".to_string());
+            }
+
+            // Check for typos in field names
+            if !missing.is_empty() && !extra.is_empty() {
+                for m in &missing {
+                    for e in &extra {
+                        let dist = edit_distance(m, e);
+                        if dist <= 2 {
+                            hints.push(format!(
+                                "Did you mean '{}' instead of '{}'?",
+                                m, e
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            // Fallback for non-record types
+            hints.extend(suggest_fixes_for_mismatch(expected, actual));
+        }
+    }
+
+    hints
+}
+
 /// Generate specific fix-it hints based on type mismatch patterns.
 ///
 /// Returns a list of actionable suggestions for common type errors.

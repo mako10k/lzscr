@@ -1077,13 +1077,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             TypeError::RecordFieldMismatchBoth {
+                                ref field,
                                 ref expected,
                                 ref actual,
                                 expected_span_offset,
                                 expected_span_len,
                                 actual_span_offset,
                                 actual_span_len,
-                                ..
                             } => {
                                 eprintln!("type error: {}", e);
                                 let (eo, el) = (expected_span_offset, expected_span_len);
@@ -1091,7 +1091,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let b1 = src_reg.format_span_block(eo, el);
                                 let b2 = src_reg.format_span_block(ao, al);
                                 eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
-                                let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                let hints = lzscr_types::suggest_fixes_for_record_field(&field, expected, actual);
                                 for hint in hints {
                                     eprintln!("  hint: {}", hint);
                                 }
@@ -1174,12 +1174,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("  hint: {}", hint);
                                 }
                             }
-                            TypeError::RecordFieldMismatch { ref expected, ref actual, span_offset, span_len, .. } => {
+                            TypeError::RecordFieldMismatch { ref field, ref expected, ref actual, span_offset, span_len } => {
                                 eprintln!("type error: {}", e);
                                 let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
-                                let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                let hints = lzscr_types::suggest_fixes_for_record_field(&field, expected, actual);
                                 for hint in hints {
                                     eprintln!("  hint: {}", hint);
                                 }

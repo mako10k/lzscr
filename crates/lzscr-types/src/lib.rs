@@ -42,7 +42,10 @@ pub use builtins::{
 };
 pub use diagnostic::{DiagnosticSpan, DualSpan, SpanContext};
 use display::{normalize_type_and_map, pp_type, user_pretty_type, user_pretty_type_and_map};
-pub use error::{find_similar_names, format_field_path, suggest_fixes_for_mismatch, TypeError};
+pub use error::{
+    find_similar_names, format_field_path, suggest_fixes_for_mismatch,
+    suggest_fixes_for_record_field, TypeError,
+};
 use inference::{infer_expr, DebugConfig, InferCtx};
 pub use scheme::{
     generalize, instantiate, normalize_tuples, zonk_type, Scheme, Subst, TvGen, TypeEnv, TypesApply,
