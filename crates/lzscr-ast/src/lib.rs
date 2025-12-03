@@ -81,6 +81,21 @@ pub mod ast {
         }
     }
 
+    /// Record field in an expression with field name span tracking.
+    /// Phase 5: Diagnostics Improvement - enables precise error reporting for record fields.
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub struct ExprRecordField {
+        pub name: String,
+        pub name_span: Span,
+        pub value: Expr,
+    }
+
+    impl ExprRecordField {
+        pub fn new(name: String, name_span: Span, value: Expr) -> Self {
+            Self { name, name_span, value }
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum ExprKind {
         Unit,
@@ -91,7 +106,8 @@ pub mod ast {
         Ref(String),    // ~name
         Symbol(String), // bare symbol (constructor var candidate)
         // Record literal: { k1: e1, k2: e2, ... }
-        Record(Vec<(String, Expr)>),
+        // Phase 5: Now tracks field name spans for better diagnostics
+        Record(Vec<ExprRecordField>),
         // Type annotation: %{T} e (identity)
         Annot { ty: TypeExpr, expr: Box<Expr> },
         // First-class type value: %{T}
@@ -193,7 +209,7 @@ pub mod pretty {
             ExprKind::Record(fields) => {
                 let inner = fields
                     .iter()
-                    .map(|(k, v)| format!("{k}: {}", print_expr(v)))
+                    .map(|f| format!("{}: {}", f.name, print_expr(&f.value)))
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{ {inner} }}")

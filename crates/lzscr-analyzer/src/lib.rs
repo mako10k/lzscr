@@ -183,9 +183,9 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                 Record(fs) => {
                     h.write_u8(19);
                     h.write_usize(fs.len());
-                    for (k, v) in fs {
-                        h.write(k.as_bytes());
-                        go(v, h, sz);
+                    for f in fs {
+                        h.write(f.name.as_bytes());
+                        go(&f.value, h, sz);
                     }
                 }
             }
@@ -278,8 +278,8 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                 }
             }
             ExprKind::Record(fs) => {
-                for (_k, v) in fs {
-                    collect(v, opt, map);
+                for f in fs {
+                    collect(&f.value, opt, map);
                 }
             }
             ExprKind::LetGroup { bindings, body, .. } => {
@@ -456,8 +456,8 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                 }
             }
             ExprKind::Record(fs) => {
-                for (_k, v) in fs {
-                    walk(v, scopes, allow, out);
+                for f in fs {
+                    walk(&f.value, scopes, allow, out);
                 }
             }
             ExprKind::LetGroup { bindings, body, .. } => {
@@ -770,7 +770,7 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
             }
             ExprKind::Apply { func, arg } => used_in(func, target) || used_in(arg, target),
             ExprKind::List(xs) => xs.iter().any(|x| used_in(x, target)),
-            ExprKind::Record(fs) => fs.iter().any(|(_k, v)| used_in(v, target)),
+            ExprKind::Record(fs) => fs.iter().any(|f| used_in(&f.value, target)),
             ExprKind::Raise(inner) => used_in(inner, target),
             ExprKind::OrElse { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::AltLambda { left, right } => used_in(left, target) || used_in(right, target),
@@ -867,8 +867,8 @@ pub fn analyze_unused_params(expr: &Expr) -> Vec<UnusedParam> {
                 }
             }
             ExprKind::Record(fs) => {
-                for (_k, v) in fs {
-                    walk(v, out);
+                for f in fs {
+                    walk(&f.value, out);
                 }
             }
             ExprKind::Raise(inner) => walk(inner, out),
@@ -926,7 +926,7 @@ pub fn analyze_unused_let_bindings(expr: &Expr) -> Vec<UnusedLet> {
             | ExprKind::Catch { left, right } => used_in(left, target) || used_in(right, target),
             ExprKind::Block(inner) => used_in(inner, target),
             ExprKind::List(xs) => xs.iter().any(|x| used_in(x, target)),
-            ExprKind::Record(fs) => fs.iter().any(|(_k, v)| used_in(v, target)),
+            ExprKind::Record(fs) => fs.iter().any(|f| used_in(&f.value, target)),
             ExprKind::LetGroup { bindings, body, .. } => {
                 let in_body = used_in(body, target);
                 let in_bindings = bindings.iter().any(|(_p, ex)| used_in(ex, target));
@@ -1009,8 +1009,8 @@ pub fn analyze_unused_let_bindings(expr: &Expr) -> Vec<UnusedLet> {
                 }
             }
             ExprKind::Record(fs) => {
-                for (_k, v) in fs {
-                    walk(v, out);
+                for f in fs {
+                    walk(&f.value, out);
                 }
             }
             ExprKind::Raise(inner) => walk(inner, out),
@@ -1099,8 +1099,8 @@ pub fn analyze_let_collisions(expr: &Expr) -> Vec<LetCollision> {
                 }
             }
             ExprKind::Record(fs) => {
-                for (_k, v) in fs {
-                    walk(v, out);
+                for f in fs {
+                    walk(&f.value, out);
                 }
             }
             ExprKind::Raise(inner) => walk(inner, out),

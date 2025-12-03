@@ -350,9 +350,9 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
         ExprKind::Record(fields) => {
             // Eagerly evaluate field expressions (could later be lazy if desired)
             let mut map = std::collections::BTreeMap::new();
-            for (k, v) in fields {
-                let val = eval(env, v)?;
-                map.insert(k.clone(), val);
+            for f in fields {
+                let val = eval(env, &f.value)?;
+                map.insert(f.name.clone(), val);
             }
             Ok(Value::Record(map))
         }

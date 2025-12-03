@@ -1663,14 +1663,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             },
             Tok::LBrace => {
                 // Direct record literal to ExprKind::Record
+                // Phase 5: Now captures field name spans for better diagnostics
                 if let Some(nxt) = peek(*i, toks) { if matches!(nxt.tok, Tok::RBrace) { let r = bump(i, toks).unwrap(); let span_all = Span::new(t.span.offset, r.span.offset + r.span.len - t.span.offset); return Ok(Expr::new(ExprKind::Record(vec![]), span_all)); } }
-                let mut fields: Vec<(String, Expr)> = Vec::new();
+                let mut fields: Vec<lzscr_ast::ast::ExprRecordField> = Vec::new();
                 loop {
                     let ktok = bump(i, toks).ok_or_else(|| ParseError::Generic("expected key".into()))?;
                     let key = match &ktok.tok { Tok::Ident => ktok.text.to_string(), _ => return Err(ParseError::Generic("expected ident key".into())) };
+                    let key_span = ktok.span;
                     let col = bump(i, toks).ok_or_else(|| ParseError::Generic("expected :".into()))?; if !matches!(col.tok, Tok::Colon) { return Err(ParseError::Generic(": expected".into())); }
                     let val = parse_expr_bp(i, toks, 0)?;
-                    fields.push((key, val));
+                    fields.push(lzscr_ast::ast::ExprRecordField::new(key, key_span, val));
                     let sep = bump(i, toks).ok_or_else(|| ParseError::Generic("expected , or }".into()))?;
                     match sep.tok { Tok::Comma => continue, Tok::RBrace => { let span_all = Span::new(t.span.offset, sep.span.offset + sep.span.len - t.span.offset); return Ok(Expr::new(ExprKind::Record(fields), span_all)); }, _ => return Err(ParseError::Generic("expected , or }".into())), }
                 }

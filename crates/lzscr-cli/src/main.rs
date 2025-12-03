@@ -910,7 +910,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Apply { func, arg } => 1 + count(func) + count(arg),
                 Block(inner) => 1 + count(inner),
                 List(xs) => 1 + xs.iter().map(count).sum::<usize>(),
-                Record(fs) => 1 + fs.iter().map(|(_, v)| count(v)).sum::<usize>(),
+                Record(fs) => 1 + fs.iter().map(|f| count(&f.value)).sum::<usize>(),
                 LetGroup { bindings, body, .. } => {
                     1 + count(body) + bindings.iter().map(|(_, ex)| count(ex)).sum::<usize>()
                 }
@@ -1864,10 +1864,11 @@ fn expand_requires_in_expr(
         ),
         Record(fs) => Record(
             fs.iter()
-                .map(|(k, v)| {
-                    Ok((
-                        k.clone(),
-                        expand_requires_in_expr(v, search_paths, stack, src_reg, stdlib_mode)?,
+                .map(|f| {
+                    Ok(ExprRecordField::new(
+                        f.name.clone(),
+                        f.name_span,
+                        expand_requires_in_expr(&f.value, search_paths, stack, src_reg, stdlib_mode)?,
                     ))
                 })
                 .collect::<Result<Vec<_>, String>>()?,
@@ -1979,8 +1980,8 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
         List(xs) => List(map_list(xs)),
         Record(fields) => {
             let mut new = Vec::with_capacity(fields.len());
-            for (k, v) in fields.iter() {
-                new.push((k.clone(), map_expr(v)));
+            for f in fields.iter() {
+                new.push(ExprRecordField::new(f.name.clone(), f.name_span, map_expr(&f.value)));
             }
             Record(new)
         }

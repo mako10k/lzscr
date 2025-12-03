@@ -458,12 +458,14 @@ pub(crate) fn infer_expr(
             Ok((Type::List(Box::new(a.apply(&s))), s))
         }
         ExprKind::Record(fields) => {
+            // Phase 5: Now uses field name spans for better diagnostics
             let mut subst = Subst::new();
             let mut map = BTreeMap::new();
-            for (k, v) in fields {
-                let (tv, sv) = infer_expr(ctx, v, allow_effects)?;
+            for f in fields {
+                let (tv, sv) = infer_expr(ctx, &f.value, allow_effects)?;
                 subst = sv.compose(subst);
-                map.insert(k.clone(), (tv.apply(&subst), Some(v.span)));
+                // Use field name span instead of value span for record field diagnostics
+                map.insert(f.name.clone(), (tv.apply(&subst), Some(f.name_span)));
             }
             Ok((Type::Record(map), subst))
         }
