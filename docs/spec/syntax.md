@@ -1,49 +1,68 @@
 # Syntax (current)
 
-- Literals:
-  - Unit: `()`
-  - Int: `42`
-  - Str: `"hi"` (supports escapes)
-- Identifiers:
-  - Reference: `~name`
-  - Symbol value (member-style): `.println` parses as a Symbol
-- Lambda: `\x -> expr`
-- Application: `(f x)` (left-associative)
-- Block: `{ expr }`
-- Sugar:
-  - `!sym` → `(~effects .sym)`
-- Reserved/tokens: `~`, `!`, `.ident`, `(`, `)`, `{`, `}`, `,`, `->`, `\\`
+## Syntax guide (2025-12-03)
 
-Examples:
-## Syntax guide (2025-09-05)
+### Literals and basic forms
 
-### Literals/basics
+- **Unit**: `()`
+- **Int**: `42`, `0x2A` (hex), `0o52` (octal), `0b101010` (binary)
+- **Float**: `1.0`, `.5`, `3.`, `1.5e10`, `2e-3`
+- **Str**: `"hello"` (supports escape sequences: `\n`, `\t`, `\\`, `\"`, `\xHH`, `\u{HHHH}`)
+- **Char**: `'a'`, `'\n'`, `'\x41'`, `'\u{3042}'`
+- **Ref**: `~name` (variable reference, e.g., `~add`, `~x`)
+- **Symbol**: `.name` (bare symbol value, e.g., `.println`, `.True`, `.Some`)
+  - Constructors are always `.Member` form (e.g., `.True`, `.False`, `.Some`, `.None`)
+- **Lambda**: `\x -> expr` or `\~x -> expr` (parameter patterns supported)
+- **Block**: `{ expr }` (groups expression)
+- **Apply**: `(f x)` (left-associative function application)
+- **List literal**: `[1, 2, 3]` or `[]`
+- **Record literal**: `{a: 1, b: 2}` or `{}` (keys must be identifiers)
+- **Tuple** (via sugar): `(a, b, c)` parsed as tuple pattern/expression
 
-- Unit: `()`
-- Int: `42`
-- Float: `1.0`, `.5`, `3.`
-- Str: `"hi"` (supports escapes)
-- Ref: `~name` (e.g., `~add`)
-- Symbol value: `.name` (e.g., `.println`, `.Foo`) — constructors are .Member-only
-- Lambda: `\x -> expr`
-- Block: `{ expr }`
-- Apply: `(f x)` (left-associative)
+### Sugar and special forms
 
-### Sugar
+- **Effects**: `!println` → `(~effects .println)`
+- **Type annotation**: `%{Int} expr` (annotate expression with type)
+- **Type value**: `%{Int -> Bool}` (first-class type value)
+- **Type declaration**: `%TypeName = %{ .Ctor1 T1 | .Ctor2 T2 }` (sum type definition)
+- **Pattern type binding**: `%{'a, ?x} pat` (bind type variables in pattern scope)
 
-- Effects: `!println` → `(~effects .println)`
+### do-notation and sequencing
 
-## do-notation and sequencing
-
-- `!{ ... }` is sugar for sequencing.
+- **`!{ ... }` block**: Sugar for effect sequencing
   - Grammar: `stmt ::= pat <- expr ; | expr ;`
-  - A block has zero or more statements (any expression with trailing `;`) and one final expression.
+  - A block has zero or more statements (expressions with trailing `;`) and one final expression
   - Expansion rules:
     - Final `E` becomes `(~bind E (\x -> x))` (return value)
     - `expr; ACC` becomes `(~chain expr ACC)`
     - `pat <- expr; ACC` becomes `(~bind expr (\pat -> ACC))`
-- Booleans: `.True`, `.False` constructors (no `~true` / `~false` aliases)
-- Constructor value: `.Foo 1 2` → `Ctor(".Foo", [1,2])`
+
+### Patterns
+
+- **Wildcard**: `_` (matches anything, binds nothing)
+- **Variable**: `~x` (binds matched value to `x`)
+- **Unit**: `()`
+- **Tuple**: `(~a, ~b)` (matches tuple, binds components)
+- **List**: `[~a, ~b]` or `[]` (matches exact list structure)
+- **Cons**: `~h : ~t` (matches head and tail of list)
+- **Constructor**: `.Some ~x` or `.None` (matches constructor with args)
+- **Record**: `{a: ~x, b: ~y}` (matches record with specific fields)
+- **Literals**: `42`, `"hello"`, `'a'`, `.True` (match exact values)
+- **Type binding**: `%{'a} ~x` (bind type variable in pattern scope)
+
+### Let-groups and bindings
+
+- **Let-group**: `(~x = 1; ~y = 2; ~x + ~y)` or with file-level syntax
+  - Bindings can be mutually/recursively referential within the group
+  - Type declarations (`%Type = ...`) can appear anywhere in the group
+  - Final expression is the result of the group
+
+### Booleans and constructors
+
+- **Booleans**: `.True`, `.False` constructors (no `~true` / `~false` aliases)
+- **Constructor values**: `.Foo 1 2` creates `Ctor(".Foo", [1, 2])`
+- **Option**: `.Some x`, `.None`
+- **Result**: `.Ok x`, `.Err e`
 
 ### Infix operators (left-assoc; Pratt precedence)
 
@@ -72,15 +91,46 @@ Desugaring (to function application):
 
 Return value is a Bool (`.True` | `.False`).
 
+### Reserved tokens and symbols
+
+- **Ref/Effect**: `~`, `!`
+- **Symbol/Member**: `.`
+- **Type**: `%`
+- **Grouping**: `(`, `)`, `{`, `}`, `[`, `]`
+- **Separators**: `,`, `;`
+- **Operators**: `->`, `<-`, `|`, `||`, `^|`, `:`, `@`
+- **Lambda**: `\`
+
 ### Examples
 
-```
+```lzscr
+# Arithmetic and comparison
 1 + 2 * 3            # => 7
 1.5 .+ 2.0 .* 2.0    # => 5.5
 8 / 2                # => 4
 8.0 ./ 2.0           # => 4.0
-(.Foo 1) == (.Foo 1) # => True
-!println "ok"
-(~seq () (!println "ok"))
-(\x -> x) 10
+1 < 2                # => .True
+1.5 .<= 2.0          # => .True
+
+# Constructors and pattern matching
+(.Some 42) == (.Some 42)  # => .True
+(\(.Some ~x) -> ~x | \.None -> 0) (.Some 10)  # => 10
+
+# Lists and records
+[1, 2, 3]            # list literal
+{a: 1, b: 2}         # record literal
+(\(~h : ~t) -> ~h) [1, 2, 3]  # => 1
+
+# Effects
+!println "ok"                      # effect call
+(~seq () (!println "ok"))          # explicit sequencing
+!{ ~x <- !read_line; !println ~x } # do-notation
+
+# Lambdas and application
+(\~x -> ~x) 10       # => 10
+(\~x ~y -> ~x + ~y) 1 2  # => 3
+
+# Type annotations
+%{Int -> Int} (\~x -> ~x + 1)  # annotated lambda
+%{[Int]} [1, 2, 3]             # annotated list
 ```
