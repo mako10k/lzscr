@@ -47,12 +47,12 @@
 
 # Run all tests
 ~run_tests = (
-  ~test_predicates;
-  ~test_map;
-  ~test_and_then;
-  ~test_unwrap_or;
-  ~test_to_list;
-  ~test_filter;
+  _ = ~test_predicates;
+  _ = ~test_map;
+  _ = ~test_and_then;
+  _ = ~test_unwrap_or;
+  _ = ~test_to_list;
+  _ = ~test_filter;
   (~log "✓ All option tests passed")
 );
 

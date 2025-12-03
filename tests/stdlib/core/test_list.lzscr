@@ -100,20 +100,20 @@
 
 # Run all tests
 ~run_tests = (
-  ~test_length;
-  ~test_append;
-  ~test_reverse;
-  ~test_map;
-  ~test_filter;
-  ~test_foldl;
-  ~test_foldr;
-  ~test_take_drop;
-  ~test_any_all;
-  ~test_sum_product;
-  ~test_head_tail;
-  ~test_zip;
-  ~test_range;
-  ~test_elem;
+  _ = ~test_length;
+  _ = ~test_append;
+  _ = ~test_reverse;
+  _ = ~test_map;
+  _ = ~test_filter;
+  _ = ~test_foldl;
+  _ = ~test_foldr;
+  _ = ~test_take_drop;
+  _ = ~test_any_all;
+  _ = ~test_sum_product;
+  _ = ~test_head_tail;
+  _ = ~test_zip;
+  _ = ~test_range;
+  _ = ~test_elem;
   (~log "✓ All list tests passed")
 );
 

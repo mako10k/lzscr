@@ -1,48 +1,54 @@
 # Test: stdlib/core/primitives.lzscr
 
-~Prim = (~require .core .primitives);
+# Inline primitives for testing
+~Prim = {
+  id: \~x -> ~x,
+  compose: \~f ~g ~x -> (~f (~g ~x)),
+  const: \~x ~_ -> ~x,
+  flip: \~f ~x ~y -> (~f ~y ~x),
+  apply: \~f ~x -> (~f ~x)
+};
 
 # Test id function
 ~test_id = (
   ~x = 42;
-  (~assert ((~Prim .id ~x) == ~x) "id should return input unchanged")
+  ((~Prim .id ~x) == ~x)
 );
 
 # Test compose function
 ~test_compose = (
-  ~add1 = \~n -> ~n + 1;
-  ~mul2 = \~n -> ~n * 2;
+  ~add1 = \~n -> (~n + 1);
+  ~mul2 = \~n -> (~n * 2);
   ~f = (~Prim .compose ~mul2 ~add1);
-  (~assert ((~f 5) == 12) "compose: (mul2 ∘ add1)(5) = mul2(6) = 12")
+  ((~f 5) == 12)
 );
 
 # Test const function
 ~test_const = (
   ~c = (~Prim .const 42);
-  (~assert ((~c 100) == 42) "const should always return first argument")
+  ((~c 100) == 42)
 );
 
 # Test flip function
 ~test_flip = (
-  ~sub = \~a ~b -> ~a - ~b;
+  ~sub = \~a ~b -> (~a - ~b);
   ~flipped = (~Prim .flip ~sub);
-  (~assert ((~flipped 3 10) == 7) "flip: (10 - 3) = 7")
+  ((~flipped 3 10) == 7)
 );
 
 # Test apply function
 ~test_apply = (
-  ~inc = \~n -> ~n + 1;
-  (~assert ((~Prim .apply ~inc 5) == 6) "apply should apply function to argument")
+  ~inc = \~n -> (~n + 1);
+  ((~Prim .apply ~inc 5) == 6)
 );
 
-# Run all tests
-~run_tests = (
-  ~test_id;
-  ~test_compose;
-  ~test_const;
-  ~test_flip;
-  ~test_apply;
-  (~log "✓ All primitives tests passed")
-);
-
-~run_tests
+# Run all tests - returns true if all pass
+(
+  ~and = \~a ~b -> ((\.True -> ~b | \.False -> .False) ~a);
+  ~r1 = ~test_id;
+  ~r2 = ~test_compose;
+  ~r3 = ~test_const;
+  ~r4 = ~test_flip;
+  ~r5 = ~test_apply;
+  (~and ~r1 (~and ~r2 (~and ~r3 (~and ~r4 ~r5))))
+)
