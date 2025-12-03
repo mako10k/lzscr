@@ -1058,20 +1058,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         use lzscr_types::TypeError;
                         match e {
                             TypeError::MismatchBoth {
+                                ref expected,
+                                ref actual,
+                                expected_span_offset,
+                                expected_span_len,
+                                actual_span_offset,
+                                actual_span_len,
+                            } => {
+                                eprintln!("type error: {}", e);
+                                let (eo, el) = (expected_span_offset, expected_span_len);
+                                let (ao, al) = (actual_span_offset, actual_span_len);
+                                let b1 = src_reg.format_span_block(eo, el);
+                                let b2 = src_reg.format_span_block(ao, al);
+                                eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
+                                let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                for hint in hints {
+                                    eprintln!("  hint: {}", hint);
+                                }
+                            }
+                            TypeError::RecordFieldMismatchBoth {
+                                ref expected,
+                                ref actual,
                                 expected_span_offset,
                                 expected_span_len,
                                 actual_span_offset,
                                 actual_span_len,
                                 ..
+                            } => {
+                                eprintln!("type error: {}", e);
+                                let (eo, el) = (expected_span_offset, expected_span_len);
+                                let (ao, al) = (actual_span_offset, actual_span_len);
+                                let b1 = src_reg.format_span_block(eo, el);
+                                let b2 = src_reg.format_span_block(ao, al);
+                                eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
+                                let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                for hint in hints {
+                                    eprintln!("  hint: {}", hint);
+                                }
                             }
-                            | TypeError::RecordFieldMismatchBoth {
-                                expected_span_offset,
-                                expected_span_len,
-                                actual_span_offset,
-                                actual_span_len,
-                                ..
-                            }
-                            | TypeError::Occurs {
+                            TypeError::Occurs {
                                 var_span_offset: expected_span_offset,
                                 var_span_len: expected_span_len,
                                 ty_span_offset: actual_span_offset,
@@ -1139,18 +1164,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 );
                                 eprintln!("    Cannot mix both styles in one AltLambda.");
                             }
-                            TypeError::Mismatch { span_offset, span_len, .. }
-                            | TypeError::RecordFieldMismatch { span_offset, span_len, .. } => {
+                            TypeError::Mismatch { ref expected, ref actual, span_offset, span_len } => {
                                 eprintln!("type error: {}", e);
                                 let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
-                                eprintln!("  hint: type mismatch may indicate ambiguous inference");
-                                eprintln!("    Consider adding an explicit type annotation:");
-                                eprintln!("      (%{{expected-type}} expression)");
-                                eprintln!(
-                                    "    or adding type hints to function parameters/let bindings."
-                                );
+                                let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                for hint in hints {
+                                    eprintln!("  hint: {}", hint);
+                                }
+                            }
+                            TypeError::RecordFieldMismatch { ref expected, ref actual, span_offset, span_len, .. } => {
+                                eprintln!("type error: {}", e);
+                                let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
+                                let block = src_reg.format_span_block(adj_off, adj_len);
+                                eprintln!("{}", block);
+                                let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                for hint in hints {
+                                    eprintln!("  hint: {}", hint);
+                                }
                             }
                             TypeError::NegativeOccurrence { span_offset, span_len, .. }
                             | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
@@ -1159,6 +1191,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let (adj_off, adj_len) = src_reg.normalize_span(span_offset, span_len);
                                 let block = src_reg.format_span_block(adj_off, adj_len);
                                 eprintln!("{}", block);
+                            }
+                            TypeError::AnnotMismatch {
+                                ref expected,
+                                ref actual,
+                                annot_span_offset,
+                                annot_span_len,
+                                expr_span_offset,
+                                expr_span_len,
+                            } => {
+                                eprintln!("type error: {}", e);
+                                let b1 = src_reg
+                                    .format_span_block(annot_span_offset, annot_span_len);
+                                let b2 =
+                                    src_reg.format_span_block(expr_span_offset, expr_span_len);
+                                eprintln!("annotation:\n{}\nexpression:\n{}", b1, b2);
+                                let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                for hint in hints {
+                                    eprintln!("  hint: {}", hint);
+                                }
                             }
                             other => {
                                 eprintln!("type error: {}", other);
@@ -1179,18 +1230,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             use lzscr_types::TypeError;
                             match e {
                                 TypeError::MismatchBoth {
+                                    ref expected,
+                                    ref actual,
                                     expected_span_offset,
                                     expected_span_len,
                                     actual_span_offset,
                                     actual_span_len,
-                                    ..
+                                } => {
+                                    eprintln!("type error: {}", e);
+                                    let (eo, el) = (expected_span_offset, expected_span_len);
+                                    let (ao, al) = (actual_span_offset, actual_span_len);
+                                    let b1 = src_reg.format_span_block(eo, el);
+                                    let b2 = src_reg.format_span_block(ao, al);
+                                    eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
+                                    let hints = lzscr_types::suggest_fixes_for_mismatch(expected, actual);
+                                    for hint in hints {
+                                        eprintln!("  hint: {}", hint);
+                                    }
                                 }
-                                | TypeError::RecordFieldMismatchBoth {
+                                TypeError::RecordFieldMismatchBoth {
+                                    ref expected,
+                                    ref actual,
                                     expected_span_offset,
                                     expected_span_len,
                                     actual_span_offset,
                                     actual_span_len,
                                     ..
+                                } => {
+                                    eprintln!("type error: {}", e);
+                                    let (eo, el) = (expected_span_offset, expected_span_len);
+                                    let (ao, al) = (actual_span_offset, actual_span_len);
+                                    let b1 = src_reg.format_span_block(eo, el);
+                                    let b2 = src_reg.format_span_block(ao, al);
+                                    eprintln!("expected type:\n{}\nactual type:\n{}", b1, b2);
+                                    let hints = lzscr_types::suggest_fixes_for_mismatch(expected, actual);
+                                    for hint in hints {
+                                        eprintln!("  hint: {}", hint);
+                                    }
                                 }
                                 | TypeError::Occurs {
                                     var_span_offset: expected_span_offset,
@@ -1257,18 +1333,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     eprintln!("{}", block);
                                 }
                                 TypeError::AnnotMismatch {
+                                    ref expected,
+                                    ref actual,
                                     annot_span_offset,
                                     annot_span_len,
                                     expr_span_offset,
                                     expr_span_len,
-                                    ..
                                 } => {
                                     eprintln!("type error: {}", e);
                                     let b1 = src_reg
                                         .format_span_block(annot_span_offset, annot_span_len);
                                     let b2 =
                                         src_reg.format_span_block(expr_span_offset, expr_span_len);
-                                    eprintln!("{}\n{}", b1, b2);
+                                    eprintln!("annotation:\n{}\nexpression:\n{}", b1, b2);
+                                    let hints = lzscr_types::suggest_fixes_for_mismatch(&expected, &actual);
+                                    for hint in hints {
+                                        eprintln!("  hint: {}", hint);
+                                    }
                                 }
                                 other => {
                                     eprintln!("type error: {}", other);

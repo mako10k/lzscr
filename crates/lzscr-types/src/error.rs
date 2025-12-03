@@ -194,3 +194,75 @@ pub fn format_field_path(parent: &str, child: &str) -> String {
         format!("{parent}.{child}")
     }
 }
+
+/// Generate specific fix-it hints based on type mismatch patterns.
+///
+/// Returns a list of actionable suggestions for common type errors.
+pub fn suggest_fixes_for_mismatch(expected: &Type, actual: &Type) -> Vec<String> {
+    use crate::types::Type as T;
+    let mut hints = Vec::new();
+
+    match (expected, actual) {
+        // Int vs Float
+        (T::Int, T::Float) => {
+            hints.push("Use an integer literal (e.g., 42 instead of 42.0)".to_string());
+            hints.push("Or convert with (~Int .from_float value)".to_string());
+        }
+        (T::Float, T::Int) => {
+            hints.push("Use a float literal (e.g., 42.0 instead of 42)".to_string());
+            hints.push("Or convert with (~Float .from_int value)".to_string());
+        }
+        // String vs Char
+        (T::Str, T::Char) => {
+            hints.push("Use a string literal (\"...\") instead of a character ('...')".to_string());
+        }
+        (T::Char, T::Str) => {
+            hints.push("Use a character literal ('x') instead of a string (\"x\")".to_string());
+        }
+        // Effect type mismatch
+        (T::Named { name: n1, .. }, _) if n1.starts_with("Effect") => {
+            hints.push("Wrap the expression in an effect context:".to_string());
+            hints.push("  (~seq () (!effect-call ...))".to_string());
+        }
+        (_, T::Named { name: n2, .. }) if n2.starts_with("Effect") => {
+            hints.push("This produces an effect - use ~seq or ~chain to sequence it".to_string());
+        }
+        // List mismatch
+        (T::List(expected_elem), T::List(actual_elem)) if expected_elem != actual_elem => {
+            hints.push(format!(
+                "List element type mismatch: expected [{}] but got [{}]",
+                expected_elem, actual_elem
+            ));
+            hints.push("Ensure all list elements have the same type".to_string());
+        }
+        // Function arity hint
+        (T::Fun(_, _), other) if !matches!(other, T::Fun(_, _)) => {
+            hints.push("Expected a function but got a non-function value".to_string());
+            hints.push("Wrap in a lambda if needed: (\\~arg -> ...)".to_string());
+        }
+        (other, T::Fun(_, _)) if !matches!(other, T::Fun(_, _)) => {
+            hints.push("Got a function but expected a value".to_string());
+            hints.push("Apply the function to its arguments".to_string());
+        }
+        // Tuple length mismatch
+        (T::Tuple(expected_elems), T::Tuple(actual_elems)) if expected_elems.len() != actual_elems.len() => {
+            hints.push(format!(
+                "Tuple length mismatch: expected {} elements but got {}",
+                expected_elems.len(),
+                actual_elems.len()
+            ));
+        }
+        // Record mismatch
+        (T::Record(_), other) if !matches!(other, T::Record(_)) => {
+            hints.push("Expected a record but got a non-record value".to_string());
+            hints.push("Use record literal syntax: {{field1: value1, field2: value2}}".to_string());
+        }
+        // Generic advice
+        _ => {
+            hints.push("Consider adding an explicit type annotation:".to_string());
+            hints.push("  (%{{expected-type}} expression)".to_string());
+        }
+    }
+
+    hints
+}
