@@ -1091,9 +1091,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let b1 = src_reg.format_span_block(eo, el);
                                 let b2 = src_reg.format_span_block(ao, al);
                                 eprintln!(
-                                    "type variable defined here:\n{}\noccurs inside here:\n{}",
+                                    "type variable introduced here:\n{}\nwould occur within its own definition here:\n{}",
                                     b1, b2
                                 );
+                                eprintln!("  hint: this creates an infinite type (recursive definition without fixpoint)");
+                                eprintln!("    Consider restructuring to avoid self-reference or using an explicit recursive type");
                             }
                             TypeError::UnboundRef {
                                 span_offset,
@@ -1210,9 +1212,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let b1 = src_reg.format_span_block(eo, el);
                                     let b2 = src_reg.format_span_block(ao, al);
                                     eprintln!(
-                                        "type variable defined here:\n{}\noccurs inside here:\n{}",
+                                        "type variable introduced here:\n{}\nwould occur within its own definition here:\n{}",
                                         b1, b2
                                     );
+                                    eprintln!("  hint: this creates an infinite type (recursive definition without fixpoint)");
+                                    eprintln!("    Consider restructuring to avoid self-reference or using an explicit recursive type");
                                 }
                                 TypeError::UnboundRef {
                                     span_offset,

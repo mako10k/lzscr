@@ -58,7 +58,7 @@ pub enum TypeError {
         expr_span_len: usize,
     },
     /// Occurs check failure (infinite type detection)
-    #[error("cannot construct infinite type: {var_pretty} occurs in {pretty}")]
+    #[error("cannot construct infinite type: type variable {var_pretty} occurs within its own definition {pretty}")]
     Occurs {
         var: TvId,
         var_pretty: String, // normalized pretty name for the variable (e.g. %a)
