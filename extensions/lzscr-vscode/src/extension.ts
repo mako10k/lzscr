@@ -9,9 +9,9 @@ async function runFormatterWithTempFile(cmd: string, input: string, cwd?: string
   const tmpPath = path.join(dir, 'input.lzscr');
   await fs.promises.writeFile(tmpPath, input, 'utf8');
   return new Promise((resolve, reject) => {
-  const args = ['--format-code', '--file', tmpPath];
-  if (typeof indent === 'number') args.push('--fmt-indent', String(indent));
-  if (typeof width === 'number') args.push('--fmt-width', String(width));
+    const args = ['--format-code', '--file', tmpPath];
+    if (typeof indent === 'number') args.push('--fmt-indent', String(indent));
+    if (typeof width === 'number') args.push('--fmt-width', String(width));
     // Extend PATH to include ~/.cargo/bin for Rust binaries
     const env = { ...process.env };
     const homeDir = os.homedir();
@@ -20,12 +20,12 @@ async function runFormatterWithTempFile(cmd: string, input: string, cwd?: string
     const child = cp.spawn(cmd, args, { cwd, env });
     let stdout = '';
     let stderr = '';
-  child.stdout.on('data', (d: any) => (stdout += d.toString()));
-  child.stderr.on('data', (d: any) => (stderr += d.toString()));
+    child.stdout.on('data', (d: any) => (stdout += d.toString()));
+    child.stderr.on('data', (d: any) => (stderr += d.toString()));
     child.on('error', reject);
     child.on('close', (code: number | null) => {
       // cleanup tmp dir best-effort
-      fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+      fs.promises.rm(dir, { recursive: true, force: true }).catch(() => { });
       if (code === 0) resolve(stdout);
       else reject(new Error(stderr || `formatter exited with code ${code}`));
     });
@@ -41,7 +41,7 @@ export function activate(context: vscode.ExtensionContext) {
     const text = document.getText();
     try {
       const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const formatted = await runFormatterWithTempFile(formatterPath, text, cwd, config.get<number>('indent', 2), maxWidth);
+      const formatted = await runFormatterWithTempFile(formatterPath, text, cwd, config.get<number>('indent', 2), maxWidth);
       const fullRange = new vscode.Range(
         document.positionAt(0),
         document.positionAt(text.length)
@@ -71,4 +71,4 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-export function deactivate() {}
+export function deactivate() { }
