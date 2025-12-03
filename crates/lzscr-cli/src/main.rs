@@ -572,6 +572,144 @@ fn handle_format_mode(
     }
 }
 
+/// Handle parse error display with detailed caret positioning.
+fn display_parse_error(
+    code: &str,
+    input_name: &str,
+    user_raw: &str,
+    msg: &str,
+    span_offset: usize,
+    span_len: usize,
+    prelude_for_diag: &Option<(String, String)>,
+    user_wrapped_parens: bool,
+) {
+    eprintln!("parse error: {}", msg);
+    
+    // Opening '(' detection logic
+    let mut open_paren_block: Option<String> = None;
+    if let Some(idx) = msg.find("Opening '(' at line ") {
+        let tail = &msg[idx + "Opening '(' at line ".len()..];
+        let mut lchars = tail.chars();
+        let mut line_s = String::new();
+        for ch in lchars.by_ref() {
+            if ch.is_ascii_digit() {
+                line_s.push(ch);
+            } else if ch == ':' {
+                break;
+            } else {
+                line_s.clear();
+                break;
+            }
+        }
+        let mut col_s = String::new();
+        for ch in lchars.by_ref() {
+            if ch.is_ascii_digit() {
+                col_s.push(ch);
+            } else if ch == ' ' {
+                break;
+            } else {
+                col_s.clear();
+                break;
+            }
+        }
+        let mut off_s = String::new();
+        if let Some(pos_off) = tail.find("(offset ") {
+            let after = &tail[pos_off + "(offset ".len()..];
+            for ch in after.chars() {
+                if ch.is_ascii_digit() {
+                    off_s.push(ch);
+                } else {
+                    break;
+                }
+            }
+        }
+        if let (Ok(_line_no), Ok(_col_no), Ok(off_no)) = (
+            line_s.parse::<usize>(),
+            col_s.parse::<usize>(),
+            off_s.parse::<usize>(),
+        ) {
+            let raw_block = format_span_caret(code, input_name, off_no, 1);
+            let toks = _lexer_for_caret::lex(code);
+            if let Some(tok) = toks.iter().find(|t| t.span.offset == off_no) {
+                let mut lines = raw_block.lines();
+                if let Some(_first) = lines.next() {
+                    let new_first = format!("at {}:{}:{}", input_name, tok.line, tok.col);
+                    let rest: String = lines.map(|l| format!("\n{}", l)).collect();
+                    open_paren_block = Some(format!("{}{}", new_first, rest));
+                } else {
+                    open_paren_block = Some(raw_block);
+                }
+            } else {
+                open_paren_block = Some(raw_block);
+            }
+        }
+    }
+    
+    // Main error location
+    if let Some((ref pre_src, ref pre_name)) = prelude_for_diag {
+        let pre_start = 1;
+        let pre_end = pre_start + pre_src.len();
+        if span_offset >= pre_start && span_offset < pre_end {
+            let rel = span_offset - pre_start;
+            eprintln!("{}", format_span_caret(pre_src, pre_name, rel, span_len));
+        } else {
+            let mut user_start = 1 + pre_src.len() + 1;
+            if user_wrapped_parens {
+                user_start += 1;
+            }
+            let rel = span_offset.saturating_sub(user_start);
+            eprintln!("{}", format_span_caret(user_raw, input_name, rel, span_len));
+        }
+    } else {
+        eprintln!("{}", format_span_caret(code, input_name, span_offset, span_len));
+    }
+    
+    // Opening paren location if found
+    if let Some(block) = open_paren_block {
+        eprintln!("\n{}", block);
+    }
+}
+
+/// Handle parse error with two spans.
+fn display_parse_error_dual(
+    code: &str,
+    input_name: &str,
+    user_raw: &str,
+    msg: &str,
+    span1_offset: usize,
+    span1_len: usize,
+    span2_offset: usize,
+    span2_len: usize,
+    prelude_for_diag: &Option<(String, String)>,
+    user_wrapped_parens: bool,
+) {
+    eprintln!("parse error: {}", msg);
+    
+    let print_block = |off: usize, len: usize| {
+        if let Some((ref pre_src, ref pre_name)) = prelude_for_diag {
+            let pre_start = 1;
+            let pre_end = pre_start + pre_src.len();
+            if off >= pre_start && off < pre_end {
+                let rel = off - pre_start;
+                eprintln!("{}", format_span_caret(pre_src, pre_name, rel, len));
+                return;
+            } else {
+                let mut user_start = 1 + pre_src.len() + 1;
+                if user_wrapped_parens {
+                    user_start += 1;
+                }
+                let rel = off.saturating_sub(user_start);
+                eprintln!("{}", format_span_caret(user_raw, input_name, rel, len));
+                return;
+            }
+        }
+        eprintln!("{}", format_span_caret(code, input_name, off, len));
+    };
+    
+    print_block(span1_offset, span1_len);
+    print_block(span2_offset, span2_len);
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
     // Select input source: -e or --file
@@ -628,160 +766,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let module_search_paths =
         build_module_search_paths(&resolved_stdlib_dir, opt.module_path.as_deref());
     let ast0 = match lzscr_parser::parse_expr(&code) {
-            Ok(x) => x,
-            Err(e) => {
-                use lzscr_parser::ParseError;
-                match e {
-                    ParseError::WithSpan { msg, span_offset, span_len } => {
-                        eprintln!("parse error: {}", msg);
-                        // If message includes "Opening '(' at line X:Y (offset Z)" extract and show second caret block.
-                        let mut open_paren_block: Option<String> = None;
-                        // (legacy patterns ignored)
-                        if let Some(idx) = msg.find("Opening '(' at line ") {
-                            // pattern: Opening '(' at line L:C (offset O)
-                            let tail = &msg[idx + "Opening '(' at line ".len()..];
-                            // Extract L
-                            // Parse numbers manually
-                            let mut lchars = tail.chars();
-                            let mut line_s = String::new();
-                            for ch in lchars.by_ref() {
-                                if ch.is_ascii_digit() {
-                                    line_s.push(ch);
-                                } else if ch == ':' {
-                                    break;
-                                } else {
-                                    line_s.clear();
-                                    break;
-                                }
-                            }
-                            let mut col_s = String::new();
-                            for ch in lchars.by_ref() {
-                                if ch.is_ascii_digit() {
-                                    col_s.push(ch);
-                                } else if ch == ' ' {
-                                    break;
-                                } else {
-                                    col_s.clear();
-                                    break;
-                                }
-                            }
-                            let mut off_s = String::new();
-                            if let Some(pos_off) = tail.find("(offset ") {
-                                let after = &tail[pos_off + "(offset ".len()..];
-                                for ch in after.chars() {
-                                    if ch.is_ascii_digit() {
-                                        off_s.push(ch);
-                                    } else {
-                                        break;
-                                    }
-                                }
-                            }
-                            if let (Ok(_line_no), Ok(_col_no), Ok(off_no)) = (
-                                line_s.parse::<usize>(),
-                                col_s.parse::<usize>(),
-                                off_s.parse::<usize>(),
-                            ) {
-                                // Build caret block for the opening paren (length 1)
-                                let raw_block = format_span_caret(&code, &input_name, off_no, 1);
-                                // Re-lex to get authoritative line/col from token (accounts for any wrapper adjustments later)
-                                let toks = _lexer_for_caret::lex(&code);
-                                if let Some(tok) = toks.iter().find(|t| t.span.offset == off_no) {
-                                    let mut lines = raw_block.lines();
-                                    if let Some(first) = lines.next() {
-                                        // Replace header line with token's recorded line/col
-                                        let _orig_header = first; // keep for potential future debugging
-                                        let new_first =
-                                            format!("at {}:{}:{}", input_name, tok.line, tok.col);
-                                        let rest: String =
-                                            lines.map(|l| format!("\n{}", l)).collect();
-                                        open_paren_block = Some(format!("{}{}", new_first, rest));
-                                    } else {
-                                        open_paren_block = Some(raw_block);
-                                    }
-                                } else {
-                                    open_paren_block = Some(raw_block);
-                                }
-                            }
-                        }
-                        // Try to attribute the span to prelude or user input for a better filename
-                        if let Some((ref pre_src, ref pre_name)) = prelude_for_diag {
-                            let pre_start = 1; // after opening '('
-                            let pre_end = pre_start + pre_src.len(); // before inserted '\n'
-                            if span_offset >= pre_start && span_offset < pre_end {
-                                let rel = span_offset - pre_start;
-                                eprintln!(
-                                    "{}",
-                                    format_span_caret(pre_src, pre_name, rel, span_len)
-                                );
-                            } else {
-                                // Compute user segment start in the combined buffer
-                                let mut user_start = 0usize;
-                                // If prelude was inserted: '(' + prelude + '\n'
-                                user_start += 1 + pre_src.len() + 1;
-                                // If file input was wrapped earlier: additional '('
-                                if user_wrapped_parens {
-                                    user_start += 1;
-                                }
-                                let rel = span_offset.saturating_sub(user_start);
-                                eprintln!(
-                                    "{}",
-                                    format_span_caret(&user_raw, &input_name, rel, span_len)
-                                );
-                            }
-                        } else {
-                            // No prelude; show against the current input
-                            eprintln!(
-                                "{}",
-                                format_span_caret(&code, &input_name, span_offset, span_len)
-                            );
-                        }
-                        if let Some(block) = open_paren_block {
-                            eprintln!("\n{}", block);
-                        }
-                    }
-                    ParseError::WithSpan2 {
-                        msg,
+        Ok(x) => x,
+        Err(e) => {
+            use lzscr_parser::ParseError;
+            match e {
+                ParseError::WithSpan { msg, span_offset, span_len } => {
+                    display_parse_error(
+                        &code,
+                        &input_name,
+                        &user_raw,
+                        &msg,
+                        span_offset,
+                        span_len,
+                        &prelude_for_diag,
+                        user_wrapped_parens,
+                    );
+                }
+                ParseError::WithSpan2 {
+                    msg,
+                    span1_offset,
+                    span1_len,
+                    span2_offset,
+                    span2_len,
+                } => {
+                    display_parse_error_dual(
+                        &code,
+                        &input_name,
+                        &user_raw,
+                        &msg,
                         span1_offset,
                         span1_len,
                         span2_offset,
                         span2_len,
-                    } => {
-                        eprintln!("parse error: {}", msg);
-                        // Always print both spans with proper source segmentation handling (reuse logic for first span)
-                        let print_block = |off: usize, len: usize| {
-                            if let Some((ref pre_src, ref pre_name)) = prelude_for_diag {
-                                let pre_start = 1;
-                                let pre_end = pre_start + pre_src.len();
-                                if off >= pre_start && off < pre_end {
-                                    let rel = off - pre_start;
-                                    eprintln!("{}", format_span_caret(pre_src, pre_name, rel, len));
-                                    return;
-                                } else {
-                                    let mut user_start = 0usize;
-                                    user_start += 1 + pre_src.len() + 1;
-                                    if user_wrapped_parens {
-                                        user_start += 1;
-                                    }
-                                    let rel = off.saturating_sub(user_start);
-                                    eprintln!(
-                                        "{}",
-                                        format_span_caret(&user_raw, &input_name, rel, len)
-                                    );
-                                    return;
-                                }
-                            }
-                            eprintln!("{}", format_span_caret(&code, &input_name, off, len));
-                        };
-                        print_block(span1_offset, span1_len);
-                        print_block(span2_offset, span2_len);
-                    }
-                    other => {
-                        eprintln!("parse error: {}", other);
-                    }
+                        &prelude_for_diag,
+                        user_wrapped_parens,
+                    );
                 }
-                std::process::exit(2);
+                other => {
+                    eprintln!("parse error: {}", other);
+                }
             }
-        };
+            std::process::exit(2);
+        }
+    };
         // Build source registry and expand requires while rebasing spans for modules
         // Build SourceRegistry with precise segment mapping back to prelude and original user file
         let (prelude_seg, user_seg) = {
