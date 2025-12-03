@@ -153,8 +153,13 @@ impl TypeError {
                 ty_span_len,
                 ..
             } => Some(
-                DualSpan::from_offsets(*var_span_offset, *var_span_len, *ty_span_offset, *ty_span_len)
-                    .with_labels("type variable defined here", "occurs inside here"),
+                DualSpan::from_offsets(
+                    *var_span_offset,
+                    *var_span_len,
+                    *ty_span_offset,
+                    *ty_span_len,
+                )
+                .with_labels("type variable defined here", "occurs inside here"),
             ),
             _ => None,
         }
@@ -241,7 +246,8 @@ impl TypeError {
                     }
                 } else {
                     hints.push(format!("Variable '{}' is not defined in the current scope", name));
-                    hints.push("Check for typos or add the variable to the environment".to_string());
+                    hints
+                        .push("Check for typos or add the variable to the environment".to_string());
                 }
                 hints
             }
