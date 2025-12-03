@@ -517,24 +517,26 @@ struct Opt {
 /// This is the new standardized way to display type errors with dual-span support.
 /// Automatically handles dual-span errors (expected vs actual) with proper labeling.
 /// Provides enhanced explanations for complex errors like occurs checks.
-#[allow(dead_code)] // Phase 1-3: Infrastructure in place, will be used in Phase 4
+///
+/// If `additional_hints` is empty, uses error.fix_hints() automatically.
+#[allow(dead_code)] // Phase 1-4: Infrastructure complete, will be integrated in Phase 5+
 fn display_type_error_diagnostic(
     src_reg: &SourceRegistry,
     error: &lzscr_types::TypeError,
-    hints: Vec<String>,
+    additional_hints: Vec<String>,
 ) {
     // Try dual-span first
     if let Some(dual_span) = error.as_dual_span() {
         eprintln!("type error: {}", error);
-        
+
         let primary_label = dual_span.primary.label.as_deref().unwrap_or("expected here");
         let secondary_label = dual_span.secondary.label.as_deref().unwrap_or("actual here");
-        
+
         let b1 = src_reg.format_span_block(dual_span.primary.offset, dual_span.primary.len);
         let b2 = src_reg.format_span_block(dual_span.secondary.offset, dual_span.secondary.len);
-        
+
         eprintln!("{}:\n{}\n{}:\n{}", primary_label, b1, secondary_label, b2);
-        
+
         // Special handling for occurs check errors
         if let Some(explanation) = error.occurs_explanation() {
             eprintln!("\n{}", explanation);
@@ -549,9 +551,12 @@ fn display_type_error_diagnostic(
         // No span information
         eprintln!("type error: {}", error);
     }
-    
-    // Display hints
-    for hint in hints {
+
+    // Display hints (use error's built-in hints if no additional hints provided)
+    let hints_to_display =
+        if additional_hints.is_empty() { error.fix_hints() } else { additional_hints };
+
+    for hint in hints_to_display {
         eprintln!("  hint: {}", hint);
     }
 }

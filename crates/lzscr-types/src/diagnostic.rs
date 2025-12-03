@@ -58,13 +58,7 @@ pub struct DiagnosticSpan {
 impl DiagnosticSpan {
     /// Create a new diagnostic span from source code.
     pub fn new(offset: usize, len: usize) -> Self {
-        Self {
-            offset,
-            len,
-            label: None,
-            context: SpanContext::Primary,
-            origin: SpanOrigin::Source,
-        }
+        Self { offset, len, label: None, context: SpanContext::Primary, origin: SpanOrigin::Source }
     }
 
     /// Create a generated span (from compiler, not source).
