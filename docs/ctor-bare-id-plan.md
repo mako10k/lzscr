@@ -5,6 +5,12 @@
 - Objective: align language surface syntax, runtime, stdlib, tooling, and docs so constructors are always bare identifiers and symbols remain non-applicable atoms.
 - Baseline: runtime + docs already updated and committed ("Enforce bare constructor semantics"). Parser, stdlib, tooling, and tests still expect dotted constructors.
 
+### Decision (2025-12-04): Named vs Type ctors
+- Bare identifiers are **Named ctors**. They carry only a runtime tag and arity information—no implicit type binding.
+- Every `%{...}` expression is a **Type ctor**. `%{Ty}` lives in the `%{.Type}` universe, and `%{Ty} expr` is purely a unification check between the inferred type of `expr` and `Ty`.
+- `%{.Type}` acts as the canonical “type of types” until a richer `%{Expr}` lifting story exists. Future work may generalize annotations to `%{Expr}`, but that is explicitly deferred.
+- Symbols stay unapplied atoms and are never promoted into either ctor class.
+
 ## Milestones
 1. **Parser emits bare constructors**
    - Update `crates/lzscr-parser` so every constructor literal (including tuples) becomes a `Ctor` AST node with bare identifier names.

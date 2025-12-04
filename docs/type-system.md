@@ -15,7 +15,7 @@ This document describes the implemented design as of 2025-09-06. It centers on H
 - Variables: `Var(α)` (unification variables)
 - Function: `Fun(T1, T2)` (notation `T1 -> T2`)
 - Structures: `List(T) | Tuple(T1,..,Tn) | Record({k1:T1,..})` (Records are closed)
-- Constructors: `Ctor<'Tag, Payload>` (`'Tag` is a bare symbol name; `Payload` is a tuple type, etc.)
+- Constructors: `Ctor<'Tag, Payload>` (`'Tag` stores the bare identifier for a Named ctor; `Payload` is a tuple type, etc.)
 - (Internal) Union: argument type of AltLambda branches is collected into a finite sum `SumCtor([('Tag, [T...]), ...])` (no external syntax).
 
 Note: The current type pretty-print depends on implementation shortcuts. Records require an exact key-set match.
@@ -24,16 +24,16 @@ Note: The current type pretty-print depends on implementation shortcuts. Records
 
 Type expressions used in annotations and type values include:
 
-- Literals: `Unit, Int, Float, Bool, Str`
+- Literals: `.Unit, .Int, .Float, .Bool, .Str` (dotted tags keep type expressions distinct from value-level Named ctors such as `Unit` or `Int`)
 - Structures: `List T`, `Tuple(T1, ..., Tn)`, `Record{ a: T, b: U }`, `T1 -> T2`
-- Constructors: `.Foo T1 ... Tn` (constructor tags are value-level symbols prefixed with a dot)
+- Constructors: `.Foo T1 ... Tn` (type expressions still spell ctor tags with a leading `.` even though the corresponding Named ctor is the bare identifier `Foo`)
 - Type variables: `%a` (leading `%`. For backward compat we also accept `'a`, but `%a` is recommended)
 - Holes: `?x` (shared by name within one annotation) / `?` (fresh each occurrence)
 
 Interpretation rules (conv_typeexpr):
 - `%a` resolves within the current scope (see "pattern type variable binder" below). Unresolved is an error.
 - `?x` is a shared unification var within the same annotation, `?` is fresh each time.
-- `.Foo ...` converts to `Ctor<'Foo, Payload>`. When given 0 args, `Payload=Unit`.
+- `.Foo ..` (dot Foo and double dot) converts to `Ctor<'Foo, Payload>`. When given 0 args, `Payload=Unit`.
 
 ### 4) Type annotations and type values
 
@@ -42,6 +42,7 @@ Interpretation rules (conv_typeexpr):
   - At runtime: identity (annotation does not affect the value).
 - Type value (TypeVal): `%{ Type }`
   - Currently represented as `Str` (string form of the type). Will be upgraded to a dedicated type/value later.
+  - Every `%{ Type }` itself has type `%{.Type}`. `%{.Type}` is the current “type of types” placeholder until richer type lifting (e.g., `%{Expr}`) arrives.
 
 Examples:
 ```
@@ -85,8 +86,9 @@ Example:
 
 ### 8) Constructors and arity
 
-- A bare member symbol `.Foo` acts as a "constructor function". Its principal type is `∀a1..an. a1 -> .. -> an -> Ctor<'Foo,(a1,..,an)>`.
-- Arity is enforced against the parser/CLI-provided map (`--ctor-arity`). The surface notation follows the .Member style.
+- Every bare identifier `Foo` (including built-ins like `Int`, `Bool`, `Unit`) evaluates to a `Ctor<'Foo, Payload>` value. Literals such as `6` therefore have type `.Int`, while the expression `Int` itself is just the zero-arity Named ctor.
+- Type expressions reference these ctor tags using dotted names (`.Foo`, `.Int`, ...), ensuring the type and value syntaxes never collide. The principal type of a Named ctor is still `∀a1..an. a1 -> .. -> an -> Ctor<'Foo,(a1,..,an)>` and partial application retains the remaining arity.
+- Arity checks are enforced by the evaluator/runtime using the ctor metadata (from parser/CLI context). Applying a Named ctor to too many or too few arguments yields a runtime error, while symbols remain unapplied atoms.
 
 ### 9) Major builtin types
 
@@ -110,6 +112,7 @@ Example:
 - Full LetRec support is not complete; self/mutual recursion may require annotations.
 - Annotations can be useful when composing List and AltLambda in complex ways.
 - Type values `%{Type}` are currently treated as `Str` (provisional behavior).
+- `%{.Type}` is the only inhabited universe for `%{...}` today. General `%{Expr}` lifting is deferred because it would complicate inference significantly.
 - Pattern type variable binders extend only the type scope; runtime semantics do not change.
 
 ### 12) Examples

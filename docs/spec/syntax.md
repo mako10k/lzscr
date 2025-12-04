@@ -10,11 +10,13 @@
 - **Str**: `"hello"` (supports escape sequences: `\n`, `\t`, `\\`, `\"`, `\xHH`, `\u{HHHH}`)
 - **Char**: `'a'`, `'\n'`, `'\x41'`, `'\u{3042}'`
 - **Ref**: `~name` (variable reference, e.g., `~add`, `~x`)
-- **Ctor (data constructor)**: bare identifier such as `Foo`, `Some`, `Tree`
-  - Zero arity uses just the bare name (`None`).
-  - Applying a constructor uses ordinary function application syntax: `Some 1`, `Tree left right`.
+- **Named ctor**: bare identifier such as `Foo`, `Some`, `Tree`
+  - They represent value-level tags whose arity is enforced only by how many arguments you apply: `Some 1`, `Tree left right`.
+  - The name never captures a type; it is only a tag compared at runtime.
+  - Zero arity uses just the bare name (`None`). Built-in ctors such as `Int`, `Bool`, or `Unit` are plain zero-arity Named ctors; a literal like `6` still has type `.Int`, while the expression `Int` refers to the ctor value itself.
 - **Symbol**: `.name` (atomic symbol, e.g., `.println`, `.tag`)
   - Symbols are interned runtime atoms. They are never constructors and cannot be applied.
+- **Type ctor literal**: `%{TypeExpr}` produces a first-class type value (see “Constructors vs Symbols and Types”). Type expressions use dotted tags to name constructors and primitives, e.g., `.Int`, `.Bool`, `.Foo`.
 - **Lambda**: `\x -> expr` or `\~x -> expr` (parameter patterns supported)
 - **Block**: `{ expr }` (groups expression)
 - **Apply**: `(f x)` (left-associative function application)
@@ -26,8 +28,8 @@
 ### Sugar and special forms
 
 - **Effects**: `!println` → `(~effects .println)`
-- **Type annotation**: `%{Int} expr` (annotate expression with type)
-- **Type value**: `%{Int -> Bool}` (first-class type value)
+- **Type annotation**: `%{Ty} expr` (unifies the inferred type of `expr` with `Ty`; failure is a type error just like an ordinary annotation)
+- **Type value / Type ctor**: `%{Ty}` (first-class type literal; `%{.Type}` is the canonical “type of types” and every `%{...}` lives in that universe)
 - **Type declaration**: `%TypeName = %{ Ctor1 T1 | Ctor2 T2 }` (sum type definition)
 - **Pattern type binding**: `%{'a, ?x} pat` (bind type variables in pattern scope)
 
@@ -49,7 +51,7 @@
 - **Tuple**: `(~a, ~b)` (matches tuple, binds components)
 - **List**: `[~a, ~b]` or `[]` (matches exact list structure)
 - **Cons**: `~h : ~t` (matches head and tail of list)
-- **Constructor**: `Some ~x` or `None` (matches constructor with args; constructor names are bare idents)
+- **Constructor**: `Some ~x` or `None` (matches Named ctors with their payloads; ctor names are bare identifiers only)
 - **Record**: `{a: ~x, b: ~y}` (matches record with specific fields)
 - **Literals**: `42`, `"hello"`, `'a'`, `True` (match exact values)
 - **Type binding**: `%{'a} ~x` (bind type variable in pattern scope)
@@ -68,15 +70,13 @@
 - **Option**: `Some x`, `None`
 - **Result**: `Ok x`, `Err e`
 
-### Constructors vs Symbols
+### Constructors, type ctors, and symbols
 
-- Constructors are **always** bare identifiers. The surface syntax never treats `.name` as a constructor alias.
-- Symbols (`.foo`) are atomic interned values. Applying a symbol is a runtime error and symbols are never implicitly converted into constructors.
-- Tuple syntax `(a, b, c, ...)` is sugar for dedicated tuple constructors; it does not desugar through symbols either.
-- Constructor literals behave like curried functions until all arguments are supplied.
-- Constructor type of expr `Foo` is `%{(Foo .. | ...)}` (the literal `..` marks undefined arity; `...` is explanatory ellipsis for other constructors in the sum).
-- Constructor type `%{Foo ..}` means `%{(Foo | %a -> Foo %a | %a -> %b -> Foo %a %b | ...)}` (all arities up to some max).
-- Constructor type `%{Foo T1 T2 ..}` means `%{(Foo T1 T2 | %a -> Foo T1 T2 %a | %a -> %b -> Foo T1 T2 %a %b | ...)}` (fixed first args, then curried).
+- **Named ctors** are **always** bare identifiers. They never borrow the `.` syntax, and applying one just uses normal function application. Curried application keeps the ctor partially applied until its arity is satisfied. Tuple syntax `(a, b, c, ...)` is sugar for dedicated Named ctors (`.,`, `.,,`, …) rather than symbols.
+- **Type ctors** are every `%{TypeExpr}` form. `%{Ty} expr` simply unifies the inferred type of `expr` with `Ty`, and `%{Ty}` yields a first-class type value whose own type is `%{.Type}`. Type expressions name primitives/constructors with dotted tags (`.Int`, `.Bool`, `.Foo`) so they never conflict with value-level Named ctors like `Int`.
+- `%{.Type}` is the canonical “type of types.” Future work may admit richer `%{Expr}` type lifting, but today every `%{...}` lives in `%{.Type}` and annotations fail if unification with `%{.Type}`-inhabiting expressions cannot succeed.
+- **Symbols (`.foo`)** are atomic interned values. Applying a symbol is a runtime error and symbols are never implicitly converted into either class of ctor.
+- The type of the Named ctor literal `Foo` is `%{(Foo .. | ...)}` (the literal `..` marks unspecified arity; `...` indicates the remaining ctors in the sum type). `%{Foo ..}` expands to `%{(Foo | %a -> Foo %a | %a -> %b -> Foo %a %b | ...)}`, and `%{Foo T1 T2 ..}` fixes the first payload positions before continuing the curry.
 
 ### Infix operators (left-assoc; Pratt precedence)
 
@@ -114,6 +114,10 @@ Return value is a Bool (`True` | `False`).
 - **Separators**: `,`, `;`
 - **Operators**: `->`, `<-`, `|`, `||`, `^|`, `^(`, `:`, `@`
 - **Lambda**: `\`
+- **Assignment**: `=`
+- **Arithmetic**: `+`, `-`, `*`, `/`, `.+`, `.-`, `.*`, `./`
+- **Continuation**: `..` (for partial ctor application / last sum ctor marker as unknown rest)
+
 
 ### Examples
 
@@ -150,6 +154,6 @@ Return value is a Bool (`True` | `False`).
 (\~x ~y -> ~x + ~y) 1 2  # => 3
 
 # Type annotations
-%{Int -> Int} (\~x -> ~x + 1)  # annotated lambda
-%{[Int]} [1, 2, 3]             # annotated list
+%{.Int -> .Int} (\~x -> ~x + 1)   # annotated lambda
+%{.List .Int} [1, 2, 3]             # annotated list
 ```
