@@ -283,18 +283,13 @@ pub mod pretty {
     }
 
     fn print_type(t: &TypeExpr) -> String {
-        fn dotted(name: &str) -> String {
-            let mut s = String::from(".");
-            s.push_str(name);
-            s
-        }
         match t {
-            TypeExpr::Unit => dotted("Unit"),
-            TypeExpr::Int => dotted("Int"),
-            TypeExpr::Float => dotted("Float"),
-            TypeExpr::Bool => dotted("Bool"),
-            TypeExpr::Str => dotted("Str"),
-            TypeExpr::Char => dotted("Char"),
+            TypeExpr::Unit => "Unit".into(),
+            TypeExpr::Int => "Int".into(),
+            TypeExpr::Float => "Float".into(),
+            TypeExpr::Bool => "Bool".into(),
+            TypeExpr::Str => "Str".into(),
+            TypeExpr::Char => "Char".into(),
             TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(opt) => {
                 if let Some(a) = opt {
@@ -317,7 +312,7 @@ pub mod pretty {
             }
             TypeExpr::Fun(a, b) => format!("{} -> {}", print_type(a), print_type(b)),
             TypeExpr::Ctor { tag, args } => {
-                let head = dotted(tag);
+                let head = tag.clone();
                 if args.is_empty() {
                     head
                 } else {

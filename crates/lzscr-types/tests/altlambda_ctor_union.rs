@@ -12,10 +12,10 @@ fn pretty(res: Result<String, String>) -> String {
 #[test]
 fn alt_union_two_ctors_same_return() {
     // (\(Foo ~x) -> 1) | (\(Bar ~y ~z) -> 2)
-    // type: (.Foo(Int) | .Bar(Int,Int)) -> Int
+    // type: (Foo(Int) | Bar(Int,Int)) -> Int
     let src = "\\(Foo ~x) -> 1 | \\(Bar ~y ~z) -> 2";
     let got = pretty(infer_program(src));
-    assert!(got.contains("-> .Int"), "{got}");
+    assert!(got.contains("-> Int"), "{got}");
 }
 
 #[test]
@@ -39,5 +39,5 @@ fn alt_union_default_wildcard_allowed() {
     // Default wildcard does not extend the union; return types still unify
     let src = "\\(Foo ~x) -> 1 | \\_ -> 1";
     let got = pretty(infer_program(src));
-    assert!(got.contains("-> .Int"), "{got}");
+    assert!(got.contains("-> Int"), "{got}");
 }

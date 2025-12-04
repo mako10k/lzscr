@@ -19,15 +19,6 @@ fn pp_type_with_renaming(
     rename_map: &mut HashMap<TvId, String>,
     counter: &mut usize,
 ) -> String {
-    fn dotted(tag: &str) -> String {
-        if tag.starts_with('.') {
-            tag.to_string()
-        } else {
-            let mut s = String::from(".");
-            s.push_str(tag);
-            s
-        }
-    }
     fn get_or_create_name(
         tv: TvId,
         rename_map: &mut HashMap<TvId, String>,
@@ -47,12 +38,12 @@ fn pp_type_with_renaming(
     }
 
     match t {
-        Type::Unit => dotted("Unit"),
-        Type::Int => dotted("Int"),
-        Type::Float => dotted("Float"),
-        Type::Str => dotted("Str"),
-        Type::Char => dotted("Char"),
-        Type::Type => dotted("Type"),
+        Type::Unit => "Unit".into(),
+        Type::Int => "Int".into(),
+        Type::Float => "Float".into(),
+        Type::Str => "Str".into(),
+        Type::Char => "Char".into(),
+        Type::Type => "Type".into(),
         Type::Var(tv) => get_or_create_name(*tv, rename_map, counter),
         Type::List(a) => format!("[{}]", pp_type_with_renaming(a, rename_map, counter)),
         Type::Tuple(xs) => format!(
@@ -78,7 +69,7 @@ fn pp_type_with_renaming(
             pp_type_with_renaming(b, rename_map, counter)
         ),
         Type::Ctor { tag, payload } => {
-            let head = dotted(tag);
+            let head = tag.clone();
             if payload.is_empty() {
                 head
             } else {
@@ -94,7 +85,7 @@ fn pp_type_with_renaming(
             }
         }
         Type::Named { name, args } => {
-            let head = dotted(name);
+            let head = name.clone();
             if args.is_empty() {
                 head
             } else {
@@ -114,10 +105,10 @@ fn pp_type_with_renaming(
             let inner = vs2
                 .into_iter()
                 .map(|(tag, ps)| match ps.len() {
-                    0 => dotted(&tag),
+                    0 => tag,
                     1 => format!(
                         "{} {}",
-                        dotted(&tag),
+                        tag,
                         pp_atom_with_renaming(&ps[0], rename_map, counter)
                     ),
                     _ => {
@@ -125,7 +116,7 @@ fn pp_type_with_renaming(
                             .into_iter()
                             .map(|ty| pp_type_with_renaming(&ty, rename_map, counter))
                             .collect();
-                        format!("{}({})", dotted(&tag), parts.join(", "))
+                        format!("{}({})", tag, parts.join(", "))
                     }
                 })
                 .collect::<Vec<_>>()

@@ -11,22 +11,13 @@ pub(crate) fn pp_type_legacy(t: &Type) -> String {
     fn rename_var(id: i64) -> String {
         format!("%t{id}")
     }
-    fn dotted(tag: &str) -> String {
-        if tag.starts_with('.') {
-            tag.to_string()
-        } else {
-            let mut s = String::from(".");
-            s.push_str(tag);
-            s
-        }
-    }
     match t {
-        Type::Unit => dotted("Unit"),
-        Type::Int => dotted("Int"),
-        Type::Float => dotted("Float"),
-        Type::Str => dotted("Str"),
-        Type::Char => dotted("Char"),
-        Type::Type => dotted("Type"),
+        Type::Unit => "Unit".into(),
+        Type::Int => "Int".into(),
+        Type::Float => "Float".into(),
+        Type::Str => "Str".into(),
+        Type::Char => "Char".into(),
+        Type::Type => "Type".into(),
         Type::Var(TvId(i)) => rename_var(*i as i64),
         Type::List(a) => format!("[{}]", pp_type_legacy(a)),
         Type::Tuple(xs) => {
@@ -40,7 +31,7 @@ pub(crate) fn pp_type_legacy(t: &Type) -> String {
         }
         Type::Fun(a, b) => format!("{} -> {}", pp_atom_legacy(a), pp_type_legacy(b)),
         Type::Ctor { tag, payload } => {
-            let head = dotted(tag);
+            let head = tag.clone();
             if payload.is_empty() {
                 head
             } else {
@@ -52,7 +43,7 @@ pub(crate) fn pp_type_legacy(t: &Type) -> String {
             }
         }
         Type::Named { name, args } => {
-            let head = dotted(name);
+            let head = name.clone();
             if args.is_empty() {
                 head
             } else {
@@ -69,12 +60,12 @@ pub(crate) fn pp_type_legacy(t: &Type) -> String {
             let inner = vs2
                 .into_iter()
                 .map(|(tag, ps)| match ps.len() {
-                    0 => dotted(&tag),
-                    1 => format!("{} {}", dotted(&tag), pp_atom_legacy(&ps[0])),
+                    0 => tag,
+                    1 => format!("{} {}", tag, pp_atom_legacy(&ps[0])),
                     _ => {
                         let parts: Vec<String> =
                             ps.into_iter().map(|ty| pp_type_legacy(&ty)).collect();
-                        format!("{}({})", dotted(&tag), parts.join(", "))
+                        format!("{}({})", tag, parts.join(", "))
                     }
                 })
                 .collect::<Vec<_>>()

@@ -8,15 +8,6 @@ use std::ptr::addr_of;
 
 use crate::types::{TvId, Type};
 
-fn dotted(tag: &str) -> String {
-    if tag.starts_with('.') {
-        tag.to_string()
-    } else {
-        let mut s = String::from(".");
-        s.push_str(tag);
-        s
-    }
-}
 
 /// User-friendly type display with %{ ... } wrapping and normalized variable names.
 pub(crate) fn user_pretty_type(t: &Type) -> String {
@@ -98,12 +89,12 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
         }
         match t {
             Type::Var(v) => m.get(v).cloned().unwrap_or_else(|| "_".into()),
-            Type::Unit => dotted("Unit"),
-            Type::Int => dotted("Int"),
-            Type::Float => dotted("Float"),
-            Type::Str => dotted("Str"),
-            Type::Char => dotted("Char"),
-            Type::Type => dotted("Type"),
+            Type::Unit => "Unit".into(),
+            Type::Int => "Int".into(),
+            Type::Float => "Float".into(),
+            Type::Str => "Str".into(),
+            Type::Char => "Char".into(),
+            Type::Type => "Type".into(),
             Type::List(x) => format!("[{}]", go(x, m, seen)),
             Type::Tuple(xs) => {
                 let inner = xs.iter().map(|x| go(x, m, seen)).collect::<Vec<_>>().join(", ");
@@ -124,7 +115,7 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
                 format!("{} -> {}", pa, pb)
             }
             Type::Ctor { tag, payload } => {
-                let head = dotted(tag);
+                let head = tag.clone();
                 if payload.is_empty() {
                     head
                 } else {
@@ -144,7 +135,7 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
                 }
             }
             Type::Named { name, args } => {
-                let head = dotted(name);
+                let head = name.clone();
                 if args.is_empty() {
                     head
                 } else {
@@ -169,7 +160,7 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
                 let inner = vs2
                     .into_iter()
                     .map(|(tag, ps)| match ps.len() {
-                        0 => dotted(&tag),
+                        0 => tag,
                         1 => {
                             let arg = go(&ps[0], m, seen);
                             let arg = if matches!(ps[0], Type::Fun(_, _)) {
@@ -177,12 +168,12 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
                             } else {
                                 arg
                             };
-                            format!("{} {}", dotted(&tag), arg)
+                            format!("{} {}", tag, arg)
                         }
                         _ => {
                             let parts: Vec<String> =
                                 ps.into_iter().map(|ty| go(&ty, m, seen)).collect();
-                            format!("{}({})", dotted(&tag), parts.join(", "))
+                            format!("{}({})", tag, parts.join(", "))
                         }
                     })
                     .collect::<Vec<_>>()
