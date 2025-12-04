@@ -8,7 +8,6 @@ use std::ptr::addr_of;
 
 use crate::types::{TvId, Type};
 
-
 /// User-friendly type display with %{ ... } wrapping and normalized variable names.
 pub(crate) fn user_pretty_type(t: &Type) -> String {
     normalize_type_and_map(t).0
