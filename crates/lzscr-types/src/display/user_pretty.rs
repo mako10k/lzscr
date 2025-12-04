@@ -89,12 +89,12 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
         }
         match t {
             Type::Var(v) => m.get(v).cloned().unwrap_or_else(|| "_".into()),
-            Type::Unit => "Unit".into(),
-            Type::Int => "Int".into(),
-            Type::Float => "Float".into(),
-            Type::Str => "Str".into(),
-            Type::Char => "Char".into(),
-            Type::Type => "Type".into(),
+            Type::Unit => ".Unit".into(),
+            Type::Int => ".Int".into(),
+            Type::Float => ".Float".into(),
+            Type::Str => ".Str".into(),
+            Type::Char => ".Char".into(),
+            Type::Type => ".Type".into(),
             Type::List(x) => format!("[{}]", go(x, m, seen)),
             Type::Tuple(xs) => {
                 let inner = xs.iter().map(|x| go(x, m, seen)).collect::<Vec<_>>().join(", ");
