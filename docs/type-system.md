@@ -18,6 +18,8 @@ This document describes the implemented design as of 2025-09-06. It centers on H
 - Constructors: `Ctor<'Tag, Payload>` (`'Tag` stores the bare identifier for a Named ctor; `Payload` is a tuple type, etc.)
 - (Internal) Union: argument type of AltLambda branches is collected into a finite sum `SumCtor([('Tag, [T...]), ...])` (no external syntax).
 
+> Surface type expressions spell these constructors with dotted tags (e.g., `.Int`, `.List`) to guarantee they never collide with bare Named ctors at the value level.
+
 Note: The current type pretty-print depends on implementation shortcuts. Records require an exact key-set match.
 
 ### 3) Type expressions (TypeExpr) and syntax
@@ -25,15 +27,18 @@ Note: The current type pretty-print depends on implementation shortcuts. Records
 Type expressions used in annotations and type values include:
 
 - Literals: `.Unit, .Int, .Float, .Bool, .Str` (dotted tags keep type expressions distinct from value-level Named ctors such as `Unit` or `Int`)
-- Structures: `List T`, `Tuple(T1, ..., Tn)`, `Record{ a: T, b: U }`, `T1 -> T2`
-- Constructors: `.Foo T1 ... Tn` (type expressions still spell ctor tags with a leading `.` even though the corresponding Named ctor is the bare identifier `Foo`)
+- Structures: `.List T`, `.Tuple T1 ... Tn`, `{ a: T, b: U }`, `T1 -> T2`
+- Constructors: `.Foo T1 .. Tn` (type expressions still spell ctor tags with a leading `.` even though the corresponding Named ctor is the bare identifier `Foo`)
 - Type variables: `%a` (leading `%`. For backward compat we also accept `'a`, but `%a` is recommended)
 - Holes: `?x` (shared by name within one annotation) / `?` (fresh each occurrence)
+
+Tuples in type expressions always use the dotted ctor head, e.g., `.Tuple .Int .Str .Bool`. Records remain braced maps such as `{ name: .Str, age: .Int }`; there is no `.Record` head.
+Literal `..` is part of the surface grammar (e.g., `%{Foo ..}`) to denote “keep accepting more arguments,” while `...` inside this doc is just descriptive ellipsis for “and so on.” Keep them distinct when authoring code or specs.
 
 Interpretation rules (conv_typeexpr):
 - `%a` resolves within the current scope (see "pattern type variable binder" below). Unresolved is an error.
 - `?x` is a shared unification var within the same annotation, `?` is fresh each time.
-- `.Foo ..` (dot Foo and double dot) converts to `Ctor<'Foo, Payload>`. When given 0 args, `Payload=Unit`.
+- `.Foo ..` converts to `Ctor<'Foo, Payload>`. When given 0 args, `Payload=Unit`.
 
 ### 4) Type annotations and type values
 
@@ -46,8 +51,8 @@ Interpretation rules (conv_typeexpr):
 
 Examples:
 ```
-%{ List Int } [1,2,3]          # OK
-%{ List ?a } [1,2]             # a resolves to Int
+%{ .List .Int } [1,2,3]        # OK
+%{ .List ?a } [1,2]            # a resolves to Int
 %{ %a -> %a } (\~x -> ~x)      # id annotation
 ```
 
@@ -119,8 +124,8 @@ Example:
 
 ```
 # Annotations and holes (shared/fresh)
-%{ List ?a } [1,2]            # a=Int
-%{ List ? } []                # fresh var (decided at use sites)
+%{ .List ?a } [1,2]           # a=.Int
+%{ .List ? } []               # fresh var (decided at use sites)
 
 # Pattern type variable binder (lambda)
 (\%{ %a } ~x -> %{ %a } ~x)   # share the same %a

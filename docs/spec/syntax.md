@@ -16,7 +16,7 @@
   - Zero arity uses just the bare name (`None`). Built-in ctors such as `Int`, `Bool`, or `Unit` are plain zero-arity Named ctors; a literal like `6` still has type `.Int`, while the expression `Int` refers to the ctor value itself.
 - **Symbol**: `.name` (atomic symbol, e.g., `.println`, `.tag`)
   - Symbols are interned runtime atoms. They are never constructors and cannot be applied.
-- **Type ctor literal**: `%{TypeExpr}` produces a first-class type value (see “Constructors vs Symbols and Types”). Type expressions use dotted tags to name constructors and primitives, e.g., `.Int`, `.Bool`, `.Foo`.
+- **Type ctor literal**: `%{TypeExpr}` produces a first-class type value (see “Constructors vs Symbols and Types”). Type expressions use dotted tags to name constructors and primitives, e.g., `.Int`, `.Bool`, `.Foo`. Tuples spell their head as `.Tuple T1 ... Tn`, while record types stay braced such as `{ name: .Str, age: .Int }`. Bracket sugar `[T]` is accepted as `.List T`, and `(T1, T2, ..., Tn)` is sugar for `.Tuple T1 T2 ... Tn`.
 - **Lambda**: `\x -> expr` or `\~x -> expr` (parameter patterns supported)
 - **Block**: `{ expr }` (groups expression)
 - **Apply**: `(f x)` (left-associative function application)
@@ -77,6 +77,7 @@
 - `%{.Type}` is the canonical “type of types.” Future work may admit richer `%{Expr}` type lifting, but today every `%{...}` lives in `%{.Type}` and annotations fail if unification with `%{.Type}`-inhabiting expressions cannot succeed.
 - **Symbols (`.foo`)** are atomic interned values. Applying a symbol is a runtime error and symbols are never implicitly converted into either class of ctor.
 - The type of the Named ctor literal `Foo` is `%{(Foo .. | ...)}` (the literal `..` marks unspecified arity; `...` indicates the remaining ctors in the sum type). `%{Foo ..}` expands to `%{(Foo | %a -> Foo %a | %a -> %b -> Foo %a %b | ...)}`, and `%{Foo T1 T2 ..}` fixes the first payload positions before continuing the curry.
+- Notation reminder: `..` is a concrete lexical token that actually appears in type expressions (e.g., `%{Foo ..}`), whereas `...` is merely prose ellipsis for “and the other alternatives.” Do not interchange the two when writing code.
 
 ### Infix operators (left-assoc; Pratt precedence)
 

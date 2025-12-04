@@ -239,7 +239,7 @@ This section documents the implemented type system as of 2025-09-06. It is Hindl
 - Primitives: `Unit | Int | Float | Bool | Str`
 - Variables: `Var(α)` (unification variables)
 - Function: `Fun(T1, T2)` (notation: `T1 -> T2`)
-- Structures: `List(T) | Tuple(T1,..,Tn) | Record({k1:T1,..})` (records are closed; key sets must match)
+- Structures: `.List(T) | .Tuple(T1,..,Tn) | Record({k1:T1,..})` (records are closed; key sets must match)
 - Constructors: `Ctor<'Tag, Payload>` (where `'Tag` is a bare symbol name; `Payload` is usually a tuple type)
 - Constructor literals as types:
   - `Foo` … 完全に適用された `Foo` 値 (Arity 0)。
@@ -254,16 +254,23 @@ Note: current printed forms are shorthand aligned with implementation. Records r
 
 Used in type annotations and type values:
 
-- Literals: `Unit, Int, Float, Bool, Str`
-- Structures: `List T`, `Tuple(T1, ..., Tn)`, `Record{ a: T, b: U }`, `T1 -> T2`
-- Constructors: `Foo T1 ... Tn` (where `Foo` is a bare symbol name)
+- Literals: `.Unit, .Int, .Float, .Bool, .Str`
+- Structures: `.List T`, `.Tuple T1 ... Tn`, `{ a: T, b: U }`, `T1 -> T2`
+- Constructors: `.Foo T1 .. Tn` (where `.Foo` names the ctor tag in the type namespace)
 - Type variables: `%a` (leading `%`; `'a` is accepted for compatibility but `%a` is recommended)
 - Holes: `?x` (shared within the same annotation), `?` (fresh variable each time)
+
+Sugar summary:
+- `[T]` is accepted as shorthand for `.List T` in type expressions.
+- `(T1, T2, ..., Tn)` is shorthand for `.Tuple T1 T2 ... Tn`.
+- Records remain brace literals `{ field: Ty, ... }`; there is no `.Record` head.
+
+Notation reminder: the double-dot token `..` is part of the surface grammar (e.g., `.Foo T1 ..` or `%{Foo ..}`) and should be written literally in code. Triple dots `...` inside this document are prose ellipses meaning “and so on.”
 
 Interpretation rules (conv_typeexpr):
 - `%a` resolves within the current scope (see “Pattern type variable binding” below). Unresolved names are errors.
 - `?x` is a shared type variable within the same annotation; `?` introduces a fresh variable each occurrence.
-- `Foo ...` converts to `Ctor<'Foo, Payload>`. With zero args, `Payload = Unit`.
+- `.Foo ..` converts to `Ctor<'Foo, Payload>`. With zero args, `Payload = .Unit`.
 
 6.4 Type annotations and type values (semantics + formatting)
 
@@ -282,14 +289,14 @@ Interpretation rules (conv_typeexpr):
 Examples (annotation succeeds / fails):
 
 ```
-%{ List Int } [1,2,3]          # OK
-%{ List ?a } [1,2]             # a resolves to Int
+%{ .List .Int } [1,2,3]        # OK
+%{ .List ?a } [1,2]            # a resolves to .Int
 %{ %a -> %a } (\~x -> ~x)      # annotation for id
-%{ Int } 1                     # OK, annotation then value 1 (prints just 1)
-%{ Int } "s"                  # type mismatch (expected Int vs Str)
-%{ Int }                       # first-class type value (prints %{Int})
+%{ .Int } 1                    # OK, annotation then value 1 (prints just 1)
+%{ .Int } "s"                 # type mismatch (expected .Int vs .Str)
+%{ .Int }                      # first-class type value (prints %{.Int})
 
-List syntax note: both `List Int` (prefix form) and `[Int]` (bracket sugar) are supported in type expressions; docs prefer bracket form in concise examples.
+List syntax note: `[T]` is accepted as sugar for `.List T` in type expressions. Similarly `(T1, ..., Tn)` is sugar for `.Tuple T1 ... Tn`. Records remain `{ field: Ty }` without additional dot heads.
 
 Pretty vs legacy formatting:
 - Internally types are zonked then rendered.
