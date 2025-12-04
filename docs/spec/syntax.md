@@ -10,8 +10,11 @@
 - **Str**: `"hello"` (supports escape sequences: `\n`, `\t`, `\\`, `\"`, `\xHH`, `\u{HHHH}`)
 - **Char**: `'a'`, `'\n'`, `'\x41'`, `'\u{3042}'`
 - **Ref**: `~name` (variable reference, e.g., `~add`, `~x`)
-- **Symbol**: `.name` (bare symbol value, e.g., `.println`, `.True`, `.Some`)
-  - Constructors are always `.Member` form (e.g., `.True`, `.False`, `.Some`, `.None`)
+- **Ctor (data constructor)**: bare identifier such as `Foo`, `Some`, `Tree`
+  - Zero arity uses just the bare name (`None`).
+  - Applying a constructor uses ordinary function application syntax: `Some 1`, `Tree left right`.
+- **Symbol**: `.name` (atomic symbol, e.g., `.println`, `.tag`)
+  - Symbols are interned runtime atoms. They are never constructors and cannot be applied.
 - **Lambda**: `\x -> expr` or `\~x -> expr` (parameter patterns supported)
 - **Block**: `{ expr }` (groups expression)
 - **Apply**: `(f x)` (left-associative function application)
@@ -46,9 +49,9 @@
 - **Tuple**: `(~a, ~b)` (matches tuple, binds components)
 - **List**: `[~a, ~b]` or `[]` (matches exact list structure)
 - **Cons**: `~h : ~t` (matches head and tail of list)
-- **Constructor**: `.Some ~x` or `.None` (matches constructor with args)
+- **Constructor**: `Some ~x` or `None` (matches constructor with args; constructor names are bare idents)
 - **Record**: `{a: ~x, b: ~y}` (matches record with specific fields)
-- **Literals**: `42`, `"hello"`, `'a'`, `.True` (match exact values)
+- **Literals**: `42`, `"hello"`, `'a'`, `True` (match exact values)
 - **Type binding**: `%{'a} ~x` (bind type variable in pattern scope)
 
 ### Let-groups and bindings
@@ -60,10 +63,20 @@
 
 ### Booleans and constructors
 
-- **Booleans**: `.True`, `.False` constructors (no `~true` / `~false` aliases)
-- **Constructor values**: `.Foo 1 2` creates `Ctor(".Foo", [1, 2])`
-- **Option**: `.Some x`, `.None`
-- **Result**: `.Ok x`, `.Err e`
+- **Booleans**: `True`, `False` constructors (no `~true` / `~false` aliases)
+- **Constructor values**: `Foo 1 2` creates `Ctor("Foo", [1, 2])`
+- **Option**: `Some x`, `None`
+- **Result**: `Ok x`, `Err e`
+
+### Constructors vs Symbols
+
+- Constructors are **always** bare identifiers. The surface syntax never treats `.name` as a constructor alias.
+- Symbols (`.foo`) are atomic interned values. Applying a symbol is a runtime error and symbols are never implicitly converted into constructors.
+- Tuple syntax `(a, b, c, ...)` is sugar for dedicated tuple constructors; it does not desugar through symbols either.
+- Constructor literals behave like curried functions until all arguments are supplied.
+- Constructor type of expr `Foo` is `%{(Foo .. | ...)}` (the literal `..` marks undefined arity; `...` is explanatory ellipsis for other constructors in the sum).
+- Constructor type `%{Foo ..}` means `%{(Foo | %a -> Foo %a | %a -> %b -> Foo %a %b | ...)}` (all arities up to some max).
+- Constructor type `%{Foo T1 T2 ..}` means `%{(Foo T1 T2 | %a -> Foo T1 T2 %a | %a -> %b -> Foo T1 T2 %a %b | ...)}` (fixed first args, then curried).
 
 ### Infix operators (left-assoc; Pratt precedence)
 
@@ -90,7 +103,7 @@ Desugaring (to function application):
   - `a .< b` → `(~flt a) b`, `a .<= b` → `(~fle a) b`, `a .> b` → `(~fgt a) b`, `a .>= b` → `(~fge a) b`
   - `a == b` → `(~eq a) b`, `a != b` → `(~ne a) b`
 
-Return value is a Bool (`.True` | `.False`).
+Return value is a Bool (`True` | `False`).
 
 ### Reserved tokens and symbols
 
@@ -110,12 +123,12 @@ Return value is a Bool (`.True` | `.False`).
 1.5 .+ 2.0 .* 2.0    # => 5.5
 8 / 2                # => 4
 8.0 ./ 2.0           # => 4.0
-1 < 2                # => .True
-1.5 .<= 2.0          # => .True
+1 < 2                # => True
+1.5 .<= 2.0          # => True
 
 # Constructors and pattern matching
-(.Some 42) == (.Some 42)  # => .True
-(\(.Some ~x) -> ~x | \.None -> 0) (.Some 10)  # => 10
+(Some 42) == (Some 42)  # => True
+(\(Some ~x) -> ~x | \None -> 0) (Some 10)  # => 10
 
 # Lists and records
 [1, 2, 3]            # list literal

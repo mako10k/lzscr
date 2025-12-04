@@ -236,16 +236,10 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
             if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
                 Ok(Value::Ctor { name, args: vec![aval] })
             } else {
-                if let Some(&k) =
-                    env.ctor_arity.get(&name).or_else(|| env.ctor_arity.get(&format!(".{name}")))
-                {
-                    if k == 0 {
-                        return Err(EvalError::NotApplicable(
-                            format!("nullary constructor '{}'", name)
-                        ));
-                    }
-                }
-                Ok(Value::Ctor { name, args: vec![aval] })
+                // Symbols have arity 0 and cannot be applied
+                Err(EvalError::NotApplicable(
+                    format!("symbol '{}' (symbols have arity 0)", name)
+                ))
             }
         }
         Value::Ctor { name, mut args } => {
@@ -561,25 +555,21 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         Err(EvalError::TypeError)
                     }
                 }
-                // Constructor variable: build constructor value accumulating payload args
+                // Symbol: has arity 0, cannot be applied (except tuple constructors)
                 Value::Symbol(id) => {
                     let name = env.symbol_name(id);
-                    // At the first application we cannot check max arity yet; if declared arity is 0, error
-                    if let Some(&k) = env
-                        .ctor_arity
-                        .get(&name)
-                        .or_else(|| env.ctor_arity.get(&format!(".{name}")))
-                    {
-                        if k == 0 {
-                            return Err(EvalError::Traced {
-                                kind: Box::new(EvalError::NotApplicable(
-                                    format!("nullary constructor '{}'", name)
-                                )),
-                                spans: vec![e.span],
-                            });
-                        }
+                    // Special internal tuple pack constructor '.,', '.,,', ... accepts any arity
+                    if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
+                        Ok(Value::Ctor { name, args: vec![a] })
+                    } else {
+                        // Symbols have arity 0 and cannot be applied
+                        Err(EvalError::Traced {
+                            kind: Box::new(EvalError::NotApplicable(
+                                format!("symbol '{}' (symbols have arity 0)", name)
+                            )),
+                            spans: vec![e.span],
+                        })
                     }
-                    Ok(Value::Ctor { name, args: vec![a] })
                 }
                 Value::Ctor { name, mut args } => {
                     args.push(a);

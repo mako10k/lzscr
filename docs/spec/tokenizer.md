@@ -23,7 +23,7 @@ Goal: prepare a standard foundation for string scanning and character classifica
   - `take_while : (Char -> Bool) -> Scan -> (Str, Scan)`
   - `take_while1 : (Char -> Bool) -> Scan -> Option((Str, Scan))`
 
-Returned `Bool` values are the native `.True` / `.False` constructors (no Symbol wrapper).
+Returned `Bool` values are the native `True` / `False` constructors (no Symbol wrapper).
 
 ## stdlib: `stdlib/lex.lzscr`
 
@@ -35,7 +35,7 @@ Example:
 ```lzscr
 ~Lex = ~require .stdlib .lex;
 ~S = ~Lex .scan .new "let x = 42";
-~pair = ~Lex .token .take_ident ~S; # => .Some ("let", S1), etc.
+~pair = ~Lex .token .take_ident ~S; # => Some ("let", S1), etc.
 ```
 
 ## Next
