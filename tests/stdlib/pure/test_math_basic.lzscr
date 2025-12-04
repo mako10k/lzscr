@@ -1,0 +1,34 @@
+# Test for stdlib/pure/math/basic.lzscr (minimal)
+
+# Inline definitions (workaround for ~require stack overflow issue #37)
+~min = \~a ~b -> ((\.True -> ~a | \.False -> ~b) (~a <= ~b));
+~max = \~a ~b -> ((\.True -> ~a | \.False -> ~b) (~a >= ~b));
+~clamp = \~low ~high ~x -> (~min ~high (~max ~low ~x));
+
+# Helper for test results
+~and = \~a ~b -> ((\.True -> ~b | \.False -> .False) ~a);
+
+# Test min/max
+~test_min_max = (
+  ~t1 = (~min 3 5) == 3;
+  ~t2 = (~max 3 5) == 5;
+  ~t3 = (~min (0 - 2) 1) == (0 - 2);
+  (~and ~t1 (~and ~t2 ~t3))
+);
+
+# Test clamp
+~test_clamp = (
+  ~t1 = (~clamp 0 10 5) == 5;
+  ~t2 = (~clamp 0 10 (0 - 5)) == 0;
+  ~t3 = (~clamp 0 10 15) == 10;
+  (~and ~t1 (~and ~t2 ~t3))
+);
+
+# Run all tests
+~all_tests = (
+  ~r1 = ~test_min_max;
+  ~r2 = ~test_clamp;
+  (~and ~r1 ~r2)
+);
+
+~all_tests

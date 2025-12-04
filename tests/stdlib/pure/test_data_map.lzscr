@@ -1,0 +1,109 @@
+# Test for stdlib/pure/data/map.lzscr
+
+# Inline map definitions (using tree-based implementation)
+~empty = .Leaf;
+~is_empty = \(.Leaf) -> .True | \(.Node _ _ _) -> .False;
+
+~insert_map = \~cmp_key ~key ~val ~map -> (
+  (\.Leaf -> (.Node .Leaf (~key, ~val) .Leaf)
+   | \(.Node ~left (~k, ~v) ~right) -> (
+     ~ord = (~cmp_key ~key ~k);
+     ((\.LT -> (.Node (~insert_map ~cmp_key ~key ~val ~left) (~k, ~v) ~right)
+      | \.EQ -> (.Node ~left (~key, ~val) ~right)
+      | \.GT -> (.Node ~left (~k, ~v) (~insert_map ~cmp_key ~key ~val ~right)))
+     ~ord)
+   ))
+  ~map
+);
+
+~lookup = \~cmp_key ~key ~map -> (
+  (\.Leaf -> .None
+   | \(.Node ~left (~k, ~v) ~right) -> (
+     ~ord = (~cmp_key ~key ~k);
+     ((\.LT -> (~lookup ~cmp_key ~key ~left)
+      | \.EQ -> (.Some ~v)
+      | \.GT -> (~lookup ~cmp_key ~key ~right))
+     ~ord)
+   ))
+  ~map
+);
+
+~contains_key = \~cmp_key ~key ~map -> (
+  ~result = (~lookup ~cmp_key ~key ~map);
+  ((\(.Some ~_) -> .True | \.None -> .False) ~result)
+);
+
+~size = \~map -> (
+  (\.Leaf -> 0
+   | \(.Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right)))
+  ~map
+);
+
+# Comparison function
+~cmp_num = \~a ~b -> (
+  (\.True -> .LT | \.False -> ((\.True -> .GT | \.False -> .EQ) (~a > ~b))) (~a < ~b)
+);
+
+# Helper
+~and = \~a ~b -> ((\.True -> ~b | \.False -> .False) ~a);
+
+# Test empty map
+~test_empty = (
+  ~t1 = ~is_empty ~empty;
+  ~t2 = (~size ~empty) == 0;
+  (~and ~t1 ~t2)
+);
+
+# Test insert and lookup
+~test_insert_lookup = (
+  ~map1 = (~insert_map ~cmp_num 1 "one" ~empty);
+  ~map2 = (~insert_map ~cmp_num 2 "two" ~map1);
+  ~map3 = (~insert_map ~cmp_num 3 "three" ~map2);
+  
+  ~result1 = (~lookup ~cmp_num 1 ~map3);
+  ~result2 = (~lookup ~cmp_num 2 ~map3);
+  ~result3 = (~lookup ~cmp_num 3 ~map3);
+  ~result4 = (~lookup ~cmp_num 99 ~map3);
+  
+  ~t1 = ((\(.Some "one") -> .True | \_ -> .False) ~result1);
+  ~t2 = ((\(.Some "two") -> .True | \_ -> .False) ~result2);
+  ~t3 = ((\(.Some "three") -> .True | \_ -> .False) ~result3);
+  ~t4 = ((\.None -> .True | \_ -> .False) ~result4);
+  
+  (~and ~t1 (~and ~t2 (~and ~t3 ~t4)))
+);
+
+# Test update (insert with existing key)
+~test_update = (
+  ~map1 = (~insert_map ~cmp_num 1 "old" ~empty);
+  ~map2 = (~insert_map ~cmp_num 1 "new" ~map1);
+  
+  ~result = (~lookup ~cmp_num 1 ~map2);
+  ~t1 = ((\(.Some "new") -> .True | \_ -> .False) ~result);
+  ~t2 = (~size ~map2) == 1;
+  
+  (~and ~t1 ~t2)
+);
+
+# Test contains_key
+~test_contains = (
+  ~map1 = (~insert_map ~cmp_num 5 "five" ~empty);
+  ~map2 = (~insert_map ~cmp_num 10 "ten" ~map1);
+  
+  ~t1 = ~contains_key ~cmp_num 5 ~map2;
+  ~t2 = ~contains_key ~cmp_num 10 ~map2;
+  ~t3 = ((\.True -> .False | \.False -> .True) (~contains_key ~cmp_num 7 ~map2));
+  
+  (~and ~t1 (~and ~t2 ~t3))
+);
+
+# Run all tests
+~all_tests = (
+  ~r1 = ~test_empty;
+  ~r2 = ~test_insert_lookup;
+  ~r3 = ~test_update;
+  ~r4 = ~test_contains;
+  (~and ~r1 (~and ~r2 (~and ~r3 ~r4)))
+);
+
+~all_tests

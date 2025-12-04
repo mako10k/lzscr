@@ -1,0 +1,125 @@
+# Test for stdlib/pure/data/set.lzscr
+
+# Inline set definitions
+~empty = .Leaf;
+~is_empty = \(.Leaf) -> .True | \(.Node _ _ _) -> .False;
+
+~insert_set = \~cmp ~elem ~set -> (
+  (\.Leaf -> (.Node .Leaf ~elem .Leaf)
+   | \(.Node ~left ~v ~right) -> (
+     ~ord = (~cmp ~elem ~v);
+     ((\.LT -> (.Node (~insert_set ~cmp ~elem ~left) ~v ~right)
+      | \.EQ -> (.Node ~left ~elem ~right)
+      | \.GT -> (.Node ~left ~v (~insert_set ~cmp ~elem ~right)))
+     ~ord)
+   ))
+  ~set
+);
+
+~contains = \~cmp ~elem ~set -> (
+  (\.Leaf -> .False
+   | \(.Node ~left ~v ~right) -> (
+     ~ord = (~cmp ~elem ~v);
+     ((\.LT -> (~contains ~cmp ~elem ~left)
+      | \.EQ -> .True
+      | \.GT -> (~contains ~cmp ~elem ~right))
+     ~ord)
+   ))
+  ~set
+);
+
+~size = \~set -> (
+  (\.Leaf -> 0
+   | \(.Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right)))
+  ~set
+);
+
+~fold = \~f ~acc ~set -> (
+  (\.Leaf -> ~acc
+   | \(.Node ~left ~v ~right) -> (
+     ~acc1 = (~fold ~f ~acc ~left);
+     ~acc2 = (~f ~acc1 ~v);
+     (~fold ~f ~acc2 ~right)
+   ))
+  ~set
+);
+
+~union = \~cmp ~set1 ~set2 -> (
+  ~fold (\~acc ~elem -> (~insert_set ~cmp ~elem ~acc)) ~set2 ~set1
+);
+
+~intersection = \~cmp ~set1 ~set2 -> (
+  ~fold (\~acc ~elem -> (
+    ((\.True -> (~insert_set ~cmp ~elem ~acc) | \.False -> ~acc) (~contains ~cmp ~elem ~set2))
+  )) .Leaf ~set1
+);
+
+# Comparison function
+~cmp_num = \~a ~b -> (
+  (\.True -> .LT | \.False -> ((\.True -> .GT | \.False -> .EQ) (~a > ~b))) (~a < ~b)
+);
+
+# Helper
+~and = \~a ~b -> ((\.True -> ~b | \.False -> .False) ~a);
+
+# Test empty set
+~test_empty = (
+  ~t1 = ~is_empty ~empty;
+  ~t2 = (~size ~empty) == 0;
+  (~and ~t1 ~t2)
+);
+
+# Test insert and contains
+~test_insert_contains = (
+  ~set1 = (~insert_set ~cmp_num 5 ~empty);
+  ~set2 = (~insert_set ~cmp_num 3 ~set1);
+  ~set3 = (~insert_set ~cmp_num 7 ~set2);
+  
+  ~t1 = ~contains ~cmp_num 5 ~set3;
+  ~t2 = ~contains ~cmp_num 3 ~set3;
+  ~t3 = ~contains ~cmp_num 7 ~set3;
+  ~t4 = ((\.True -> .False | \.False -> .True) (~contains ~cmp_num 10 ~set3));
+  
+  (~and ~t1 (~and ~t2 (~and ~t3 ~t4)))
+);
+
+# Test union
+~test_union = (
+  ~set1 = (~insert_set ~cmp_num 1 (~insert_set ~cmp_num 2 ~empty));
+  ~set2 = (~insert_set ~cmp_num 3 (~insert_set ~cmp_num 4 ~empty));
+  ~result = (~union ~cmp_num ~set1 ~set2);
+  
+  ~t1 = ~contains ~cmp_num 1 ~result;
+  ~t2 = ~contains ~cmp_num 2 ~result;
+  ~t3 = ~contains ~cmp_num 3 ~result;
+  ~t4 = ~contains ~cmp_num 4 ~result;
+  ~t5 = (~size ~result) == 4;
+  
+  (~and ~t1 (~and ~t2 (~and ~t3 (~and ~t4 ~t5))))
+);
+
+# Test intersection
+~test_intersection = (
+  ~set1 = (~insert_set ~cmp_num 1 (~insert_set ~cmp_num 2 (~insert_set ~cmp_num 3 ~empty)));
+  ~set2 = (~insert_set ~cmp_num 2 (~insert_set ~cmp_num 3 (~insert_set ~cmp_num 4 ~empty)));
+  ~result = (~intersection ~cmp_num ~set1 ~set2);
+  
+  ~t1 = ~contains ~cmp_num 2 ~result;
+  ~t2 = ~contains ~cmp_num 3 ~result;
+  ~t3 = ((\.True -> .False | \.False -> .True) (~contains ~cmp_num 1 ~result));
+  ~t4 = ((\.True -> .False | \.False -> .True) (~contains ~cmp_num 4 ~result));
+  ~t5 = (~size ~result) == 2;
+  
+  (~and ~t1 (~and ~t2 (~and ~t3 (~and ~t4 ~t5))))
+);
+
+# Run all tests
+~all_tests = (
+  ~r1 = ~test_empty;
+  ~r2 = ~test_insert_contains;
+  ~r3 = ~test_union;
+  ~r4 = ~test_intersection;
+  (~and ~r1 (~and ~r2 (~and ~r3 ~r4)))
+);
+
+~all_tests

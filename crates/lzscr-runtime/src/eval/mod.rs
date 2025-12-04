@@ -287,7 +287,19 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
                 Ok(Value::Raised(Box::new(aval)))
             }
         }
-        _ => Err(EvalError::NotFunc),
+        v => {
+            let type_desc = match v {
+                Value::Unit => "unit value ()",
+                Value::Int(_) => "integer",
+                Value::Float(_) => "float",
+                Value::Str(_) => "string",
+                Value::Char(_) => "character",
+                Value::List(_) => "list",
+                Value::Raised(_) => "raised exception",
+                _ => "non-function value",
+            };
+            Err(EvalError::NotApplicable(type_desc.to_string()))
+        }
     }
 }
 
@@ -651,7 +663,22 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                                         Value::Raised(Box::new(v))
                                     }
                                 }
-                                _ => return Err(EvalError::NotFunc),
+                                v => {
+                                    let type_desc = match v {
+                                        Value::Unit => "unit value ()",
+                                        Value::Int(_) => "integer",
+                                        Value::Float(_) => "float",
+                                        Value::Str(_) => "string",
+                                        Value::Char(_) => "character",
+                                        Value::List(_) => "list",
+                                        Value::Raised(_) => "raised exception",
+                                        _ => "non-function value",
+                                    };
+                                    return Err(EvalError::Traced {
+                                        kind: Box::new(EvalError::NotApplicable(type_desc.to_string())),
+                                        spans: vec![e.span],
+                                    });
+                                }
                             };
                         }
                         Ok(res)
@@ -679,7 +706,22 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         Ok(Value::Raised(Box::new(a)))
                     }
                 }
-                _ => Err(EvalError::NotFunc),
+                v => {
+                    let type_desc = match v {
+                        Value::Unit => "unit value ()",
+                        Value::Int(_) => "integer",
+                        Value::Float(_) => "float",
+                        Value::Str(_) => "string",
+                        Value::Char(_) => "character",
+                        Value::List(_) => "list",
+                        Value::Raised(_) => "raised exception",
+                        _ => "non-function value",
+                    };
+                    Err(EvalError::Traced {
+                        kind: Box::new(EvalError::NotApplicable(type_desc.to_string())),
+                        spans: vec![e.span],
+                    })
+                }
             }
         }
         ExprKind::Block(inner) => eval(env, inner),
