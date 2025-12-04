@@ -15,7 +15,9 @@
 1. **Parser emits bare constructors**
    - Update `crates/lzscr-parser` so every constructor literal (including tuples) becomes a `Ctor` AST node with bare identifier names.
    - Remove fallback paths that auto-prefix `.` or treat `.Foo` as constructor aliases.
-   - Ensure tuple sugar keeps using internal tuple ctor names (e.g., `.,,`).
+   - Ensure tuple sugar keeps using internal tuple ctor names (e.g., `.,,`). [← Rejected]
+     - Application not allowed for any symbol, including tuple ctor names.
+     - Tuple ctor treat as bare Named ctors (e.g., `,`).  
 2. **Runtime + tests harden behavior**
    - Add parser/runtime regression tests verifying: applying any symbol errors, tuple ctors remain callable, constructor arity errors surface.
    - Target suites: `crates/lzscr-runtime/tests`, `crates/lzscr-parser/tests`, plus high-level programs in `tests/`.

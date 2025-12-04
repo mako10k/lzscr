@@ -721,28 +721,132 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         j: &mut usize,
         toks: &'a [lzscr_lexer::Lexed<'a>],
     ) -> Result<TypeExpr, ParseError> {
+        fn is_type_atom_start(tok: &Tok) -> bool {
+            matches!(
+                tok,
+                Tok::Member(_)
+                    | Tok::TyVar(_)
+                    | Tok::LBracket
+                    | Tok::LParen
+                    | Tok::LBrace
+                    | Tok::Question
+            )
+        }
+
+        fn ctor_from_member<'b>(
+            j: &mut usize,
+            toks: &'b [lzscr_lexer::Lexed<'b>],
+            raw: &str,
+            span: Span,
+        ) -> Result<TypeExpr, ParseError> {
+            fn apply_ctor_rules(
+                tag: &str,
+                args: Vec<TypeExpr>,
+                span: Span,
+            ) -> Result<TypeExpr, ParseError> {
+                match tag {
+                    "Unit" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`.Unit` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        Ok(TypeExpr::Unit)
+                    }
+                    "Int" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`.Int` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        Ok(TypeExpr::Int)
+                    }
+                    "Float" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`.Float` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        Ok(TypeExpr::Float)
+                    }
+                    "Bool" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`.Bool` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        Ok(TypeExpr::Bool)
+                    }
+                    "Str" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`.Str` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        Ok(TypeExpr::Str)
+                    }
+                    "Char" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`.Char` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        Ok(TypeExpr::Char)
+                    }
+                    "List" => {
+                        if args.len() != 1 {
+                            return Err(ParseError::WithSpan {
+                                msg: "`.List` expects exactly one type argument".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        Ok(TypeExpr::List(Box::new(args.into_iter().next().unwrap())))
+                    }
+                    "Tuple" => Ok(TypeExpr::Tuple(args)),
+                    other => Ok(TypeExpr::Ctor { tag: other.to_string(), args }),
+                }
+            }
+
+            let mut args = Vec::new();
+            loop {
+                let Some(nxt) = toks.get(*j) else { break };
+                if !is_type_atom_start(&nxt.tok) {
+                    break;
+                }
+                let arg = parse_type_expr_bp(j, toks, 6)?;
+                args.push(arg);
+            }
+            let tag = raw.trim_start_matches('.');
+            apply_ctor_rules(tag, args, span)
+        }
+
         fn parse_type_atom<'b>(
             j: &mut usize,
             toks: &'b [lzscr_lexer::Lexed<'b>],
         ) -> Result<TypeExpr, ParseError> {
             let t = bump(j, toks).ok_or_else(|| ParseError::Generic("expected type".into()))?;
             Ok(match &t.tok {
-                Tok::Ident => match t.text {
-                    "Unit" => TypeExpr::Unit,
-                    "Int" => TypeExpr::Int,
-                    "Float" => TypeExpr::Float,
-                    "Bool" => TypeExpr::Bool,
-                    "Str" => TypeExpr::Str,
-                    "Char" => TypeExpr::Char,
-                    other => TypeExpr::Ctor { tag: other.to_string(), args: vec![] },
-                },
+                Tok::Member(name) => ctor_from_member(j, toks, name, t.span)?,
                 Tok::TyVar(name) => TypeExpr::Var(name.clone()),
-                Tok::Member(_) => {
+                Tok::Ident => {
                     return Err(ParseError::WithSpan {
-                        msg: "constructors in types must use bare identifiers (e.g., Foo)".into(),
+                        msg: "constructors in types must use dotted identifiers (e.g., .Foo)".into(),
                         span_offset: t.span.offset,
                         span_len: t.span.len,
-                    });
+                    })
                 }
                 Tok::LBracket => {
                     let inner = parse_type_expr(j, toks)?;
@@ -807,7 +911,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 ))
                             }
                         };
-                        let key_span = k.span; // Phase 5: Capture field name span
+                        let key_span = k.span; // capture field name span
                         let col = bump(j, toks).ok_or_else(|| {
                             ParseError::Generic(": expected in type record".into())
                         })?;
@@ -848,7 +952,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 _ => return Err(ParseError::Generic("unexpected token in type".into())),
             })
         }
-        fn parse_type_bp<'b>(
+
+        fn parse_type_expr_bp<'b>(
             j: &mut usize,
             toks: &'b [lzscr_lexer::Lexed<'b>],
             bp: u8,
@@ -861,7 +966,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         break;
                     }
                     let _ = bump(j, toks);
-                    let rhs = parse_type_bp(j, toks, 5)?;
+                    let rhs = parse_type_expr_bp(j, toks, 5)?;
                     lhs = TypeExpr::Fun(Box::new(lhs), Box::new(rhs));
                     continue;
                 }
@@ -869,7 +974,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             }
             Ok(lhs)
         }
-        parse_type_bp(j, toks, 0)
+        parse_type_expr_bp(j, toks, 0)
     }
 
     // Try to parse a type declaration: %Name %a* = %{ .Tag Ty* ( '|' .Tag Ty* )* '}' ';'?
@@ -928,12 +1033,11 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 }
             };
             let tag = match &tagtok.tok {
-                Tok::Ident => tagtok.text.to_string(),
-                Tok::Member(_) => {
+                Tok::Member(name) => name.trim_start_matches('.').to_string(),
+                Tok::Ident => {
                     return Err(ParseError::WithSpan {
-                        msg:
-                            "constructors in type definitions must use bare identifiers (e.g., Foo)"
-                                .into(),
+                        msg: "constructors in type definitions must use dotted identifiers (e.g., .Foo)"
+                            .into(),
                         span_offset: tagtok.span.offset,
                         span_len: tagtok.span.len,
                     });
@@ -1006,179 +1110,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         let t = bump(i, toks).ok_or_else(|| ParseError::Generic("unexpected EOF".into()))?;
         Ok(match &t.tok {
             Tok::TypeOpen => {
-                // %{ TypeExpr } [Expr?]
-                fn parse_type<'b>(
-                    j: &mut usize,
-                    toks: &'b [lzscr_lexer::Lexed<'b>],
-                ) -> Result<TypeExpr, ParseError> {
-                    // Pratt for -> (right-assoc), with atoms: Unit/Int/Float/Bool/Str/Ident/Member, tuple, list, record, holes
-                    fn parse_type_atom<'c>(
-                        j: &mut usize,
-                        toks: &'c [lzscr_lexer::Lexed<'c>],
-                    ) -> Result<TypeExpr, ParseError> {
-                        let t = bump(j, toks)
-                            .ok_or_else(|| ParseError::Generic("expected type".into()))?;
-                        Ok(match &t.tok {
-                            Tok::Ident => match t.text {
-                                "Unit" => TypeExpr::Unit,
-                                "Int" => TypeExpr::Int,
-                                "Float" => TypeExpr::Float,
-                                "Bool" => TypeExpr::Bool,
-                                "Str" => TypeExpr::Str,
-                                "Char" => TypeExpr::Char,
-                                other => TypeExpr::Ctor { tag: other.to_string(), args: vec![] },
-                            },
-                            Tok::TyVar(name) => TypeExpr::Var(name.clone()),
-                            Tok::Member(_) => {
-                                return Err(ParseError::WithSpan {
-                                    msg: "constructors in types must use bare identifiers (e.g., Foo)".into(),
-                                    span_offset: t.span.offset,
-                                    span_len: t.span.len,
-                                });
-                            }
-                            Tok::LBracket => {
-                                // [T]
-                                let inner = parse_type(j, toks)?;
-                                let rb = bump(j, toks).ok_or_else(|| {
-                                    ParseError::Generic("] expected in type".into())
-                                })?;
-                                if !matches!(rb.tok, Tok::RBracket) {
-                                    return Err(ParseError::Generic("] expected in type".into()));
-                                }
-                                TypeExpr::List(Box::new(inner))
-                            }
-                            Tok::LParen => {
-                                // () or (T1, T2, ...)
-                                if let Some(nxt) = toks.get(*j) {
-                                    if matches!(nxt.tok, Tok::RParen) {
-                                        let _ = bump(j, toks);
-                                        return Ok(TypeExpr::Tuple(vec![]));
-                                    }
-                                }
-                                let first = parse_type(j, toks)?;
-                                let mut items = vec![first];
-                                loop {
-                                    let Some(nxt) = toks.get(*j) else {
-                                        return Err(ParseError::Generic(
-                                            ") expected in type".into(),
-                                        ));
-                                    };
-                                    match nxt.tok {
-                                        Tok::Comma => {
-                                            let _ = bump(j, toks);
-                                            let t2 = parse_type(j, toks)?;
-                                            items.push(t2);
-                                        }
-                                        Tok::RParen => {
-                                            let _ = bump(j, toks);
-                                            break;
-                                        }
-                                        _ => {
-                                            return Err(ParseError::WithSpan {
-                                                msg: "expected , or ) in type".into(),
-                                                span_offset: nxt.span.offset,
-                                                span_len: nxt.span.len,
-                                            })
-                                        }
-                                    }
-                                }
-                                TypeExpr::Tuple(items)
-                            }
-                            Tok::LBrace => {
-                                // { k: T, ... }
-                                if let Some(nxt) = toks.get(*j) {
-                                    if matches!(nxt.tok, Tok::RBrace) {
-                                        let _ = bump(j, toks);
-                                        return Ok(TypeExpr::Record(vec![]));
-                                    }
-                                }
-                                let mut fields = Vec::new();
-                                loop {
-                                    let k = bump(j, toks).ok_or_else(|| {
-                                        ParseError::Generic("expected key in type record".into())
-                                    })?;
-                                    let key = match &k.tok {
-                                        Tok::Ident => k.text.to_string(),
-                                        _ => {
-                                            return Err(ParseError::Generic(
-                                                "expected ident key in type record".into(),
-                                            ))
-                                        }
-                                    };
-                                    let key_span = k.span; // Phase 5: Capture field name span
-                                    let col = bump(j, toks).ok_or_else(|| {
-                                        ParseError::Generic(": expected in type record".into())
-                                    })?;
-                                    if !matches!(col.tok, Tok::Colon) {
-                                        return Err(ParseError::Generic(
-                                            ": expected in type record".into(),
-                                        ));
-                                    }
-                                    let tv = parse_type(j, toks)?;
-                                    fields.push(lzscr_ast::ast::TypeExprRecordField::new(
-                                        key, key_span, tv,
-                                    ));
-                                    let sep = bump(j, toks).ok_or_else(|| {
-                                        ParseError::Generic("expected , or } in type record".into())
-                                    })?;
-                                    match sep.tok {
-                                        Tok::Comma => continue,
-                                        Tok::RBrace => break,
-                                        _ => {
-                                            return Err(ParseError::Generic(
-                                                "expected , or } in type record".into(),
-                                            ))
-                                        }
-                                    }
-                                }
-                                TypeExpr::Record(fields)
-                            }
-                            Tok::Question => {
-                                // ? or ?name
-                                let name = if let Some(nx) = toks.get(*j) {
-                                    if matches!(nx.tok, Tok::Ident) {
-                                        let n = nx.text.to_string();
-                                        let _ = bump(j, toks);
-                                        Some(n)
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                };
-                                TypeExpr::Hole(name)
-                            }
-                            _ => {
-                                return Err(ParseError::Generic("unexpected token in type".into()))
-                            }
-                        })
-                    }
-                    fn parse_type_bp<'c>(
-                        j: &mut usize,
-                        toks: &'c [lzscr_lexer::Lexed<'c>],
-                        bp: u8,
-                    ) -> Result<TypeExpr, ParseError> {
-                        let mut lhs = parse_type_atom(j, toks)?;
-                        loop {
-                            let Some(nxt) = toks.get(*j) else { break };
-                            // only -> with right associativity
-                            if matches!(nxt.tok, Tok::Arrow) {
-                                if 5 < bp {
-                                    break;
-                                }
-                                let _ = bump(j, toks);
-                                let rhs = parse_type_bp(j, toks, 5)?;
-                                lhs = TypeExpr::Fun(Box::new(lhs), Box::new(rhs));
-                                continue;
-                            }
-                            break;
-                        }
-                        Ok(lhs)
-                    }
-                    parse_type_bp(j, toks, 0)
-                }
                 let mut j = *i;
-                let ty = parse_type(&mut j, toks)?;
+                let ty = parse_type_expr(&mut j, toks)?;
                 let rb = bump(&mut j, toks)
                     .ok_or_else(|| ParseError::Generic("} expected after type".into()))?;
                 if !matches!(rb.tok, Tok::RBrace) {
@@ -2347,7 +2280,7 @@ mod tests {
 
     #[test]
     fn type_annotation_parses() {
-        let src = "%{Int} 1";
+        let src = "%{.Int} 1";
         let r = parse_expr(src).unwrap();
         match r.kind {
             ExprKind::Annot { ty, expr } => {
@@ -2363,7 +2296,7 @@ mod tests {
 
     #[test]
     fn type_value_parses() {
-        let src = "%{Int -> Int}";
+        let src = "%{.Int -> .Int}";
         let r = parse_expr(src).unwrap();
         match r.kind {
             ExprKind::TypeVal(ty) => match ty {
@@ -2375,6 +2308,51 @@ mod tests {
             },
             other => panic!("expected TypeVal, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn type_annotation_requires_dotted_constructors() {
+        let src = "%{Int} 1";
+        let err = parse_expr(src).expect_err("bare constructors should be rejected");
+        match err {
+            ParseError::WithSpan { msg, .. } => assert!(
+                msg.contains("dotted"),
+                "unexpected error message: {}",
+                msg
+            ),
+            other => panic!("unexpected error variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn type_decl_requires_dotted_constructors() {
+        let src = "( %Maybe %a = %{ Just %a | Nothing }; 0 )";
+        let err = parse_expr(src).expect_err("bare ctor should fail");
+        match err {
+            ParseError::WithSpan { msg, .. } => assert!(
+                msg.contains("dotted"),
+                "unexpected error message: {}",
+                msg
+            ),
+            other => panic!("unexpected error variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn type_decl_trims_dot_from_constructor_names() {
+        let src = "( %Maybe %a = %{ .Just %a | .Nothing }; 0 )";
+        let expr = parse_expr(src).expect("type decl should parse");
+        let ExprKind::LetGroup { type_decls, .. } = expr.kind else {
+            panic!("expected let group with type decls");
+        };
+        assert_eq!(type_decls.len(), 1);
+        let decl = &type_decls[0];
+        let alts = match &decl.body {
+            TypeDefBody::Sum(alts) => alts,
+        };
+        assert_eq!(alts.len(), 2);
+        assert_eq!(alts[0].0, "Just");
+        assert_eq!(alts[1].0, "Nothing");
     }
 
     #[test]
