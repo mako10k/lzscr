@@ -1,7 +1,7 @@
 ## lzscr type system (current: HM rank-1 + annotations/type values/pattern type vars)
 Disclaimer: Snapshot as of 2025-09-06. Any "future" references are exploratory (WIP) and not commitments.
 
-This document describes the implemented design as of 2025-09-06. It centers on Hindley–Milner (rank-1) inference, with type annotations (`%{...}`), first-class type values, and pattern-level type variable binders.
+This document describes the implemented design as of 2025-09-06. It centers on Hindley–Milner (rank-1) inference, with type annotations (`%{...}`), first-class type values, and pattern-level type variable binders. The syntax described here reflects the **post bare-constructor migration** (type expressions reuse the same identifiers as value-level constructors, no dotted aliases remain).
 
 ### 1) Overview and scope
 
@@ -16,9 +16,9 @@ This document describes the implemented design as of 2025-09-06. It centers on H
 - Function: `Fun(T1, T2)` (notation `T1 -> T2`)
 - Structures: `List(T) | Tuple(T1,..,Tn) | Record({k1:T1,..})` (Records are closed)
 - Constructors: `Ctor<'Tag, Payload>` (`'Tag` stores the bare identifier for a Named ctor; `Payload` is a tuple type, etc.)
-- (Internal) Union: argument type of AltLambda branches is collected into a finite sum `SumCtor([('Tag, [T...]), ...])` (no external syntax).
+- (Internal) Union: argument type of AltLambda branches is collected into a sum `SumCtor([('Tag, [T...]), ...])`. A trailing `OpenTail(Type)` marker is tracked when the sum was inferred from an AltLambda branch that ends in a wildcard, meaning “additional variants of type `Type` may still appear.”
 
-> Surface type expressions spell these constructors with dotted tags (e.g., `.Int`, `.List`) to guarantee they never collide with bare Named ctors at the value level.
+> Surface type expressions now use the **same bare identifiers** as value expressions. For instance, the type of integers is written `Int`, not `.Int`. This keeps the grammar aligned with the runtime constructor names after the bare-constructor migration.
 
 Note: The current type pretty-print depends on implementation shortcuts. Records require an exact key-set match.
 
@@ -26,19 +26,29 @@ Note: The current type pretty-print depends on implementation shortcuts. Records
 
 Type expressions used in annotations and type values include:
 
-- Literals: `.Unit, .Int, .Float, .Bool, .Str` (dotted tags keep type expressions distinct from value-level Named ctors such as `Unit` or `Int`)
-- Structures: `.List T`, `.Tuple T1 ... Tn`, `{ a: T, b: U }`, `T1 -> T2`
-- Constructors: `.Foo T1 .. Tn` (type expressions still spell ctor tags with a leading `.` even though the corresponding Named ctor is the bare identifier `Foo`)
+- Literals: `Unit, Int, Float, Bool, Str` (same identifiers as value-level constructors)
+- Structures: `List T`, `Tuple T1 ... Tn`, `{ a: T, b: U }`, `T1 -> T2`
+- Constructors: `Foo T1 .. Tn` (identical spelling to the Named ctor `Foo`)
 - Type variables: `%a` (leading `%`. For backward compat we also accept `'a`, but `%a` is recommended)
 - Holes: `?x` (shared by name within one annotation) / `?` (fresh each occurrence)
 
-Tuples in type expressions always use the dotted ctor head, e.g., `.Tuple .Int .Str .Bool`. Records remain braced maps such as `{ name: .Str, age: .Int }`; there is no `.Record` head.
+Tuples in type expressions always use the `Tuple` ctor head, e.g., `Tuple Int Str Bool`. Records remain braced maps such as `{ name: Str, age: Int }`; there is no `Record` head.
 Literal `..` is part of the surface grammar (e.g., `%{Foo ..}`) to denote “keep accepting more arguments,” while `...` inside this doc is just descriptive ellipsis for “and so on.” Keep them distinct when authoring code or specs.
+
+#### Open sum syntax
+
+Union types written as `(Foo T | Bar U | ...)` now support an *open tail* using `..`:
+
+- `(Foo T | Bar U)` — closed sum; only the listed constructors exist.
+- `(Foo T | ..)` — open sum; at least `Foo T` exists, other constructors may also appear. The tail implicitly introduces a fresh type variable representing the “rest” of the union.
+- `(Foo T | Bar U | ..%r)` — same as above but reuses an explicit tail type `%r`, allowing multiple annotations to share the same open union.
+
+Type inference produces these open sums whenever an AltLambda branch set ends with a wildcard (`_`), indicating “all remaining constructors” flow through that branch.
 
 Interpretation rules (conv_typeexpr):
 - `%a` resolves within the current scope (see "pattern type variable binder" below). Unresolved is an error.
 - `?x` is a shared unification var within the same annotation, `?` is fresh each time.
-- `.Foo ..` converts to `Ctor<'Foo, Payload>`. When given 0 args, `Payload=Unit`.
+- `Foo ..` converts to `Ctor<'Foo, Payload>`. When given 0 args, `Payload=Unit`.
 
 ### 4) Type annotations and type values
 
@@ -51,9 +61,10 @@ Interpretation rules (conv_typeexpr):
 
 Examples:
 ```
-%{ .List .Int } [1,2,3]        # OK
-%{ .List ?a } [1,2]            # a resolves to Int
-%{ %a -> %a } (\~x -> ~x)      # id annotation
+%{ List Int } [1,2,3]        # OK
+%{ List ?a } [1,2]           # a resolves to Int
+%{ %a -> %a } (\~x -> ~x)   # id annotation
+%{ (Ok Str | ..) } value     # open Result-like type
 ```
 
 ### 5) Pattern-level type variable binder (TypeBind)
@@ -80,7 +91,8 @@ let %{ %a, ?k } (~f, ~v) = (~id, 1) in ...
 
 Example:
 ```
-(\(.Foo ~x) -> ~x) | (\(.Bar ~y ~z) -> ~z)   # a is SumCtor([.Foo(α), .Bar(β,γ)])
+(\(Foo ~x) -> ~x) | (\(Bar ~y ~z) -> ~z) | (\_ -> ~default)
+# parameter type is SumCtor([Foo(α), Bar(β,γ)], OpenTail %rest)
 ```
 
 ### 7) Exceptions/OrElse typing (excerpt)
@@ -91,8 +103,8 @@ Example:
 
 ### 8) Constructors and arity
 
-- Every bare identifier `Foo` (including built-ins like `Int`, `Bool`, `Unit`) evaluates to a `Ctor<'Foo, Payload>` value. Literals such as `6` therefore have type `.Int`, while the expression `Int` itself is just the zero-arity Named ctor.
-- Type expressions reference these ctor tags using dotted names (`.Foo`, `.Int`, ...), ensuring the type and value syntaxes never collide. The principal type of a Named ctor is still `∀a1..an. a1 -> .. -> an -> Ctor<'Foo,(a1,..,an)>` and partial application retains the remaining arity.
+- Every bare identifier `Foo` (including built-ins like `Int`, `Bool`, `Unit`) evaluates to a `Ctor<'Foo, Payload>` value. Literals such as `6` therefore have type `Int`, while the expression `Int` itself is just the zero-arity Named ctor.
+- Type expressions reuse these ctor tags directly (no dotted aliases). The principal type of a Named ctor is still `∀a1..an. a1 -> .. -> an -> Ctor<'Foo,(a1,..,an)>` and partial application retains the remaining arity.
 - Arity checks are enforced by the evaluator/runtime using the ctor metadata (from parser/CLI context). Applying a Named ctor to too many or too few arguments yields a runtime error, while symbols remain unapplied atoms.
 
 ### 9) Major builtin types
@@ -124,14 +136,14 @@ Example:
 
 ```
 # Annotations and holes (shared/fresh)
-%{ .List ?a } [1,2]           # a=.Int
-%{ .List ? } []               # fresh var (decided at use sites)
+%{ List ?a } [1,2]           # a=Int
+%{ List ? } []               # fresh var (decided at use sites)
 
 # Pattern type variable binder (lambda)
 (\%{ %a } ~x -> %{ %a } ~x)   # share the same %a
 
-# AltLambda (finite sum of ctor cases)
-let f = (\(.A ~x) -> ~x) | (\(.B ~y ~z) -> ~z) in ~f
+# AltLambda (finite sum of ctor cases + wildcard tail)
+let f = (\(A ~x) -> ~x) | (\(B ~y ~z) -> ~z) | (\_ -> ~fallback) in ~f
 ```
 
 Note: Analyzer/Runtime/CoreIR treat `PatternKind::TypeBind` transparently (printing/execution behave the same as without it).
