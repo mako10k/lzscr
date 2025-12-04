@@ -240,7 +240,9 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
                     env.ctor_arity.get(&name).or_else(|| env.ctor_arity.get(&format!(".{name}")))
                 {
                     if k == 0 {
-                        return Err(EvalError::TypeError);
+                        return Err(EvalError::NotApplicable(
+                            format!("nullary constructor '{}'", name)
+                        ));
                     }
                 }
                 Ok(Value::Ctor { name, args: vec![aval] })
@@ -256,7 +258,9 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
                     env.ctor_arity.get(&name).or_else(|| env.ctor_arity.get(&format!(".{name}")))
                 {
                     if args.len() > k {
-                        return Err(EvalError::TypeError);
+                        return Err(EvalError::NotApplicable(
+                            format!("constructor '{}' (expected {} args, got {})", name, k, args.len())
+                        ));
                     }
                 }
                 Ok(Value::Ctor { name, args })
@@ -568,7 +572,9 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     {
                         if k == 0 {
                             return Err(EvalError::Traced {
-                                kind: Box::new(EvalError::TypeError),
+                                kind: Box::new(EvalError::NotApplicable(
+                                    format!("nullary constructor '{}'", name)
+                                )),
                                 spans: vec![e.span],
                             });
                         }
@@ -583,7 +589,12 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         .or_else(|| env.ctor_arity.get(&format!(".{name}")))
                     {
                         if args.len() > k {
-                            return Err(EvalError::TypeError);
+                            return Err(EvalError::Traced {
+                                kind: Box::new(EvalError::NotApplicable(
+                                    format!("constructor '{}' (expected {} args, got {})", name, k, args.len())
+                                )),
+                                spans: vec![e.span],
+                            });
                         }
                         // If just satisfied, return as value; if insufficient, keep a partial value
                     }
