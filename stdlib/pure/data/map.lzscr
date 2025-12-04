@@ -14,8 +14,8 @@
   ~lookup ~cmp_key ~key ~map = ((\.Leaf -> None | \(.Node ~left (~k,~v) ~right) -> (~ord = (~cmp_key ~key ~k);
         ((\.LT -> (~lookup ~cmp_key ~key ~left) | \.EQ -> (Some ~v) | \.GT -> (~lookup ~cmp_key ~key ~right)) ~ord))) ~map);
   # contains_key: check if key exists
-      ~contains_key ~cmp_key ~key ~map = (~result = (~lookup ~cmp_key ~key ~map);
-            ((\(Some ~_) -> True | \_ -> False) ~result));
+  ~contains_key ~cmp_key ~key ~map = (~result = (~lookup ~cmp_key ~key ~map);
+    ((\(Some ~_) -> True | \_ -> False) ~result));
   # delete: remove key-value pair
   ~delete ~cmp_key ~key ~map = ((\.Leaf -> .Leaf | \(.Node ~left (~k,~v) ~right) -> (~ord = (~cmp_key ~key ~k);
         ((\.LT -> (.Node (~delete ~cmp_key ~key ~left) (~k,~v) ~right) | \.EQ -> (

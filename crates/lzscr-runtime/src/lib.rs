@@ -406,9 +406,7 @@ impl Env {
                     (Value::Str(s), Value::Int(idx)) => {
                         let s_utf = match std::str::from_utf8(s.as_bytes()) {
                             Ok(v) => v,
-                            Err(_) => {
-                                return Ok(Value::Ctor { name: "None".into(), args: vec![] })
-                            }
+                            Err(_) => return Ok(Value::Ctor { name: "None".into(), args: vec![] }),
                         };
                         for (i, ch) in s_utf.chars().enumerate() {
                             if (i as i64) == *idx {

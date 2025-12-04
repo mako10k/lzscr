@@ -14,8 +14,8 @@
   ~find ~cmp ~val ~tree = ((\.Leaf -> None | \(.Node ~left ~v ~right) -> (~ord = (~cmp ~val ~v);
         ((\.LT -> (~find ~cmp ~val ~left) | \.EQ -> (Some ~v) | \.GT -> (~find ~cmp ~val ~right)) ~ord))) ~tree);
   # contains: check if value exists in tree
-      ~contains ~cmp ~val ~tree = (~result = (~find ~cmp ~val ~tree);
-            ((\(Some ~_) -> True | \_ -> False) ~result));
+  ~contains ~cmp ~val ~tree = (~result = (~find ~cmp ~val ~tree);
+    ((\(Some ~_) -> True | \_ -> False) ~result));
   # fold_tree: fold over tree in-order (left-root-right)
   ~fold_tree ~f ~acc ~tree = ((\.Leaf -> ~acc | \(.Node ~left ~v ~right) -> (~acc1 = (~fold_tree ~f ~acc ~left);
         ~acc2 = (~f ~acc1 ~v);

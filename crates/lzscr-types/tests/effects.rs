@@ -28,10 +28,7 @@ fn fs_read_text_types_as_result() {
     let got = infer_program(src);
     assert!(got.is_ok(), "unexpected error: {}", pretty(got));
     let ty = got.unwrap();
-    assert!(
-        ty == "(Ok .Str | Err .Str)" || ty == "(Err .Str | Ok .Str)",
-        "unexpected type: {ty}"
-    );
+    assert!(ty == "(Ok .Str | Err .Str)" || ty == "(Err .Str | Ok .Str)", "unexpected type: {ty}");
 }
 
 #[test]

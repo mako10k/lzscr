@@ -23,8 +23,7 @@
   # from_option : e -> Option a -> Result a e
   ~from_option ~err = \(Some ~x) -> Ok ~x | \_ -> Err ~err;
   # transpose_option : Result (Option a) e -> Option (Result a e)
-  ~transpose_option = (\(Ok ~opt) -> (((\(Some ~x) -> Some (Ok ~x)) | \_ -> None) ~opt)
-    | \(Err ~e) -> Some (Err ~e));
+  ~transpose_option = (\(Ok ~opt) -> (((\(Some ~x) -> Some (Ok ~x)) | \_ -> None) ~opt) | \(Err ~e) -> Some (Err ~e));
   # flatten : Result (Result a e) e -> Result a e
   ~flatten = \(Ok ~inner) -> ~inner | \(Err ~e) -> Err ~e;
   {is_ok : ~is_ok,is_err : ~is_err,map : ~map,map_err : ~map_err,and_then : ~and_then,or_else : ~or_else,unwrap_or : ~unwrap_or,unwrap_or_else : ~unwrap_or_else,to_option : ~to_option,from_option : ~from_option,transpose_option : ~transpose_option,flatten : ~flatten}
