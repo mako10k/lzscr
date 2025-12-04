@@ -1,16 +1,16 @@
  # Test for stdlib/pure/data/tree.lzscr
   # Inline tree definitions
-  ~empty = .Leaf;
-  ~is_empty = \(.Leaf) -> True | \(.Node _ _ _) -> False;
-  ~insert_tree = \~cmp ~elem ~tree -> ((\.Leaf -> (.Node .Leaf ~elem .Leaf) | \(.Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
-        ((\.LT -> (.Node (~insert_tree ~cmp ~elem ~left) ~v ~right) | \.EQ -> (.Node ~left ~elem ~right) | \.GT -> (.Node ~left ~v (~insert_tree ~cmp ~elem ~right))) ~ord))) ~tree);
-  ~find = \~cmp ~elem ~tree -> ((\.Leaf -> None | \(.Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
-        ((\.LT -> (~find ~cmp ~elem ~left) | \.EQ -> (Some ~v) | \.GT -> (~find ~cmp ~elem ~right)) ~ord))) ~tree);
+  ~empty = Leaf;
+  ~is_empty = \(Leaf) -> True | \(Node _ _ _) -> False;
+  ~insert_tree = \~cmp ~elem ~tree -> ((\Leaf -> (Node Leaf ~elem Leaf) | \(Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
+        ((\LT -> (Node (~insert_tree ~cmp ~elem ~left) ~v ~right) | \EQ -> (Node ~left ~elem ~right) | \GT -> (Node ~left ~v (~insert_tree ~cmp ~elem ~right))) ~ord))) ~tree);
+  ~find = \~cmp ~elem ~tree -> ((\Leaf -> None | \(Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
+        ((\LT -> (~find ~cmp ~elem ~left) | \EQ -> (Some ~v) | \GT -> (~find ~cmp ~elem ~right)) ~ord))) ~tree);
   ~contains = \~cmp ~elem ~tree -> (~result = (~find ~cmp ~elem ~tree);
     ((\(Some ~_) -> True | \_ -> False) ~result));
-  ~size = \~tree -> ((\.Leaf -> 0 | \(.Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right))) ~tree);
+  ~size = \~tree -> ((\Leaf -> 0 | \(Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right))) ~tree);
   # Comparison function for numbers
-  ~cmp_num = \~a ~b -> (\(True -> .LT | \False -> (\(True -> .GT | \False -> .EQ) (~a > ~b))) (~a < ~b));
+  ~cmp_num = \~a ~b -> (\(True -> LT | \False -> (\(True -> GT | \False -> EQ) (~a > ~b))) (~a < ~b));
   # Helper
   ~and = \~a ~b -> (\(True -> ~b | \False -> False) ~a);
   # Test empty tree

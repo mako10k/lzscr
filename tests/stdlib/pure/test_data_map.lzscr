@@ -1,16 +1,16 @@
  # Test for stdlib/pure/data/map.lzscr
   # Inline map definitions (using tree-based implementation)
-  ~empty = .Leaf;
-  ~is_empty = \(.Leaf) -> True | \(.Node _ _ _) -> False;
-  ~insert_map = \~cmp_key ~key ~val ~map -> ((\.Leaf -> (.Node .Leaf (~key,~val) .Leaf) | \(.Node ~left (~k,~v) ~right) -> (~ord = (~cmp_key ~key ~k);
-        ((\.LT -> (.Node (~insert_map ~cmp_key ~key ~val ~left) (~k,~v) ~right) | \.EQ -> (.Node ~left (~key,~val) ~right) | \.GT -> (.Node ~left (~k,~v) (~insert_map ~cmp_key ~key ~val ~right))) ~ord))) ~map);
-  ~lookup = \~cmp_key ~key ~map -> ((\.Leaf -> None | \(.Node ~left (~k,~v) ~right) -> (~ord = (~cmp_key ~key ~k);
-        ((\.LT -> (~lookup ~cmp_key ~key ~left) | \.EQ -> (Some ~v) | \.GT -> (~lookup ~cmp_key ~key ~right)) ~ord))) ~map);
+  ~empty = Leaf;
+  ~is_empty = \(Leaf) -> True | \(Node _ _ _) -> False;
+  ~insert_map = \~cmp_key ~key ~val ~map -> ((\Leaf -> (Node Leaf (~key,~val) Leaf) | \(Node ~left (~k,~v) ~right) -> (~ord = (~cmp_key ~key ~k);
+        ((\LT -> (Node (~insert_map ~cmp_key ~key ~val ~left) (~k,~v) ~right) | \EQ -> (Node ~left (~key,~val) ~right) | \GT -> (Node ~left (~k,~v) (~insert_map ~cmp_key ~key ~val ~right))) ~ord))) ~map);
+  ~lookup = \~cmp_key ~key ~map -> ((\Leaf -> None | \(Node ~left (~k,~v) ~right) -> (~ord = (~cmp_key ~key ~k);
+        ((\LT -> (~lookup ~cmp_key ~key ~left) | \EQ -> (Some ~v) | \GT -> (~lookup ~cmp_key ~key ~right)) ~ord))) ~map);
   ~contains_key = \~cmp_key ~key ~map -> (~result = (~lookup ~cmp_key ~key ~map);
     ((\(Some ~_) -> True | \_ -> False) ~result));
-  ~size = \~map -> ((\.Leaf -> 0 | \(.Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right))) ~map);
+  ~size = \~map -> ((\Leaf -> 0 | \(Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right))) ~map);
   # Comparison function
-  ~cmp_num = \~a ~b -> (\(True -> .LT | \False -> (\(True -> .GT | \False -> .EQ) (~a > ~b))) (~a < ~b));
+  ~cmp_num = \~a ~b -> (\(True -> LT | \False -> (\(True -> GT | \False -> EQ) (~a > ~b))) (~a < ~b));
   # Helper
   ~and = \~a ~b -> (\(True -> ~b | \False -> False) ~a);
   # Test empty map

@@ -321,10 +321,20 @@ pub(crate) fn infer_expr(
             }
             // Special-case: constructor application via symbol, e.g., (Some x) or (., a) b or (.,, a) b c
             if let ExprKind::Symbol(tag) = &func.kind {
-                if tag.starts_with('.') {
+                let is_tuple_ctor = tag.starts_with('.') && tag.chars().skip(1).all(|c| c == ',');
+                let is_bare_ctor = tag
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_uppercase())
+                    .unwrap_or(false);
+                let is_dot_ctor = tag
+                    .strip_prefix('.')
+                    .and_then(|rest| rest.chars().next())
+                    .map(|c| c.is_ascii_uppercase())
+                    .unwrap_or(false);
+                if is_tuple_ctor || is_bare_ctor || is_dot_ctor {
                     let (ta, sa) = infer_expr(ctx, arg, allow_effects)?;
-                    // Tuple-like tags: leading '.' followed by one or more ','; total payload arity = (number of commas) + 1
-                    if tag.chars().skip(1).all(|c| c == ',') {
+                    if is_tuple_ctor {
                         let n_commas = tag.chars().skip(1).count();
                         let total_arity = n_commas + 1;
                         if total_arity == 0 {

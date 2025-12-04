@@ -1,19 +1,19 @@
  # Test for stdlib/pure/data/set.lzscr
   # Inline set definitions
-  ~empty = .Leaf;
-  ~is_empty = \(.Leaf) -> True | \(.Node _ _ _) -> False;
-  ~insert_set = \~cmp ~elem ~set -> ((\.Leaf -> (.Node .Leaf ~elem .Leaf) | \(.Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
-        ((\.LT -> (.Node (~insert_set ~cmp ~elem ~left) ~v ~right) | \.EQ -> (.Node ~left ~elem ~right) | \.GT -> (.Node ~left ~v (~insert_set ~cmp ~elem ~right))) ~ord))) ~set);
-  ~contains = \~cmp ~elem ~set -> ((\.Leaf -> False | \(.Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
-        ((\.LT -> (~contains ~cmp ~elem ~left) | \.EQ -> True | \.GT -> (~contains ~cmp ~elem ~right)) ~ord))) ~set);
-  ~size = \~set -> ((\.Leaf -> 0 | \(.Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right))) ~set);
-  ~fold = \~f ~acc ~set -> ((\.Leaf -> ~acc | \(.Node ~left ~v ~right) -> (~acc1 = (~fold ~f ~acc ~left);
+  ~empty = Leaf;
+  ~is_empty = \(Leaf) -> True | \(Node _ _ _) -> False;
+  ~insert_set = \~cmp ~elem ~set -> ((\Leaf -> (Node Leaf ~elem Leaf) | \(Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
+        ((\LT -> (Node (~insert_set ~cmp ~elem ~left) ~v ~right) | \EQ -> (Node ~left ~elem ~right) | \GT -> (Node ~left ~v (~insert_set ~cmp ~elem ~right))) ~ord))) ~set);
+  ~contains = \~cmp ~elem ~set -> ((\Leaf -> False | \(Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
+        ((\LT -> (~contains ~cmp ~elem ~left) | \EQ -> True | \GT -> (~contains ~cmp ~elem ~right)) ~ord))) ~set);
+  ~size = \~set -> ((\Leaf -> 0 | \(Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right))) ~set);
+  ~fold = \~f ~acc ~set -> ((\Leaf -> ~acc | \(Node ~left ~v ~right) -> (~acc1 = (~fold ~f ~acc ~left);
         ~acc2 = (~f ~acc1 ~v);
         (~fold ~f ~acc2 ~right))) ~set);
   ~union = \~cmp ~set1 ~set2 -> (~fold (\~acc ~elem -> (~insert_set ~cmp ~elem ~acc)) ~set2 ~set1);
-  ~intersection = \~cmp ~set1 ~set2 -> (~fold (\~acc ~elem -> ((\(True -> (~insert_set ~cmp ~elem ~acc) | \False -> ~acc) (~contains ~cmp ~elem ~set2)))) .Leaf ~set1);
+  ~intersection = \~cmp ~set1 ~set2 -> (~fold (\~acc ~elem -> ((\(True -> (~insert_set ~cmp ~elem ~acc) | \False -> ~acc) (~contains ~cmp ~elem ~set2)))) Leaf ~set1);
   # Comparison function
-  ~cmp_num = \~a ~b -> (\(True -> .LT | \False -> (\(True -> .GT | \False -> .EQ) (~a > ~b))) (~a < ~b));
+  ~cmp_num = \~a ~b -> (\(True -> LT | \False -> (\(True -> GT | \False -> EQ) (~a > ~b))) (~a < ~b));
   # Helper
   ~and = \~a ~b -> (\(True -> ~b | \False -> False) ~a);
   # Test empty set
