@@ -1,37 +1,39 @@
  # stdlib/pure/data/tree.lzscr
   # Binary search tree operations (pure functions)
-  # Tree representation: .Leaf | (.Node left value right)
+  # Tree representation: Leaf | (Node left value right)
   # Type definition (for documentation)
-  %Tree ~a = %{.Leaf | (.Node (%Tree ~a) ~a (%Tree ~a))};
+  %Tree ~a = %{Leaf | (Node (%Tree ~a) ~a (%Tree ~a))};
   # empty: create empty tree
-  ~empty = .Leaf;
+  ~empty = Leaf;
   # is_empty: check if tree is empty
-  ~is_empty = \(.Leaf) -> True | \(.Node _ _ _) -> False;
+  ~is_empty = \(Leaf) -> True | \(Node _ _ _) -> False;
   # insert: insert value into BST (requires comparable values)
-  ~insert ~cmp ~val ~tree = ((\.Leaf -> (.Node .Leaf ~val .Leaf) | \(.Node ~left ~v ~right) -> (~ord = (~cmp ~val ~v);
-        ((\.LT -> (.Node (~insert ~cmp ~val ~left) ~v ~right) | \.EQ -> (.Node ~left ~val ~right) | \.GT -> (.Node ~left ~v (~insert ~cmp ~val ~right))) ~ord))) ~tree);
-  # find: search for value in BST
-  ~find ~cmp ~val ~tree = ((\.Leaf -> None | \(.Node ~left ~v ~right) -> (~ord = (~cmp ~val ~v);
-        ((\.LT -> (~find ~cmp ~val ~left) | \.EQ -> (Some ~v) | \.GT -> (~find ~cmp ~val ~right)) ~ord))) ~tree);
-  # contains: check if value exists in tree
-  ~contains ~cmp ~val ~tree = (~result = (~find ~cmp ~val ~tree);
-    ((\(Some ~_) -> True | \_ -> False) ~result));
-  # fold_tree: fold over tree in-order (left-root-right)
-  ~fold_tree ~f ~acc ~tree = ((\.Leaf -> ~acc | \(.Node ~left ~v ~right) -> (~acc1 = (~fold_tree ~f ~acc ~left);
-        ~acc2 = (~f ~acc1 ~v);
-        (~fold_tree ~f ~acc2 ~right))) ~tree);
-  # to_list: convert tree to sorted list (in-order traversal)
-  ~to_list ~tree = (~fold_tree (\~acc ~x -> (~append ~acc [~x])) [] ~tree);
-  # from_list: build tree from list
-  ~from_list ~cmp ~xs = (~foldl (\~acc ~x -> (~insert ~cmp ~x ~acc)) .Leaf ~xs);
-  # size: count nodes in tree
-  ~size ~tree = ((\.Leaf -> 0 | \(.Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right))) ~tree);
-  # height: compute tree height
-  ~height ~tree = ((\.Leaf -> 0 | \(.Node ~left ~_ ~right) -> (~lh = (~height ~left);
-        ~rh = (~height ~right);
-        (1 + (\(True -> ~lh | \False -> ~rh) (~lh > ~rh))))) ~tree);
-  # min_value: find minimum value in tree
-  ~min_value ~tree = ((\.Leaf -> None | \(.Node .Leaf ~v ~_) -> (Some ~v) | \(.Node ~left ~_ ~_) -> (~min_value ~left)) ~tree);
-  # max_value: find maximum value in tree
-  ~max_value ~tree = ((\.Leaf -> None | \(.Node ~_ ~v .Leaf) -> (Some ~v) | \(.Node ~_ ~_ ~right) -> (~max_value ~right)) ~tree);
-  {empty : ~empty,is_empty : ~is_empty,insert : ~insert,find : ~find,contains : ~contains,fold_tree : ~fold_tree,to_list : ~to_list,from_list : ~from_list,size : ~size,height : ~height,min_value : ~min_value,max_value : ~max_value}
+  ~insert ~cmp ~val ~tree = (~handler = (\(Leaf -> (Node Leaf ~val Leaf) | \(Node ~left ~v ~right) -> (~ord = (~cmp ~val ~v);
+          ((\(LT -> (Node (~insert ~cmp ~val ~left) ~v ~right) | \(EQ -> (Node ~left ~val ~right) | \(GT -> (Node ~left ~v (~insert ~cmp ~val ~right))) ~ord))));
+          (~handler ~tree));
+        # find: search for value in BST
+        ~find ~cmp ~val ~tree = (~handler = (\(Leaf -> None | \(Node ~left ~v ~right) -> (~ord = (~cmp ~val ~v);
+                ((\(LT -> (~find ~cmp ~val ~left) | \(EQ -> (Some ~v) | \(GT -> (~find ~cmp ~val ~right)) ~ord))));
+                (~handler ~tree));
+              # contains: check if value exists in tree
+              ~contains ~cmp ~val ~tree = (~result = (~find ~cmp ~val ~tree);
+                ((\(Some ~_) -> True | \_ -> False) ~result));
+              # fold_tree: fold over tree in-order (left-root-right)
+              ~fold_tree ~f ~acc ~tree = ((\(Leaf -> ~acc | \(Node ~left ~v ~right) -> (~acc1 = (~fold_tree ~f ~acc ~left);
+                      ~acc2 = (~f ~acc1 ~v);
+                      (~fold_tree ~f ~acc2 ~right))) ~tree);
+                # to_list: convert tree to sorted list (in-order traversal)
+                ~to_list ~tree = (~fold_tree (\~acc ~x -> (~append ~acc [~x])) [] ~tree);
+                # from_list: build tree from list
+                ~from_list ~cmp ~xs = (~foldl (\~acc ~x -> (~insert ~cmp ~x ~acc)) Leaf ~xs);
+                # size: count nodes in tree
+                ~size ~tree = ((\(Leaf -> 0 | \(Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right))) ~tree);
+                  # height: compute tree height
+                  ~height ~tree = ((\(Leaf -> 0 | \(Node ~left ~_ ~right) -> (~lh = (~height ~left);
+                          ~rh = (~height ~right);
+                          (1 + (\(True -> ~lh | \False -> ~rh) (~lh > ~rh))))) ~tree);
+                    # min_value: find minimum value in tree
+                    ~min_value ~tree = ((\(Leaf -> None | \(Node Leaf ~v ~_) -> (Some ~v) | \(Node ~left ~_ ~_) -> (~min_value ~left)) ~tree);
+                      # max_value: find maximum value in tree
+                      ~max_value ~tree = ((\(Leaf -> None | \(Node ~_ ~v Leaf) -> (Some ~v) | \(Node ~_ ~_ ~right) -> (~max_value ~right)) ~tree);
+                        {empty : ~empty,is_empty : ~is_empty,insert : ~insert,find : ~find,contains : ~contains,fold_tree : ~fold_tree,to_list : ~to_list,from_list : ~from_list,size : ~size,height : ~height,min_value : ~min_value,max_value : ~max_value}
