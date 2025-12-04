@@ -7,7 +7,7 @@ pub enum EvalError {
     UnknownEffect(String),
     EffectNotAllowed,
     NotFunc,
-    NotApplicable(String),  // Value cannot be applied (with type description)
+    NotApplicable(String), // Value cannot be applied (with type description)
     Traced { kind: Box<EvalError>, spans: Vec<lzscr_ast::span::Span> },
 }
 

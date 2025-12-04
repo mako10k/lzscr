@@ -1,105 +1,45 @@
-# stdlib/core/list.lzscr
-# Core list operations (pure functions only)
-# Built-in list syntax: [] | [x, y, z] | (x : xs)
-
-# Basic list operations
-~length ~xs = (\[] -> 0 | \(~ _ : ~tail) -> 1 + (~length ~tail)) ~xs;
-
-~append ~xs ~ys = (\[] -> ~ys | \(~h : ~t) -> (~cons ~h (~append ~t ~ys))) ~xs;
-
-~reverse ~xs = (~foldl (\~acc ~x -> (~cons ~x ~acc)) [] ~xs);
-
-# Fold operations
-~foldl ~f ~acc ~xs = (\[] -> ~acc | \(~h : ~t) -> (~foldl ~f (~f ~acc ~h) ~t)) ~xs;
-
-~foldr ~f ~acc ~xs = (\[] -> ~acc | \(~h : ~t) -> (~f ~h (~foldr ~f ~acc ~t))) ~xs;
-
-# Map and filter
-~map ~f ~xs = (\[] -> [] | \(~h : ~t) -> (~cons (~f ~h) (~map ~f ~t))) ~xs;
-
-~filter ~p ~xs = (\[] -> [] | \(~h : ~t) -> ((\.True -> (~cons ~h (~filter ~p ~t)) | \.False -> (~filter ~p ~t)) (~p ~h))) ~xs;
-
-# Take and drop
-~take ~n ~xs = ((\.True -> [] | \.False -> ((\[] -> [] | \(~h : ~t) -> (~cons ~h (~take (~n - 1) ~t))) ~xs)) (~n <= 0));
-
-~drop ~n ~xs = ((\.True -> ~xs | \.False -> ((\[] -> [] | \(_ : ~t) -> (~drop (~n - 1) ~t)) ~xs)) (~n <= 0));
-
-# Predicates
-~any ~p ~xs = (\[] -> .False | \(~h : ~t) -> ((\.True -> .True | \.False -> (~any ~p ~t)) (~p ~h))) ~xs;
-
-~all ~p ~xs = (\[] -> .True | \(~h : ~t) -> ((\.True -> (~all ~p ~t) | \.False -> .False) (~p ~h))) ~xs;
-
-# Numeric operations (pure)
-~sum ~xs = (~foldl (\~acc ~x -> (~acc + ~x)) 0 ~xs);
-
-~product ~xs = (~foldl (\~acc ~x -> (~acc * ~x)) 1 ~xs);
-
-# Head and tail
-~head ~xs = (\[] -> .None | \(~h : ~_) -> .Some ~h) ~xs;
-
-~tail ~xs = (\[] -> .None | \(_ : ~t) -> .Some ~t) ~xs;
-
-# Conditional filtering
-~take_while ~p ~xs = (\[] -> [] | \(~h : ~t) -> ((\.True -> (~cons ~h (~take_while ~p ~t)) | \.False -> []) (~p ~h))) ~xs;
-
-~drop_while ~p ~xs = (\[] -> [] | \(~h : ~t) -> ((\.True -> (~drop_while ~p ~t) | \.False -> (~cons ~h ~t)) (~p ~h))) ~xs;
-
-# List concatenation and flattening
-~concat ~xss = (~foldr (\~xs ~acc -> (~foldr (~cons) ~acc ~xs)) [] ~xss);
-
-~flat_map ~f ~xs = (~concat (~map ~f ~xs));
-
-# Zip operations
-~zip_with ~f ~xs ~ys = (
-  ~go ~as ~bs = (\[] -> [] | \(~ha : ~ta) -> (
-    (\[] -> [] | \(~hb : ~tb) -> (~cons (~f ~ha ~hb) (~go ~ta ~tb))) ~bs
-  )) ~as;
-  ~go ~xs ~ys
-);
-
-~zip ~xs ~ys = (~zip_with (\~a ~b -> (~a, ~b)) ~xs ~ys);
-
-# Intersperse: insert separator between elements
-~intersperse ~sep ~xs = (
-  ~go ~list = (\[] -> [] | \(~h : ~t) -> (
-    (\[] -> [~h] | \_ -> (~cons ~h (~cons ~sep (~go ~t)))) ~t
-  )) ~list;
-  ~go ~xs
-);
-
-# Find element satisfying predicate
-~find ~p ~xs = (\[] -> .None | \(~h : ~t) -> ((\.True -> .Some ~h | \.False -> (~find ~p ~t)) (~p ~h))) ~xs;
-
-# Element membership (requires equality)
-~elem ~x ~xs = (~any (\~y -> (~y == ~x)) ~xs);
-
-# Range generation (inclusive)
-~range ~a ~b = ((\.True -> [] | \.False -> (~cons ~a (~range (~a + 1) ~b))) (~a > ~b));
-
-{
-  length: ~length,
-  append: ~append,
-  reverse: ~reverse,
-  foldl: ~foldl,
-  foldr: ~foldr,
-  map: ~map,
-  filter: ~filter,
-  take: ~take,
-  drop: ~drop,
-  any: ~any,
-  all: ~all,
-  sum: ~sum,
-  product: ~product,
-  head: ~head,
-  tail: ~tail,
-  take_while: ~take_while,
-  drop_while: ~drop_while,
-  concat: ~concat,
-  flat_map: ~flat_map,
-  zip_with: ~zip_with,
-  zip: ~zip,
-  intersperse: ~intersperse,
-  find: ~find,
-  elem: ~elem,
-  range: ~range
-}
+ # stdlib/core/list.lzscr
+  # Core list operations (pure functions only)
+  # Built-in list syntax: [] | [x, y, z] | (x : xs)
+  # Basic list operations
+  ~length ~xs = (\[] -> 0 | \(~_ : ~tail) -> 1 + (~length ~tail)) ~xs;
+  ~append ~xs ~ys = (\[] -> ~ys | \(~h : ~t) -> (~cons ~h (~append ~t ~ys))) ~xs;
+  ~reverse ~xs = (~foldl (\~acc ~x -> (~cons ~x ~acc)) [] ~xs);
+  # Fold operations
+  ~foldl ~f ~acc ~xs = (\[] -> ~acc | \(~h : ~t) -> (~foldl ~f (~f ~acc ~h) ~t)) ~xs;
+  ~foldr ~f ~acc ~xs = (\[] -> ~acc | \(~h : ~t) -> (~f ~h (~foldr ~f ~acc ~t))) ~xs;
+  # Map and filter
+  ~map ~f ~xs = (\[] -> [] | \(~h : ~t) -> (~cons (~f ~h) (~map ~f ~t))) ~xs;
+  ~filter ~p ~xs = (\[] -> [] | \(~h : ~t) -> ((\.True -> (~cons ~h (~filter ~p ~t)) | \.False -> (~filter ~p ~t)) (~p ~h))) ~xs;
+  # Take and drop
+  ~take ~n ~xs = ((\.True -> [] | \.False -> ((\[] -> [] | \(~h : ~t) -> (~cons ~h (~take (~n - 1) ~t))) ~xs)) (~n <= 0));
+  ~drop ~n ~xs = ((\.True -> ~xs | \.False -> ((\[] -> [] | \(_ : ~t) -> (~drop (~n - 1) ~t)) ~xs)) (~n <= 0));
+  # Predicates
+  ~any ~p ~xs = (\[] -> .False | \(~h : ~t) -> ((\.True -> .True | \.False -> (~any ~p ~t)) (~p ~h))) ~xs;
+  ~all ~p ~xs = (\[] -> .True | \(~h : ~t) -> ((\.True -> (~all ~p ~t) | \.False -> .False) (~p ~h))) ~xs;
+  # Numeric operations (pure)
+  ~sum ~xs = (~foldl (\~acc ~x -> (~acc + ~x)) 0 ~xs);
+  ~product ~xs = (~foldl (\~acc ~x -> (~acc * ~x)) 1 ~xs);
+  # Head and tail
+  ~head ~xs = (\[] -> .None | \(~h : ~_) -> .Some ~h) ~xs;
+  ~tail ~xs = (\[] -> .None | \(_ : ~t) -> .Some ~t) ~xs;
+  # Conditional filtering
+  ~take_while ~p ~xs = (\[] -> [] | \(~h : ~t) -> ((\.True -> (~cons ~h (~take_while ~p ~t)) | \.False -> []) (~p ~h))) ~xs;
+  ~drop_while ~p ~xs = (\[] -> [] | \(~h : ~t) -> ((\.True -> (~drop_while ~p ~t) | \.False -> (~cons ~h ~t)) (~p ~h))) ~xs;
+  # List concatenation and flattening
+  ~concat ~xss = (~foldr (\~xs ~acc -> (~foldr (~cons) ~acc ~xs)) [] ~xss);
+  ~flat_map ~f ~xs = (~concat (~map ~f ~xs));
+  # Zip operations
+  ~zip_with ~f ~xs ~ys = (~go ~as ~bs = (\[] -> [] | \(~ha : ~ta) -> ((\[] -> [] | \(~hb : ~tb) -> (~cons (~f ~ha ~hb) (~go ~ta ~tb))) ~bs)) ~as;
+    ~go ~xs ~ys);
+  ~zip ~xs ~ys = (~zip_with (\~a ~b -> (~a,~b)) ~xs ~ys);
+  # Intersperse: insert separator between elements
+  ~intersperse ~sep ~xs = (~go ~list = (\[] -> [] | \(~h : ~t) -> ((\[] -> [~h] | \_ -> (~cons ~h (~cons ~sep (~go ~t)))) ~t)) ~list;
+    ~go ~xs);
+  # Find element satisfying predicate
+  ~find ~p ~xs = (\[] -> .None | \(~h : ~t) -> ((\.True -> .Some ~h | \.False -> (~find ~p ~t)) (~p ~h))) ~xs;
+  # Element membership (requires equality)
+  ~elem ~x ~xs = (~any (\~y -> (~y == ~x)) ~xs);
+  # Range generation (inclusive)
+  ~range ~a ~b = ((\.True -> [] | \.False -> (~cons ~a (~range (~a + 1) ~b))) (~a > ~b));
+  {length : ~length,append : ~append,reverse : ~reverse,foldl : ~foldl,foldr : ~foldr,map : ~map,filter : ~filter,take : ~take,drop : ~drop,any : ~any,all : ~all,sum : ~sum,product : ~product,head : ~head,tail : ~tail,take_while : ~take_while,drop_while : ~drop_while,concat : ~concat,flat_map : ~flat_map,zip_with : ~zip_with,zip : ~zip,intersperse : ~intersperse,find : ~find,elem : ~elem,range : ~range}

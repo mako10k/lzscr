@@ -237,9 +237,7 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
                 Ok(Value::Ctor { name, args: vec![aval] })
             } else {
                 // Symbols have arity 0 and cannot be applied
-                Err(EvalError::NotApplicable(
-                    format!("symbol '{}' (symbols have arity 0)", name)
-                ))
+                Err(EvalError::NotApplicable(format!("symbol '{}' (symbols have arity 0)", name)))
             }
         }
         Value::Ctor { name, mut args } => {
@@ -252,9 +250,12 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
                     env.ctor_arity.get(&name).or_else(|| env.ctor_arity.get(&format!(".{name}")))
                 {
                     if args.len() > k {
-                        return Err(EvalError::NotApplicable(
-                            format!("constructor '{}' (expected {} args, got {})", name, k, args.len())
-                        ));
+                        return Err(EvalError::NotApplicable(format!(
+                            "constructor '{}' (expected {} args, got {})",
+                            name,
+                            k,
+                            args.len()
+                        )));
                     }
                 }
                 Ok(Value::Ctor { name, args })
@@ -573,9 +574,10 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     } else {
                         // Symbols have arity 0 and cannot be applied
                         Err(EvalError::Traced {
-                            kind: Box::new(EvalError::NotApplicable(
-                                format!("symbol '{}' (symbols have arity 0)", name)
-                            )),
+                            kind: Box::new(EvalError::NotApplicable(format!(
+                                "symbol '{}' (symbols have arity 0)",
+                                name
+                            ))),
                             spans: vec![e.span],
                         })
                     }
@@ -589,9 +591,12 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     {
                         if args.len() > k {
                             return Err(EvalError::Traced {
-                                kind: Box::new(EvalError::NotApplicable(
-                                    format!("constructor '{}' (expected {} args, got {})", name, k, args.len())
-                                )),
+                                kind: Box::new(EvalError::NotApplicable(format!(
+                                    "constructor '{}' (expected {} args, got {})",
+                                    name,
+                                    k,
+                                    args.len()
+                                ))),
                                 spans: vec![e.span],
                             });
                         }
@@ -685,7 +690,9 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                                         _ => "non-function value",
                                     };
                                     return Err(EvalError::Traced {
-                                        kind: Box::new(EvalError::NotApplicable(type_desc.to_string())),
+                                        kind: Box::new(EvalError::NotApplicable(
+                                            type_desc.to_string(),
+                                        )),
                                         spans: vec![e.span],
                                     });
                                 }

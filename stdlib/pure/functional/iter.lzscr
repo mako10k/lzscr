@@ -1,77 +1,29 @@
-# stdlib/pure/functional/iter.lzscr
-# Iterator patterns for lazy sequence generation (pure functions)
-
-# iterate: generate infinite sequence by repeatedly applying function
-# iterate f x = [x, f(x), f(f(x)), ...]
-# Returns a thunk that can be evaluated on demand
-~iterate ~f ~x = (
-  ~next = \~current -> [~current, (~iterate ~f (~f ~current))];
-  ~next ~x
-);
-
-# unfold: generate sequence from seed with step function
-# unfold f seed = generates list based on f returning Option (value, next_seed)
-~unfold ~f ~seed = (
-  ~result = (~f ~seed);
-  ((\(.Some (~val, ~next)) -> [~val, (~unfold ~f ~next)]
-    | \.None -> [])
-   ~result)
-);
-
-# cycle: infinitely repeat a list
-# cycle [1,2,3] = [1,2,3,1,2,3,1,2,3,...]
-~cycle ~xs = (
-  ~go = \~rest ~orig -> (
-    (\[] -> (~go ~orig ~orig)
-     | \(~h : ~t) -> [~h, (~go ~t ~orig)])
-    ~rest
-  );
-  (~go ~xs ~xs)
-);
-
-# replicate: create list with n copies of value
-~replicate ~n ~x = (
-  ((\.True -> [] | \.False -> [~x, (~replicate ((~n - 1)) ~x)]) (~n <= 0))
-);
-
-# take_from_iter: extract n elements from iterator (lazy list)
-~take_from_iter ~n ~iter = (
-  ((\.True -> [] | \.False -> (
-    (\[] -> []
-     | \(~h : ~t) -> [~h, (~take_from_iter ((~n - 1)) ~t)])
-    ~iter
-  )) (~n <= 0))
-);
-
-# scanl: like foldl but returns all intermediate results
-~scanl ~f ~acc ~xs = (
-  (\[] -> [~acc]
-   | \(~h : ~t) -> (
-     ~next = (~f ~acc ~h);
-     [~acc, (~scanl ~f ~next ~t)]
-   ))
-  ~xs
-);
-
-# repeat: infinite list of same value
-~repeat ~x = [~x, (~repeat ~x)];
-
-# enumFrom: infinite sequence starting from n
-~enumFrom ~n = [~n, (~enumFrom ((~n + 1)))];
-
-# enumFromTo: finite sequence from start to end (inclusive)
-~enumFromTo ~start ~end = (
-  ((\.True -> [] | \.False -> [~start, (~enumFromTo ((~start + 1)) ~end)]) (~start > ~end))
-);
-
-{
-  iterate: ~iterate,
-  unfold: ~unfold,
-  cycle: ~cycle,
-  replicate: ~replicate,
-  take_from_iter: ~take_from_iter,
-  scanl: ~scanl,
-  repeat: ~repeat,
-  enumFrom: ~enumFrom,
-  enumFromTo: ~enumFromTo
-}
+ # stdlib/pure/functional/iter.lzscr
+  # Iterator patterns for lazy sequence generation (pure functions)
+  # iterate: generate infinite sequence by repeatedly applying function
+  # iterate f x = [x, f(x), f(f(x)), ...]
+  # Returns a thunk that can be evaluated on demand
+  ~iterate ~f ~x = (~next = \~current -> [~current,(~iterate ~f (~f ~current))];
+    ~next ~x);
+  # unfold: generate sequence from seed with step function
+  # unfold f seed = generates list based on f returning Option (value, next_seed)
+  ~unfold ~f ~seed = (~result = (~f ~seed);
+    ((\(.Some (~val,~next)) -> [~val,(~unfold ~f ~next)] | \.None -> []) ~result));
+  # cycle: infinitely repeat a list
+  # cycle [1,2,3] = [1,2,3,1,2,3,1,2,3,...]
+  ~cycle ~xs = (~go = \~rest ~orig -> ((\[] -> (~go ~orig ~orig) | \(~h : ~t) -> [~h,(~go ~t ~orig)]) ~rest);
+    (~go ~xs ~xs));
+  # replicate: create list with n copies of value
+  ~replicate ~n ~x = (((\.True -> [] | \.False -> [~x,(~replicate ((~n - 1)) ~x)]) (~n <= 0)));
+  # take_from_iter: extract n elements from iterator (lazy list)
+  ~take_from_iter ~n ~iter = (((\.True -> [] | \.False -> ((\[] -> [] | \(~h : ~t) -> [~h,(~take_from_iter ((~n - 1)) ~t)]) ~iter)) (~n <= 0)));
+  # scanl: like foldl but returns all intermediate results
+  ~scanl ~f ~acc ~xs = ((\[] -> [~acc] | \(~h : ~t) -> (~next = (~f ~acc ~h);
+        [~acc,(~scanl ~f ~next ~t)])) ~xs);
+  # repeat: infinite list of same value
+  ~repeat ~x = [~x,(~repeat ~x)];
+  # enumFrom: infinite sequence starting from n
+  ~enumFrom ~n = [~n,(~enumFrom ((~n + 1)))];
+  # enumFromTo: finite sequence from start to end (inclusive)
+  ~enumFromTo ~start ~end = (((\.True -> [] | \.False -> [~start,(~enumFromTo ((~start + 1)) ~end)]) (~start > ~end)));
+  {iterate : ~iterate,unfold : ~unfold,cycle : ~cycle,replicate : ~replicate,take_from_iter : ~take_from_iter,scanl : ~scanl,repeat : ~repeat,enumFrom : ~enumFrom,enumFromTo : ~enumFromTo}

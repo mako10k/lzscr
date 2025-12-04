@@ -1,54 +1,29 @@
-# Test: stdlib/core/primitives.lzscr
-
-# Inline primitives for testing
-~Prim = {
-  id: \~x -> ~x,
-  compose: \~f ~g ~x -> (~f (~g ~x)),
-  const: \~x ~_ -> ~x,
-  flip: \~f ~x ~y -> (~f ~y ~x),
-  apply: \~f ~x -> (~f ~x)
-};
-
-# Test id function
-~test_id = (
-  ~x = 42;
-  ((~Prim .id ~x) == ~x)
-);
-
-# Test compose function
-~test_compose = (
-  ~add1 = \~n -> (~n + 1);
-  ~mul2 = \~n -> (~n * 2);
-  ~f = (~Prim .compose ~mul2 ~add1);
-  ((~f 5) == 12)
-);
-
-# Test const function
-~test_const = (
-  ~c = (~Prim .const 42);
-  ((~c 100) == 42)
-);
-
-# Test flip function
-~test_flip = (
-  ~sub = \~a ~b -> (~a - ~b);
-  ~flipped = (~Prim .flip ~sub);
-  ((~flipped 3 10) == 7)
-);
-
-# Test apply function
-~test_apply = (
-  ~inc = \~n -> (~n + 1);
-  ((~Prim .apply ~inc 5) == 6)
-);
-
-# Run all tests - returns true if all pass
-(
-  ~and = \~a ~b -> ((\.True -> ~b | \.False -> .False) ~a);
-  ~r1 = ~test_id;
-  ~r2 = ~test_compose;
-  ~r3 = ~test_const;
-  ~r4 = ~test_flip;
-  ~r5 = ~test_apply;
-  (~and ~r1 (~and ~r2 (~and ~r3 (~and ~r4 ~r5))))
-)
+ # Test: stdlib/core/primitives.lzscr
+  # Inline primitives for testing
+  ~Prim = {id : \~x -> ~x,compose : \~f ~g ~x -> (~f (~g ~x)),const : \~x ~_ -> ~x,flip : \~f ~x ~y -> (~f ~y ~x),apply : \~f ~x -> (~f ~x)};
+  # Test id function
+  ~test_id = (~x = 42;
+    ((~Prim .id ~x) == ~x));
+  # Test compose function
+  ~test_compose = (~add1 = \~n -> (~n + 1);
+    ~mul2 = \~n -> (~n * 2);
+    ~f = (~Prim .compose ~mul2 ~add1);
+    ((~f 5) == 12));
+  # Test const function
+  ~test_const = (~c = (~Prim .const 42);
+    ((~c 100) == 42));
+  # Test flip function
+  ~test_flip = (~sub = \~a ~b -> (~a - ~b);
+    ~flipped = (~Prim .flip ~sub);
+    ((~flipped 3 10) == 7));
+  # Test apply function
+  ~test_apply = (~inc = \~n -> (~n + 1);
+    ((~Prim .apply ~inc 5) == 6));
+  # Run all tests - returns true if all pass
+  (~and = \~a ~b -> ((\.True -> ~b | \.False -> .False) ~a);
+    ~r1 = ~test_id;
+    ~r2 = ~test_compose;
+    ~r3 = ~test_const;
+    ~r4 = ~test_flip;
+    ~r5 = ~test_apply;
+    (~and ~r1 (~and ~r2 (~and ~r3 (~and ~r4 ~r5)))))

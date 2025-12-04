@@ -1,55 +1,29 @@
-# stdlib/core/option.lzscr
-# Option type for representing optional values
-# Constructors: .Some x | .None
-
-# Type definition (for documentation)
-%Option ~a = %{ .Some ~a | .None };
-
-# Predicates
-~is_some = \(.Some _) -> .True | \.None -> .False;
-~is_none = \(.Some _) -> .False | \.None -> .True;
-
-# map : (a -> b) -> Option a -> Option b
-~map ~f = \(.Some ~x) -> .Some (~f ~x) | \.None -> .None;
-
-# and_then / flat_map : (a -> Option b) -> Option a -> Option b
-~and_then ~f = \(.Some ~x) -> (~f ~x) | \.None -> .None;
-
-# or_else : Option a -> (() -> Option a) -> Option a (lazy alternative)
-~or_else ~opt ~th = (\.Some ~x) -> .Some ~x | \.None -> (~th ()) ~opt;
-
-# unwrap_or : Option a -> a -> a (eager default)
-~unwrap_or ~opt ~def = (\.Some ~x) -> ~x | \.None -> ~def ~opt;
-
-# unwrap_or_else : Option a -> (() -> a) -> a (lazy default)
-~unwrap_or_else ~opt ~th = (\.Some ~x) -> ~x | \.None -> (~th ()) ~opt;
-
-# to_list : Option a -> List a
-~to_list = \(.Some ~x) -> [~x] | \.None -> [];
-
-# from_bool : Bool -> a -> Option a (true => Some a)
-~from_bool ~b ~x = (\.True -> .Some ~x | \.False -> .None) ~b;
-
-# maybe : b -> (a -> b) -> Option a -> b
-~maybe ~def ~f = \(.Some ~x) -> (~f ~x) | \.None -> ~def;
-
-# contains : a -> Option a -> Bool (requires equality)
-~contains ~needle = \(.Some ~x) -> (~x == ~needle) | \.None -> .False;
-
-# filter : (a -> Bool) -> Option a -> Option a
-~filter ~p = \(.Some ~x) -> ((\.True -> .Some ~x | \.False -> .None) (~p ~x)) | \.None -> .None;
-
-{
-  is_some: ~is_some,
-  is_none: ~is_none,
-  map: ~map,
-  and_then: ~and_then,
-  or_else: ~or_else,
-  unwrap_or: ~unwrap_or,
-  unwrap_or_else: ~unwrap_or_else,
-  to_list: ~to_list,
-  from_bool: ~from_bool,
-  maybe: ~maybe,
-  contains: ~contains,
-  filter: ~filter
-}
+ # stdlib/core/option.lzscr
+  # Option type for representing optional values
+  # Constructors: .Some x | .None
+  # Type definition (for documentation)
+  %Option ~a = %{.Some ~a | .None};
+  # Predicates
+  ~is_some = \(.Some _) -> .True | \.None -> .False;
+  ~is_none = \(.Some _) -> .False | \.None -> .True;
+  # map : (a -> b) -> Option a -> Option b
+  ~map ~f = \(.Some ~x) -> .Some (~f ~x) | \.None -> .None;
+  # and_then / flat_map : (a -> Option b) -> Option a -> Option b
+  ~and_then ~f = \(.Some ~x) -> (~f ~x) | \.None -> .None;
+  # or_else : Option a -> (() -> Option a) -> Option a (lazy alternative)
+  ~or_else ~opt ~th = (\.Some ~x) -> .Some ~x | \.None -> (~th ()) ~opt;
+  # unwrap_or : Option a -> a -> a (eager default)
+  ~unwrap_or ~opt ~def = (\.Some ~x) -> ~x | \.None -> ~def ~opt;
+  # unwrap_or_else : Option a -> (() -> a) -> a (lazy default)
+  ~unwrap_or_else ~opt ~th = (\.Some ~x) -> ~x | \.None -> (~th ()) ~opt;
+  # to_list : Option a -> List a
+  ~to_list = \(.Some ~x) -> [~x] | \.None -> [];
+  # from_bool : Bool -> a -> Option a (true => Some a)
+  ~from_bool ~b ~x = (\.True -> .Some ~x | \.False -> .None) ~b;
+  # maybe : b -> (a -> b) -> Option a -> b
+  ~maybe ~def ~f = \(.Some ~x) -> (~f ~x) | \.None -> ~def;
+  # contains : a -> Option a -> Bool (requires equality)
+  ~contains ~needle = \(.Some ~x) -> (~x == ~needle) | \.None -> .False;
+  # filter : (a -> Bool) -> Option a -> Option a
+  ~filter ~p = \(.Some ~x) -> ((\.True -> .Some ~x | \.False -> .None) (~p ~x)) | \.None -> .None;
+  {is_some : ~is_some,is_none : ~is_none,map : ~map,and_then : ~and_then,or_else : ~or_else,unwrap_or : ~unwrap_or,unwrap_or_else : ~unwrap_or_else,to_list : ~to_list,from_bool : ~from_bool,maybe : ~maybe,contains : ~contains,filter : ~filter}

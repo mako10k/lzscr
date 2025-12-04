@@ -1,163 +1,55 @@
-# stdlib/pure/data/map.lzscr
-# Key-value map based on binary search tree (pure functions)
-# Map representation: uses Tree from tree.lzscr with (key, value) pairs
-
-# Type definition (for documentation)
-%Map ~k ~v = %Tree (~k, ~v);
-
-# empty: create empty map
-~empty = .Leaf;
-
-# is_empty: check if map is empty
-~is_empty = \(.Leaf) -> .True | \(.Node _ _ _) -> .False;
-
-# insert: insert or update key-value pair
-~insert ~cmp_key ~key ~val ~map = (
-  (\.Leaf -> (.Node .Leaf (~key, ~val) .Leaf)
-   | \(.Node ~left (~k, ~v) ~right) -> (
-     ~ord = (~cmp_key ~key ~k);
-     ((\.LT -> (.Node (~insert ~cmp_key ~key ~val ~left) (~k, ~v) ~right)
-      | \.EQ -> (.Node ~left (~key, ~val) ~right)
-      | \.GT -> (.Node ~left (~k, ~v) (~insert ~cmp_key ~key ~val ~right)))
-     ~ord)
-   ))
-  ~map
-);
-
-# lookup: find value by key
-~lookup ~cmp_key ~key ~map = (
-  (\.Leaf -> .None
-   | \(.Node ~left (~k, ~v) ~right) -> (
-     ~ord = (~cmp_key ~key ~k);
-     ((\.LT -> (~lookup ~cmp_key ~key ~left)
-      | \.EQ -> (.Some ~v)
-      | \.GT -> (~lookup ~cmp_key ~key ~right))
-     ~ord)
-   ))
-  ~map
-);
-
-# contains_key: check if key exists
-~contains_key ~cmp_key ~key ~map = (
-  ~result = (~lookup ~cmp_key ~key ~map);
-  ((\(.Some ~_) -> .True | \.None -> .False) ~result)
-);
-
-# delete: remove key-value pair
-~delete ~cmp_key ~key ~map = (
-  (\.Leaf -> .Leaf
-   | \(.Node ~left (~k, ~v) ~right) -> (
-     ~ord = (~cmp_key ~key ~k);
-     ((\.LT -> (.Node (~delete ~cmp_key ~key ~left) (~k, ~v) ~right)
-      | \.EQ -> (
-        # Node to delete found - merge subtrees
-        (\.Leaf -> ~right
-         | \(.Node _ _ _) -> (
-           (\.Leaf -> ~left
-            | \(.Node _ _ _) -> (
-              # Both children exist: find min from right, replace current
-              ~min_right = (~find_min ~right);
-              ((\(.Some ~min_kv) -> (.Node ~left ~min_kv (~delete ~cmp_key (~fst ~min_kv) ~right))
-                | \.None -> (.Node ~left (~k, ~v) ~right))
-               ~min_right)
-            ))
-           ~right
-         ))
-        ~left
-      )
-      | \.GT -> (.Node ~left (~k, ~v) (~delete ~cmp_key ~key ~right)))
-     ~ord)
-   ))
-  ~map
-);
-
-# Helper: find minimum key-value in tree
-~find_min ~tree = (
-  (\.Leaf -> .None
-   | \(.Node .Leaf ~kv .Leaf) -> (.Some ~kv)
-   | \(.Node .Leaf ~kv ~_) -> (.Some ~kv)
-   | \(.Node ~left ~_ ~_) -> (~find_min ~left))
-  ~tree
-);
-
-# Helper: extract first element of pair
-~fst = \(~a, ~_) -> ~a;
-
-# Helper: extract second element of pair
-~snd = \(~_, ~b) -> ~b;
-
-# fold_map: fold over map entries in key order
-~fold_map ~f ~acc ~map = (
-  (\.Leaf -> ~acc
-   | \(.Node ~left ~kv ~right) -> (
-     ~acc1 = (~fold_map ~f ~acc ~left);
-     ~acc2 = (~f ~acc1 (~fst ~kv) (~snd ~kv));
-     (~fold_map ~f ~acc2 ~right)
-   ))
-  ~map
-);
-
-# keys: get all keys as sorted list
-~keys ~map = (
-  ~fold_map (\~acc ~k ~_ -> (~append ~acc [~k])) [] ~map
-);
-
-# values: get all values in key order
-~values ~map = (
-  ~fold_map (\~acc ~_ ~v -> (~append ~acc [~v])) [] ~map
-);
-
-# to_list: convert map to list of (key, value) pairs
-~to_list ~map = (
-  ~fold_map (\~acc ~k ~v -> (~append ~acc [(~k, ~v)])) [] ~map
-);
-
-# from_list: build map from list of pairs
-~from_list ~cmp_key ~pairs = (
-  ~foldl (\~acc (~k, ~v) -> (~insert ~cmp_key ~k ~v ~acc)) .Leaf ~pairs
-);
-
-# size: count entries in map
-~size ~map = (
-  (\.Leaf -> 0
-   | \(.Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right)))
-  ~map
-);
-
-# map_values: apply function to all values
-~map_values ~f ~map = (
-  (\.Leaf -> .Leaf
-   | \(.Node ~left (~k, ~v) ~right) -> (
-     (.Node (~map_values ~f ~left) (~k, (~f ~v)) (~map_values ~f ~right))
-   ))
-  ~map
-);
-
-# filter: keep only entries satisfying predicate
-~filter ~pred ~map = (
-  ~pairs = (~to_list ~map);
-  ~filtered = (~filter_list (\(~k, ~v) -> (~pred ~k ~v)) ~pairs);
-  ~filtered
-);
-
-# Helper: filter list (uses core list filter)
-~filter_list ~p ~xs = (
-  (\[] -> [] | \(~h : ~t) -> ((\.True -> [~h, (~filter_list ~p ~t)] | \.False -> (~filter_list ~p ~t)) (~p ~h))) ~xs
-);
-
-{
-  empty: ~empty,
-  is_empty: ~is_empty,
-  insert: ~insert,
-  lookup: ~lookup,
-  contains_key: ~contains_key,
-  delete: ~delete,
-  fold_map: ~fold_map,
-  keys: ~keys,
-  values: ~values,
-  to_list: ~to_list,
-  from_list: ~from_list,
-  size: ~size,
-  map_values: ~map_values,
-  filter: ~filter
-}
+ # stdlib/pure/data/map.lzscr
+  # Key-value map based on binary search tree (pure functions)
+  # Map representation: uses Tree from tree.lzscr with (key, value) pairs
+  # Type definition (for documentation)
+  %Map ~k ~v = %Tree (~k,~v);
+  # empty: create empty map
+  ~empty = .Leaf;
+  # is_empty: check if map is empty
+  ~is_empty = \(.Leaf) -> .True | \(.Node _ _ _) -> .False;
+  # insert: insert or update key-value pair
+  ~insert ~cmp_key ~key ~val ~map = ((\.Leaf -> (.Node .Leaf (~key,~val) .Leaf) | \(.Node ~left (~k,~v) ~right) -> (~ord = (~cmp_key ~key ~k);
+        ((\.LT -> (.Node (~insert ~cmp_key ~key ~val ~left) (~k,~v) ~right) | \.EQ -> (.Node ~left (~key,~val) ~right) | \.GT -> (.Node ~left (~k,~v) (~insert ~cmp_key ~key ~val ~right))) ~ord))) ~map);
+  # lookup: find value by key
+  ~lookup ~cmp_key ~key ~map = ((\.Leaf -> .None | \(.Node ~left (~k,~v) ~right) -> (~ord = (~cmp_key ~key ~k);
+        ((\.LT -> (~lookup ~cmp_key ~key ~left) | \.EQ -> (.Some ~v) | \.GT -> (~lookup ~cmp_key ~key ~right)) ~ord))) ~map);
+  # contains_key: check if key exists
+  ~contains_key ~cmp_key ~key ~map = (~result = (~lookup ~cmp_key ~key ~map);
+    ((\(.Some ~_) -> .True | \.None -> .False) ~result));
+  # delete: remove key-value pair
+  ~delete ~cmp_key ~key ~map = ((\.Leaf -> .Leaf | \(.Node ~left (~k,~v) ~right) -> (~ord = (~cmp_key ~key ~k);
+        ((\.LT -> (.Node (~delete ~cmp_key ~key ~left) (~k,~v) ~right) | \.EQ -> (
+              # Node to delete found - merge subtrees
+              (\.Leaf -> ~right | \(.Node _ _ _) -> ((\.Leaf -> ~left | \(.Node _ _ _) -> (
+                      # Both children exist: find min from right, replace current
+                      ~min_right = (~find_min ~right);
+                      ((\(.Some ~min_kv) -> (.Node ~left ~min_kv (~delete ~cmp_key (~fst ~min_kv) ~right)) | \.None -> (.Node ~left (~k,~v) ~right)) ~min_right))) ~right)) ~left) | \.GT -> (.Node ~left (~k,~v) (~delete ~cmp_key ~key ~right))) ~ord))) ~map);
+  # Helper: find minimum key-value in tree
+  ~find_min ~tree = ((\.Leaf -> .None | \(.Node .Leaf ~kv .Leaf) -> (.Some ~kv) | \(.Node .Leaf ~kv ~_) -> (.Some ~kv) | \(.Node ~left ~_ ~_) -> (~find_min ~left)) ~tree);
+  # Helper: extract first element of pair
+  ~fst = \(~a,~_) -> ~a;
+  # Helper: extract second element of pair
+  ~snd = \(~_,~b) -> ~b;
+  # fold_map: fold over map entries in key order
+  ~fold_map ~f ~acc ~map = ((\.Leaf -> ~acc | \(.Node ~left ~kv ~right) -> (~acc1 = (~fold_map ~f ~acc ~left);
+        ~acc2 = (~f ~acc1 (~fst ~kv) (~snd ~kv));
+        (~fold_map ~f ~acc2 ~right))) ~map);
+  # keys: get all keys as sorted list
+  ~keys ~map = (~fold_map (\~acc ~k ~_ -> (~append ~acc [~k])) [] ~map);
+  # values: get all values in key order
+  ~values ~map = (~fold_map (\~acc ~_ ~v -> (~append ~acc [~v])) [] ~map);
+  # to_list: convert map to list of (key, value) pairs
+  ~to_list ~map = (~fold_map (\~acc ~k ~v -> (~append ~acc [(~k,~v)])) [] ~map);
+  # from_list: build map from list of pairs
+  ~from_list ~cmp_key ~pairs = (~foldl (\~acc (~k,~v) -> (~insert ~cmp_key ~k ~v ~acc)) .Leaf ~pairs);
+  # size: count entries in map
+  ~size ~map = ((\.Leaf -> 0 | \(.Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right))) ~map);
+  # map_values: apply function to all values
+  ~map_values ~f ~map = ((\.Leaf -> .Leaf | \(.Node ~left (~k,~v) ~right) -> ((.Node (~map_values ~f ~left) (~k,(~f ~v)) (~map_values ~f ~right)))) ~map);
+  # filter: keep only entries satisfying predicate
+  ~filter ~pred ~map = (~pairs = (~to_list ~map);
+    ~filtered = (~filter_list (\(~k,~v) -> (~pred ~k ~v)) ~pairs);
+    ~filtered);
+  # Helper: filter list (uses core list filter)
+  ~filter_list ~p ~xs = ((\[] -> [] | \(~h : ~t) -> ((\.True -> [~h,(~filter_list ~p ~t)] | \.False -> (~filter_list ~p ~t)) (~p ~h))) ~xs);
+  {empty : ~empty,is_empty : ~is_empty,insert : ~insert,lookup : ~lookup,contains_key : ~contains_key,delete : ~delete,fold_map : ~fold_map,keys : ~keys,values : ~values,to_list : ~to_list,from_list : ~from_list,size : ~size,map_values : ~map_values,filter : ~filter}

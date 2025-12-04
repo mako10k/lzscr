@@ -1,34 +1,20 @@
-# Integration test for core modules (simplified)
-
-~and = \~a ~b -> ((\.True -> ~b | \.False -> .False) ~a);
-
-# Test primitives
-~test_prim = (
-  ~id = \~x -> ~x;
-  ~compose = \~f ~g ~x -> (~f (~g ~x));
-  ~add1 = \~n -> (~n + 1);
-  ~mul2 = \~n -> (~n * 2);
-  (~and ((~id 42) == 42) (((~compose ~mul2 ~add1) 5) == 12))
-);
-
-# Test bool
-~test_bool = (
-  ~not = \~b -> ((\.True -> .False | \.False -> .True) ~b);
-  (~and ((~not .True) == .False) ((~not .False) == .True))
-);
-
-# Test option
-~test_option = (
-  ~map = \~f ~opt -> ((\(.Some ~x) -> (.Some (~f ~x)) | \.None -> .None) ~opt);
-  ~inc = \~n -> (~n + 1);
-  (~and ((~map ~inc (.Some 5)) == (.Some 6)) ((~map ~inc .None) == .None))
-);
-
-# Test list
-~test_list = (
-  ~length = \~xs -> ((\[] -> 0 | \(_ : ~tail) -> (1 + (~length ~tail))) ~xs);
-  (~and ((~length []) == 0) ((~length [1, 2, 3]) == 3))
-);
-
-# Run all
-(~and ~test_prim (~and ~test_bool (~and ~test_option ~test_list)))
+ # Integration test for core modules (simplified)
+  ~and = \~a ~b -> ((\.True -> ~b | \.False -> .False) ~a);
+  # Test primitives
+  ~test_prim = (~id = \~x -> ~x;
+    ~compose = \~f ~g ~x -> (~f (~g ~x));
+    ~add1 = \~n -> (~n + 1);
+    ~mul2 = \~n -> (~n * 2);
+    (~and ((~id 42) == 42) (((~compose ~mul2 ~add1) 5) == 12)));
+  # Test bool
+  ~test_bool = (~not = \~b -> ((\.True -> .False | \.False -> .True) ~b);
+    (~and ((~not .True) == .False) ((~not .False) == .True)));
+  # Test option
+  ~test_option = (~map = \~f ~opt -> ((\(.Some ~x) -> (.Some (~f ~x)) | \.None -> .None) ~opt);
+    ~inc = \~n -> (~n + 1);
+    (~and ((~map ~inc (.Some 5)) == (.Some 6)) ((~map ~inc .None) == .None)));
+  # Test list
+  ~test_list = (~length = \~xs -> ((\[] -> 0 | \(_ : ~tail) -> (1 + (~length ~tail))) ~xs);
+    (~and ((~length []) == 0) ((~length [1,2,3]) == 3)));
+  # Run all
+  (~and ~test_prim (~and ~test_bool (~and ~test_option ~test_list)))

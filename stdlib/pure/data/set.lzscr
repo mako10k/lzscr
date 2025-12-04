@@ -1,172 +1,54 @@
-# stdlib/pure/data/set.lzscr
-# Set operations based on binary search tree (pure functions)
-# Set representation: uses Tree from tree.lzscr
-
-# Type definition (for documentation)
-%Set ~a = %Tree ~a;
-
-# empty: create empty set
-~empty = .Leaf;
-
-# is_empty: check if set is empty
-~is_empty = \(.Leaf) -> .True | \(.Node _ _ _) -> .False;
-
-# insert: add element to set
-~insert ~cmp ~elem ~set = (
-  (\.Leaf -> (.Node .Leaf ~elem .Leaf)
-   | \(.Node ~left ~v ~right) -> (
-     ~ord = (~cmp ~elem ~v);
-     ((\.LT -> (.Node (~insert ~cmp ~elem ~left) ~v ~right)
-      | \.EQ -> (.Node ~left ~elem ~right)
-      | \.GT -> (.Node ~left ~v (~insert ~cmp ~elem ~right)))
-     ~ord)
-   ))
-  ~set
-);
-
-# contains: check if element exists in set
-~contains ~cmp ~elem ~set = (
-  (\.Leaf -> .False
-   | \(.Node ~left ~v ~right) -> (
-     ~ord = (~cmp ~elem ~v);
-     ((\.LT -> (~contains ~cmp ~elem ~left)
-      | \.EQ -> .True
-      | \.GT -> (~contains ~cmp ~elem ~right))
-     ~ord)
-   ))
-  ~set
-);
-
-# delete: remove element from set
-~delete ~cmp ~elem ~set = (
-  (\.Leaf -> .Leaf
-   | \(.Node ~left ~v ~right) -> (
-     ~ord = (~cmp ~elem ~v);
-     ((\.LT -> (.Node (~delete ~cmp ~elem ~left) ~v ~right)
-      | \.EQ -> (
-        # Node to delete found - merge subtrees
-        (\.Leaf -> ~right
-         | \(.Node _ _ _) -> (
-           (\.Leaf -> ~left
-            | \(.Node _ _ _) -> (
-              # Both children: find min from right subtree
-              ~min_right = (~find_min ~right);
-              ((\(.Some ~min_val) -> (.Node ~left ~min_val (~delete ~cmp ~min_val ~right))
-                | \.None -> (.Node ~left ~v ~right))
-               ~min_right)
-            ))
-           ~right
-         ))
-        ~left
-      )
-      | \.GT -> (.Node ~left ~v (~delete ~cmp ~elem ~right)))
-     ~ord)
-   ))
-  ~set
-);
-
-# Helper: find minimum element in tree
-~find_min ~tree = (
-  (\.Leaf -> .None
-   | \(.Node .Leaf ~v .Leaf) -> (.Some ~v)
-   | \(.Node .Leaf ~v ~_) -> (.Some ~v)
-   | \(.Node ~left ~_ ~_) -> (~find_min ~left))
-  ~tree
-);
-
-# union: combine two sets
-~union ~cmp ~set1 ~set2 = (
-  ~fold (\~acc ~elem -> (~insert ~cmp ~elem ~acc)) ~set2 ~set1
-);
-
-# Helper: fold over set
-~fold ~f ~acc ~set = (
-  (\.Leaf -> ~acc
-   | \(.Node ~left ~v ~right) -> (
-     ~acc1 = (~fold ~f ~acc ~left);
-     ~acc2 = (~f ~acc1 ~v);
-     (~fold ~f ~acc2 ~right)
-   ))
-  ~set
-);
-
-# intersection: elements in both sets
-~intersection ~cmp ~set1 ~set2 = (
-  ~fold (\~acc ~elem -> (
-    ((\.True -> (~insert ~cmp ~elem ~acc) | \.False -> ~acc) (~contains ~cmp ~elem ~set2))
-  )) .Leaf ~set1
-);
-
-# difference: elements in set1 but not in set2
-~difference ~cmp ~set1 ~set2 = (
-  ~fold (\~acc ~elem -> (
-    ((\.True -> ~acc | \.False -> (~insert ~cmp ~elem ~acc)) (~contains ~cmp ~elem ~set2))
-  )) .Leaf ~set1
-);
-
-# symmetric_difference: elements in either set but not both
-~symmetric_difference ~cmp ~set1 ~set2 = (
-  ~diff1 = (~difference ~cmp ~set1 ~set2);
-  ~diff2 = (~difference ~cmp ~set2 ~set1);
-  (~union ~cmp ~diff1 ~diff2)
-);
-
-# is_subset: check if set1 is subset of set2
-~is_subset ~cmp ~set1 ~set2 = (
-  ~fold (\~acc ~elem -> (
-    ((\.True -> ~acc | \.False -> .False) (~contains ~cmp ~elem ~set2))
-  )) .True ~set1
-);
-
-# is_superset: check if set1 is superset of set2
-~is_superset ~cmp ~set1 ~set2 = (
-  ~is_subset ~cmp ~set2 ~set1
-);
-
-# to_list: convert set to sorted list
-~to_list ~set = (
-  ~fold (\~acc ~elem -> (~append ~acc [~elem])) [] ~set
-);
-
-# from_list: build set from list
-~from_list ~cmp ~xs = (
-  ~foldl (\~acc ~elem -> (~insert ~cmp ~elem ~acc)) .Leaf ~xs
-);
-
-# size: count elements in set
-~size ~set = (
-  (\.Leaf -> 0
-   | \(.Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right)))
-  ~set
-);
-
-# filter: keep only elements satisfying predicate
-~filter ~pred ~set = (
-  ~fold (\~acc ~elem -> (
-    ((\.True -> [~elem, ~acc] | \.False -> ~acc) (~pred ~elem))
-  )) [] ~set
-);
-
-# map_set: apply function to all elements (may change comparison order)
-~map_set ~cmp ~f ~set = (
-  ~fold (\~acc ~elem -> (~insert ~cmp (~f ~elem) ~acc)) .Leaf ~set
-);
-
-{
-  empty: ~empty,
-  is_empty: ~is_empty,
-  insert: ~insert,
-  contains: ~contains,
-  delete: ~delete,
-  union: ~union,
-  intersection: ~intersection,
-  difference: ~difference,
-  symmetric_difference: ~symmetric_difference,
-  is_subset: ~is_subset,
-  is_superset: ~is_superset,
-  to_list: ~to_list,
-  from_list: ~from_list,
-  size: ~size,
-  filter: ~filter,
-  map_set: ~map_set
-}
+ # stdlib/pure/data/set.lzscr
+  # Set operations based on binary search tree (pure functions)
+  # Set representation: uses Tree from tree.lzscr
+  # Type definition (for documentation)
+  %Set ~a = %Tree ~a;
+  # empty: create empty set
+  ~empty = .Leaf;
+  # is_empty: check if set is empty
+  ~is_empty = \(.Leaf) -> .True | \(.Node _ _ _) -> .False;
+  # insert: add element to set
+  ~insert ~cmp ~elem ~set = ((\.Leaf -> (.Node .Leaf ~elem .Leaf) | \(.Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
+        ((\.LT -> (.Node (~insert ~cmp ~elem ~left) ~v ~right) | \.EQ -> (.Node ~left ~elem ~right) | \.GT -> (.Node ~left ~v (~insert ~cmp ~elem ~right))) ~ord))) ~set);
+  # contains: check if element exists in set
+  ~contains ~cmp ~elem ~set = ((\.Leaf -> .False | \(.Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
+        ((\.LT -> (~contains ~cmp ~elem ~left) | \.EQ -> .True | \.GT -> (~contains ~cmp ~elem ~right)) ~ord))) ~set);
+  # delete: remove element from set
+  ~delete ~cmp ~elem ~set = ((\.Leaf -> .Leaf | \(.Node ~left ~v ~right) -> (~ord = (~cmp ~elem ~v);
+        ((\.LT -> (.Node (~delete ~cmp ~elem ~left) ~v ~right) | \.EQ -> (
+              # Node to delete found - merge subtrees
+              (\.Leaf -> ~right | \(.Node _ _ _) -> ((\.Leaf -> ~left | \(.Node _ _ _) -> (
+                      # Both children: find min from right subtree
+                      ~min_right = (~find_min ~right);
+                      ((\(.Some ~min_val) -> (.Node ~left ~min_val (~delete ~cmp ~min_val ~right)) | \.None -> (.Node ~left ~v ~right)) ~min_right))) ~right)) ~left) | \.GT -> (.Node ~left ~v (~delete ~cmp ~elem ~right))) ~ord))) ~set);
+  # Helper: find minimum element in tree
+  ~find_min ~tree = ((\.Leaf -> .None | \(.Node .Leaf ~v .Leaf) -> (.Some ~v) | \(.Node .Leaf ~v ~_) -> (.Some ~v) | \(.Node ~left ~_ ~_) -> (~find_min ~left)) ~tree);
+  # union: combine two sets
+  ~union ~cmp ~set1 ~set2 = (~fold (\~acc ~elem -> (~insert ~cmp ~elem ~acc)) ~set2 ~set1);
+  # Helper: fold over set
+  ~fold ~f ~acc ~set = ((\.Leaf -> ~acc | \(.Node ~left ~v ~right) -> (~acc1 = (~fold ~f ~acc ~left);
+        ~acc2 = (~f ~acc1 ~v);
+        (~fold ~f ~acc2 ~right))) ~set);
+  # intersection: elements in both sets
+  ~intersection ~cmp ~set1 ~set2 = (~fold (\~acc ~elem -> (((\.True -> (~insert ~cmp ~elem ~acc) | \.False -> ~acc) (~contains ~cmp ~elem ~set2)))) .Leaf ~set1);
+  # difference: elements in set1 but not in set2
+  ~difference ~cmp ~set1 ~set2 = (~fold (\~acc ~elem -> (((\.True -> ~acc | \.False -> (~insert ~cmp ~elem ~acc)) (~contains ~cmp ~elem ~set2)))) .Leaf ~set1);
+  # symmetric_difference: elements in either set but not both
+  ~symmetric_difference ~cmp ~set1 ~set2 = (~diff1 = (~difference ~cmp ~set1 ~set2);
+    ~diff2 = (~difference ~cmp ~set2 ~set1);
+    (~union ~cmp ~diff1 ~diff2));
+  # is_subset: check if set1 is subset of set2
+  ~is_subset ~cmp ~set1 ~set2 = (~fold (\~acc ~elem -> (((\.True -> ~acc | \.False -> .False) (~contains ~cmp ~elem ~set2)))) .True ~set1);
+  # is_superset: check if set1 is superset of set2
+  ~is_superset ~cmp ~set1 ~set2 = (~is_subset ~cmp ~set2 ~set1);
+  # to_list: convert set to sorted list
+  ~to_list ~set = (~fold (\~acc ~elem -> (~append ~acc [~elem])) [] ~set);
+  # from_list: build set from list
+  ~from_list ~cmp ~xs = (~foldl (\~acc ~elem -> (~insert ~cmp ~elem ~acc)) .Leaf ~xs);
+  # size: count elements in set
+  ~size ~set = ((\.Leaf -> 0 | \(.Node ~left ~_ ~right) -> (1 + (~size ~left) + (~size ~right))) ~set);
+  # filter: keep only elements satisfying predicate
+  ~filter ~pred ~set = (~fold (\~acc ~elem -> (((\.True -> [~elem,~acc] | \.False -> ~acc) (~pred ~elem)))) [] ~set);
+  # map_set: apply function to all elements (may change comparison order)
+  ~map_set ~cmp ~f ~set = (~fold (\~acc ~elem -> (~insert ~cmp (~f ~elem) ~acc)) .Leaf ~set);
+  {empty : ~empty,is_empty : ~is_empty,insert : ~insert,contains : ~contains,delete : ~delete,union : ~union,intersection : ~intersection,difference : ~difference,symmetric_difference : ~symmetric_difference,is_subset : ~is_subset,is_superset : ~is_superset,to_list : ~to_list,from_list : ~from_list,size : ~size,filter : ~filter,map_set : ~map_set}
