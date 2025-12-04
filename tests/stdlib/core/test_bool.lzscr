@@ -1,31 +1,31 @@
  # Test: stdlib/core/bool.lzscr
   ~Bool = (~require .core .bool);
   # Test not function
-  ~test_not = ((~assert ((~Bool .not .True) == .False) "not True = False");
-    (~assert ((~Bool .not .False) == .True) "not False = True"));
+  ~test_not = ((~assert ((~Bool .not True) == False) "not True = False");
+    (~assert ((~Bool .not False) == True) "not False = True"));
   # Test and function
-  ~test_and = ((~assert ((~Bool .and .True .True) == .True) "True and True = True");
-    (~assert ((~Bool .and .True .False) == .False) "True and False = False");
-    (~assert ((~Bool .and .False .True) == .False) "False and True = False");
-    (~assert ((~Bool .and .False .False) == .False) "False and False = False"));
+  ~test_and = ((~assert ((~Bool .and True True) == True) "True and True = True");
+    (~assert ((~Bool .and True False) == False) "True and False = False");
+    (~assert ((~Bool .and False True) == False) "False and True = False");
+    (~assert ((~Bool .and False False) == False) "False and False = False"));
   # Test or function
-  ~test_or = ((~assert ((~Bool .or .True .True) == .True) "True or True = True");
-    (~assert ((~Bool .or .True .False) == .True) "True or False = True");
-    (~assert ((~Bool .or .False .True) == .True) "False or True = True");
-    (~assert ((~Bool .or .False .False) == .False) "False or False = False"));
+  ~test_or = ((~assert ((~Bool .or True True) == True) "True or True = True");
+    (~assert ((~Bool .or True False) == True) "True or False = True");
+    (~assert ((~Bool .or False True) == True) "False or True = True");
+    (~assert ((~Bool .or False False) == False) "False or False = False"));
   # Test xor function
-  ~test_xor = ((~assert ((~Bool .xor .True .True) == .False) "True xor True = False");
-    (~assert ((~Bool .xor .True .False) == .True) "True xor False = True");
-    (~assert ((~Bool .xor .False .True) == .True) "False xor True = True");
-    (~assert ((~Bool .xor .False .False) == .False) "False xor False = False"));
+  ~test_xor = ((~assert ((~Bool .xor True True) == False) "True xor True = False");
+    (~assert ((~Bool .xor True False) == True) "True xor False = True");
+    (~assert ((~Bool .xor False True) == True) "False xor True = True");
+    (~assert ((~Bool .xor False False) == False) "False xor False = False"));
   # Test if function
-  ~test_if = ((~assert ((~Bool .if .True 1 2) == 1) "if True returns then-branch");
-    (~assert ((~Bool .if .False 1 2) == 2) "if False returns else-branch"));
+  ~test_if = ((~assert ((~Bool .if True 1 2) == 1) "if True returns then-branch");
+    (~assert ((~Bool .if False 1 2) == 2) "if False returns else-branch"));
   # Test eq function
-  ~test_eq = ((~assert ((~Bool .eq .True .True) == .True) "True eq True = True");
-    (~assert ((~Bool .eq .False .False) == .True) "False eq False = True");
-    (~assert ((~Bool .eq .True .False) == .False) "True eq False = False");
-    (~assert ((~Bool .eq .False .True) == .False) "False eq True = False"));
+  ~test_eq = ((~assert ((~Bool .eq True True) == True) "True eq True = True");
+    (~assert ((~Bool .eq False False) == True) "False eq False = True");
+    (~assert ((~Bool .eq True False) == False) "True eq False = False");
+    (~assert ((~Bool .eq False True) == False) "False eq True = False"));
   # Run all tests
   ~run_tests = (_ = ~test_not;
     _ = ~test_and;

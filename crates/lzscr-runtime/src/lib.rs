@@ -172,9 +172,9 @@ impl Env {
                 f: |env, args| {
                     let res = v_equal(env, &args[0], &args[1]);
                     Ok(if res {
-                        Value::Ctor { name: ".True".into(), args: vec![] }
+                        Value::Ctor { name: "True".into(), args: vec![] }
                     } else {
-                        Value::Ctor { name: ".False".into(), args: vec![] }
+                        Value::Ctor { name: "False".into(), args: vec![] }
                     })
                 },
             },
@@ -407,18 +407,18 @@ impl Env {
                         let s_utf = match std::str::from_utf8(s.as_bytes()) {
                             Ok(v) => v,
                             Err(_) => {
-                                return Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                                return Ok(Value::Ctor { name: "None".into(), args: vec![] })
                             }
                         };
                         for (i, ch) in s_utf.chars().enumerate() {
                             if (i as i64) == *idx {
                                 return Ok(Value::Ctor {
-                                    name: ".Some".into(),
+                                    name: "Some".into(),
                                     args: vec![Value::Char(ch as i32)],
                                 });
                             }
                         }
-                        Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                        Ok(Value::Ctor { name: "None".into(), args: vec![] })
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -605,10 +605,10 @@ impl Env {
                         let ch = utf.chars().nth(i);
                         match ch {
                             Some(c) => Ok(Value::Ctor {
-                                name: ".Some".into(),
+                                name: "Some".into(),
                                 args: vec![Value::Char(c as i32)],
                             }),
-                            None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
+                            None => Ok(Value::Ctor { name: "None".into(), args: vec![] }),
                         }
                     }
                     _ => Err(EvalError::TypeError),
@@ -630,12 +630,12 @@ impl Env {
                             Some(ch) => {
                                 let ns = make_scan(s.clone(), i + 1);
                                 let pair = Value::Ctor {
-                                    name: ".,".into(),
+                                    name: ",".into(),
                                     args: vec![Value::Char(ch as i32), ns],
                                 };
-                                Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
+                                Ok(Value::Ctor { name: "Some".into(), args: vec![pair] })
                             }
-                            None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
+                            None => Ok(Value::Ctor { name: "None".into(), args: vec![] }),
                         }
                     }
                     _ => Err(EvalError::TypeError),
@@ -656,13 +656,13 @@ impl Env {
                             if as_bool(env, &res)? {
                                 let ns = make_scan(s.clone(), i + 1);
                                 let pair = Value::Ctor {
-                                    name: ".,".into(),
+                                    name: ",".into(),
                                     args: vec![Value::Char(ch as i32), ns],
                                 };
-                                return Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] });
+                                return Ok(Value::Ctor { name: "Some".into(), args: vec![pair] });
                             }
                         }
-                        Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                        Ok(Value::Ctor { name: "None".into(), args: vec![] })
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -692,7 +692,7 @@ impl Env {
                         }
                         let ns = make_scan(s.clone(), i);
                         let pair = Value::Ctor {
-                            name: ".,".into(),
+                            name: ",".into(),
                             args: vec![Value::Str(env.intern_string(out)), ns],
                         };
                         Ok(pair)
@@ -725,14 +725,14 @@ impl Env {
                             }
                         }
                         if out.is_empty() {
-                            Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                            Ok(Value::Ctor { name: "None".into(), args: vec![] })
                         } else {
                             let ns = make_scan(s.clone(), i);
                             let pair = Value::Ctor {
-                                name: ".,".into(),
+                                name: ",".into(),
                                 args: vec![Value::Str(env.intern_string(out)), ns],
                             };
-                            Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
+                            Ok(Value::Ctor { name: "Some".into(), args: vec![pair] })
                         }
                     }
                     _ => Err(EvalError::TypeError),
@@ -1060,7 +1060,7 @@ mod tests {
         let env = Env::with_builtins();
         let v = eval(&env, &whole).unwrap();
         match v {
-            Value::Ctor { name, .. } if name == ".True" => {}
+            Value::Ctor { name, .. } if name == "True" => {}
             _ => panic!("expected Bool true"),
         }
 
@@ -1081,7 +1081,7 @@ mod tests {
         let env2 = Env::with_builtins();
         let v = eval(&env2, &whole).unwrap();
         match v {
-            Value::Ctor { name, .. } if name == ".False" => {}
+            Value::Ctor { name, .. } if name == "False" => {}
             _ => panic!("expected Bool false"),
         }
     }

@@ -33,18 +33,18 @@
     (~assert ((~List .drop 10 [1,2]) == []) "drop more than length"));
   # Test any and all
   ~test_any_all = (~is_even = \~n -> ((~n 2) == 0);
-    (~assert ((~List .any ~is_even [1,3,5]) == .False) "any finds no match");
-    (~assert ((~List .any ~is_even [1,2,3]) == .True) "any finds match");
-    (~assert ((~List .all ~is_even [2,4,6]) == .True) "all satisfied");
-    (~assert ((~List .all ~is_even [2,3,4]) == .False) "all not satisfied"));
+    (~assert ((~List .any ~is_even [1,3,5]) == False) "any finds no match");
+    (~assert ((~List .any ~is_even [1,2,3]) == True) "any finds match");
+    (~assert ((~List .all ~is_even [2,4,6]) == True) "all satisfied");
+    (~assert ((~List .all ~is_even [2,3,4]) == False) "all not satisfied"));
   # Test sum and product
   ~test_sum_product = ((~assert ((~List .sum [1,2,3,4]) == 10) "sum computes total");
     (~assert ((~List .product [2,3,4]) == 24) "product computes result"));
   # Test head and tail
-  ~test_head_tail = ((~assert ((~List .head [1,2,3]) == .Some 1) "head of non-empty");
-    (~assert ((~List .head []) == .None) "head of empty");
-    (~assert ((~List .tail [1,2,3]) == .Some [2,3]) "tail of non-empty");
-    (~assert ((~List .tail []) == .None) "tail of empty"));
+  ~test_head_tail = ((~assert ((~List .head [1,2,3]) == Some 1) "head of non-empty");
+    (~assert ((~List .head []) == None) "head of empty");
+    (~assert ((~List .tail [1,2,3]) == Some [2,3]) "tail of non-empty");
+    (~assert ((~List .tail []) == None) "tail of empty"));
   # Test zip
   ~test_zip = ((~assert ((~List .zip [1,2] ["a","b"]) == [(1,"a"),(2,"b")]) "zip pairs elements");
     (~assert ((~List .zip [1,2,3] ["a","b"]) == [(1,"a"),(2,"b")]) "zip truncates to shorter"));
@@ -52,8 +52,8 @@
   ~test_range = ((~assert ((~List .range 1 5) == [1,2,3,4,5]) "range generates inclusive sequence");
     (~assert ((~List .range 5 3) == []) "range with a>b is empty"));
   # Test elem
-  ~test_elem = ((~assert ((~List .elem 2 [1,2,3]) == .True) "elem finds element");
-    (~assert ((~List .elem 5 [1,2,3]) == .False) "elem doesn't find element"));
+  ~test_elem = ((~assert ((~List .elem 2 [1,2,3]) == True) "elem finds element");
+    (~assert ((~List .elem 5 [1,2,3]) == False) "elem doesn't find element"));
   # Run all tests
   ~run_tests = (_ = ~test_length;
     _ = ~test_append;

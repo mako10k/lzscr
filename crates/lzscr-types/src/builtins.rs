@@ -1,23 +1,23 @@
 //! Built-in type constructors for LazyScript standard types.
 //!
 //! This module provides type constructors for:
-//! - Boolean union type (`.False` | `.True`)
-//! - Option type (`.Some` | `.None`)
-//! - Result variants (`.Ok` | `.Err`)
+//! - Boolean union type (`False` | `True`)
+//! - Option type (`Some` | `None`)
+//! - Result variants (`Ok` | `Err`)
 //! - Filesystem effects record type (`.fs`)
 //! - Effect signature lookup
 
 use crate::Type;
 use std::collections::BTreeMap;
 
-/// Construct the boolean sum type: `.False | .True`.
+/// Construct the boolean sum type: `False | True`.
 ///
 /// Used for standard library boolean operations.
 pub fn bool_sum_type() -> Type {
-    Type::SumCtor(vec![(".False".into(), vec![]), (".True".into(), vec![])])
+    Type::SumCtor(vec![("False".into(), vec![]), ("True".into(), vec![])])
 }
 
-/// Construct the option type: `.Some(T) | .None`.
+/// Construct the option type: `Some(T) | None`.
 ///
 /// Generic over the inner type parameter.
 ///
@@ -25,33 +25,33 @@ pub fn bool_sum_type() -> Type {
 ///
 /// ```ignore
 /// let opt_int = option_type(Type::Int);
-/// // => .Some(Int) | .None
+/// // => Some(Int) | None
 /// ```
 pub fn option_type(inner: Type) -> Type {
-    Type::SumCtor(vec![(".Some".into(), vec![inner]), (".None".into(), vec![])])
+    Type::SumCtor(vec![("Some".into(), vec![inner]), ("None".into(), vec![])])
 }
 
-/// Construct a Result type variant: `.Ok(Str) | .Err(Str)`.
+/// Construct a Result type variant: `Ok(Str) | Err(Str)`.
 ///
 /// Used for string-based error handling.
 pub fn result_str_str_type() -> Type {
-    Type::SumCtor(vec![(".Ok".into(), vec![Type::Str]), (".Err".into(), vec![Type::Str])])
+    Type::SumCtor(vec![("Ok".into(), vec![Type::Str]), ("Err".into(), vec![Type::Str])])
 }
 
-/// Construct a Result type variant: `.Ok(Unit) | .Err(Str)`.
+/// Construct a Result type variant: `Ok(Unit) | Err(Str)`.
 ///
 /// Used for side-effect operations that return unit on success.
 pub fn result_unit_str_type() -> Type {
-    Type::SumCtor(vec![(".Ok".into(), vec![Type::Unit]), (".Err".into(), vec![Type::Str])])
+    Type::SumCtor(vec![("Ok".into(), vec![Type::Unit]), ("Err".into(), vec![Type::Str])])
 }
 
-/// Construct a Result type variant: `.Ok(List<Str>) | .Err(Str)`.
+/// Construct a Result type variant: `Ok(List<Str>) | Err(Str)`.
 ///
 /// Used for operations returning lists of strings (e.g., directory listings).
 pub fn result_list_str_type() -> Type {
     Type::SumCtor(vec![
-        (".Ok".into(), vec![Type::List(Box::new(Type::Str))]),
-        (".Err".into(), vec![Type::Str]),
+        ("Ok".into(), vec![Type::List(Box::new(Type::Str))]),
+        ("Err".into(), vec![Type::Str]),
     ])
 }
 
@@ -73,13 +73,13 @@ pub fn fs_metadata_record_type() -> Type {
     Type::Record(fields)
 }
 
-/// Construct a Result type variant: `.Ok(Metadata) | .Err(Str)`.
+/// Construct a Result type variant: `Ok(Metadata) | Err(Str)`.
 ///
 /// Used for filesystem metadata operations.
 pub fn result_metadata_type() -> Type {
     Type::SumCtor(vec![
-        (".Ok".into(), vec![fs_metadata_record_type()]),
-        (".Err".into(), vec![Type::Str]),
+        ("Ok".into(), vec![fs_metadata_record_type()]),
+        ("Err".into(), vec![Type::Str]),
     ])
 }
 

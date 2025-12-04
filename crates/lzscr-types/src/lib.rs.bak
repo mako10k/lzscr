@@ -73,7 +73,7 @@ fn infer_expr(
     ctx.push_span(e.span);
     ctx.depth += 1;
     // Helper: convert TypeExpr to Type using ctx.tyvars and a local holes table for '?'
-    // Helper: try to find the span of a constructor symbol (e.g., .Some/.None) in an expression.
+    // Helper: try to find the span of a constructor symbol (e.g., Some/None) in an expression.
     fn find_ctor_symbol_span_in_expr(expr: &Expr) -> Option<Span> {
         match &expr.kind {
             ExprKind::Symbol(_) => Some(expr.span),
@@ -223,7 +223,7 @@ fn infer_expr(
             Ok((inst, Subst::new()))
         }
         ExprKind::Symbol(name) => {
-            if name == ".True" || name == ".False" {
+            if name == "True" || name == "False" {
                 Ok((Type::Ctor { tag: name.clone(), payload: vec![] }, Subst::new()))
             } else {
                 // Treat other bare symbol as 0-arity ctor
@@ -332,7 +332,7 @@ fn infer_expr(
                             // Fallback to regular if typing: unify branch types to a common var
                             let r = ctx.fresh_tv();
                             let s1 = ctx_unify(ctx, &tt.apply(&se).apply(&s_acc), &r)?;
-                            // 2回目の unify 失敗時に then/else のスパン（可能なら .Some/.None の記号位置）を添えて返す
+                            // 2回目の unify 失敗時に then/else のスパン（可能なら Some/None の記号位置）を添えて返す
                             let s2 =
                                 match ctx_unify(ctx, &te.apply(&s1).apply(&se).apply(&s_acc), &r) {
                                     Ok(s) => s,
@@ -358,7 +358,7 @@ fn infer_expr(
                     }
                 }
             }
-            // Special-case: constructor application via symbol, e.g., (.Some x) or (., a) b or (.,, a) b c
+            // Special-case: constructor application via symbol, e.g., (Some x) or (., a) b or (.,, a) b c
             if let ExprKind::Symbol(tag) = &func.kind {
                 if tag.starts_with('.') {
                     let (ta, sa) = infer_expr(ctx, arg, allow_effects)?;
@@ -714,7 +714,7 @@ fn infer_expr(
         ExprKind::OrElse { left, right } => {
             let (tl, sl) = infer_expr(ctx, left, allow_effects)?;
             let (tr, sr) = infer_expr(ctx, right, allow_effects)?;
-            // On unification failure, return both sides' spans (.Some/.None 記号位置があれば優先) for better diagnostics
+            // On unification failure, return both sides' spans (Some/None 記号位置があれば優先) for better diagnostics
             let s1 = match ctx_unify(ctx, &tl.apply(&sr).apply(&sl), &tr.apply(&sr)) {
                 Ok(s) => s,
                 Err(TypeError::Mismatch { expected, actual, .. }) => {
@@ -1381,7 +1381,7 @@ pub mod api {
             ("len", Type::fun(Type::Str, Type::Int)),
             ("concat", Type::fun(Type::Str, Type::fun(Type::Str, Type::Str))),
             ("slice", Type::fun(Type::Str, Type::fun(Type::Int, Type::fun(Type::Int, Type::Str)))),
-            // char_at : Str -> Int -> (.Some Char | .None)
+            // char_at : Str -> Int -> (Some Char | None)
             (
                 "char_at",
                 Type::fun(
@@ -1389,8 +1389,8 @@ pub mod api {
                     Type::fun(
                         Type::Int,
                         Type::SumCtor(vec![
-                            (".Some".into(), vec![Type::Char]),
-                            (".None".into(), vec![]),
+                            ("Some".into(), vec![Type::Char]),
+                            ("None".into(), vec![]),
                         ]),
                     ),
                 ),
@@ -1421,45 +1421,45 @@ pub mod api {
         ]);
         let scan_ns = record(vec![
             ("new", Type::fun(Type::Str, scan_state.clone())),
-            // eof returns a symbol union used in AltLambda patterns: .True | .False
+            // eof returns a symbol union used in AltLambda patterns: True | False
             (
                 "eof",
                 Type::fun(
                     scan_state.clone(),
-                    Type::SumCtor(vec![(".True".into(), vec![]), (".False".into(), vec![])]),
+                    Type::SumCtor(vec![("True".into(), vec![]), ("False".into(), vec![])]),
                 ),
             ),
             ("pos", Type::fun(scan_state.clone(), Type::Int)),
             ("set_pos", Type::fun(scan_state.clone(), Type::fun(Type::Int, scan_state.clone()))),
-            // peek : ScanState -> (.Some Char | .None)
+            // peek : ScanState -> (Some Char | None)
             (
                 "peek",
                 Type::fun(
                     scan_state.clone(),
                     Type::SumCtor(vec![
-                        (".Some".into(), vec![Type::Char]),
-                        (".None".into(), vec![]),
+                        ("Some".into(), vec![Type::Char]),
+                        ("None".into(), vec![]),
                     ]),
                 ),
             ),
-            // next : ScanState -> (.Some (., Char Scan) | .None)
+            // next : ScanState -> (Some (., Char Scan) | None)
             (
                 "next",
                 Type::fun(
                     scan_state.clone(),
                     Type::SumCtor(vec![
                         (
-                            ".Some".into(),
+                            "Some".into(),
                             vec![Type::Ctor {
-                                tag: ".,".into(),
+                                tag: ",".into(),
                                 payload: vec![Type::Char, scan_state.clone()],
                             }],
                         ),
-                        (".None".into(), vec![]),
+                        ("None".into(), vec![]),
                     ]),
                 ),
             ),
-            // take_if : (Char -> Bool-like) -> ScanState -> (.Some (., Char Scan) | .None)
+            // take_if : (Char -> Bool-like) -> ScanState -> (Some (., Char Scan) | None)
             (
                 "take_if",
                 Type::fun(
@@ -1468,13 +1468,13 @@ pub mod api {
                         scan_state.clone(),
                         Type::SumCtor(vec![
                             (
-                                ".Some".into(),
+                                "Some".into(),
                                 vec![Type::Ctor {
-                                    tag: ".,".into(),
+                                    tag: ",".into(),
                                     payload: vec![Type::Char, scan_state.clone()],
                                 }],
                             ),
-                            (".None".into(), vec![]),
+                            ("None".into(), vec![]),
                         ]),
                     ),
                 ),
@@ -1487,13 +1487,13 @@ pub mod api {
                     Type::fun(
                         scan_state.clone(),
                         Type::Ctor {
-                            tag: ".,".into(),
+                            tag: ",".into(),
                             payload: vec![Type::Str, scan_state.clone()],
                         },
                     ),
                 ),
             ),
-            // take_while1 : (Char -> Bool-like) -> ScanState -> (.Some (., Str Scan) | .None)
+            // take_while1 : (Char -> Bool-like) -> ScanState -> (Some (., Str Scan) | None)
             (
                 "take_while1",
                 Type::fun(
@@ -1502,13 +1502,13 @@ pub mod api {
                         scan_state.clone(),
                         Type::SumCtor(vec![
                             (
-                                ".Some".into(),
+                                "Some".into(),
                                 vec![Type::Ctor {
-                                    tag: ".,".into(),
+                                    tag: ",".into(),
                                     payload: vec![Type::Str, scan_state.clone()],
                                 }],
                             ),
-                            (".None".into(), vec![]),
+                            ("None".into(), vec![]),
                         ]),
                     ),
                 ),

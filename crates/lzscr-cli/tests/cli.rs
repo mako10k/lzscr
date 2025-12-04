@@ -129,7 +129,7 @@ fn effect_modules_allowed_with_flag() {
 
 #[test]
 fn compat_module_warns_with_flag() {
-    let program = "(~Compat = (~require .compat .prelude_aliases); (~Compat .is_some (.Some 1), (~Compat .map_option (\\~x -> (~x + 1)) (.Some 2))))";
+    let program = "(~Compat = (~require .compat .prelude_aliases); (~Compat .is_some (Some 1), (~Compat .map_option (\\~x -> (~x + 1)) (Some 2))))";
     let mut cmd = cli_cmd();
     cmd.args([
         "-e",
@@ -144,7 +144,7 @@ fn compat_module_warns_with_flag() {
         contains("[WARN] stdlib.compat")
             .and(contains("~is_some is deprecated"))
             .and(contains("~map_option is deprecated"))
-            .and(contains(".True, .Some(3))")),
+            .and(contains("(True, Some 3)")),
     );
 }
 
@@ -320,12 +320,12 @@ fn effect_fs_metadata_allowed_with_flag() {
     ]);
 
     cmd.assert().success().stdout(
-        contains(".Ok")
+        contains("Ok")
             .and(contains("size: 5"))
-            .and(contains("is_dir: .False"))
-            .and(contains("is_file: .True"))
-            .and(contains("readonly: .False"))
-            .and(contains("modified_ms: (.Some")),
+            .and(contains("is_dir: False"))
+            .and(contains("is_file: True"))
+            .and(contains("readonly: False"))
+            .and(contains("modified_ms: (Some")),
     );
 }
 
@@ -367,7 +367,7 @@ fn prelude_basic_smoke() {
         "foldr product [1..4] -> 24",
         "split_char 'a,b,c' ',' -> [\"a\", \"b\", \"c\"]",
         "str_len 'abc' -> 3",
-        "str_len == 3 -> .True",
+        "str_len == 3 -> True",
         "prelude_basic: done",
     ];
     for needle in expected_lines {

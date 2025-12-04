@@ -119,7 +119,7 @@ Purpose: sugar to write effects and bindings in a readable way. Inside `!{ ... }
     `!{ (Some ~x) <- (Some 10); !println (~to_str ~x); () }`
     → `(~bind (Some 10) (\\(Some ~x) -> (~chain (!println (~to_str ~x)) (~bind () (\\y -> y)))))`
   - Pattern binding (fallback on failure):
-    `((\\(Some ~x) -> x) | (\\None -> 0)) ((!{ v <- f(); v }))`
+    `((\\(Some ~x) -> x) | (\\_ -> 0)) ((!{ v <- f(); v }))`
 
 Note: Always use `~` on pattern variables (write `~x`, not `x`).
 
@@ -256,7 +256,7 @@ Used in type annotations and type values:
 
 - Literals: `.Unit, .Int, .Float, .Bool, .Str`
 - Structures: `.List T`, `.Tuple T1 ... Tn`, `{ a: T, b: U }`, `T1 -> T2`
-- Constructors: `.Foo T1 .. Tn` (where `.Foo` names the ctor tag in the type namespace)
+- Constructors: `Foo T1 .. Tn` for user-defined tags (bare names share the value-level spelling). Built-in primitives and structural heads keep their dotted spelling (e.g., `.Int`, `.List`).
 - Type variables: `%a` (leading `%`; `'a` is accepted for compatibility but `%a` is recommended)
 - Holes: `?x` (shared within the same annotation), `?` (fresh variable each time)
 
@@ -265,12 +265,12 @@ Sugar summary:
 - `(T1, T2, ..., Tn)` is shorthand for `.Tuple T1 T2 ... Tn`.
 - Records remain brace literals `{ field: Ty, ... }`; there is no `.Record` head.
 
-Notation reminder: the double-dot token `..` is part of the surface grammar (e.g., `.Foo T1 ..` or `%{Foo ..}`) and should be written literally in code. Triple dots `...` inside this document are prose ellipses meaning “and so on.”
+Notation reminder: the double-dot token `..` is part of the surface grammar (e.g., `Foo T1 ..` or `%{Foo ..}`) and should be written literally in code. Triple dots `...` inside this document are prose ellipses meaning “and so on.”
 
 Interpretation rules (conv_typeexpr):
 - `%a` resolves within the current scope (see “Pattern type variable binding” below). Unresolved names are errors.
 - `?x` is a shared type variable within the same annotation; `?` introduces a fresh variable each occurrence.
-- `.Foo ..` converts to `Ctor<'Foo, Payload>`. With zero args, `Payload = .Unit`.
+- `Foo ..` converts to `Ctor<'Foo, Payload>`. With zero args, `Payload = .Unit`.
 
 6.4 Type annotations and type values (semantics + formatting)
 

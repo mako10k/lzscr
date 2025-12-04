@@ -94,7 +94,7 @@
 []                          # Empty list
 
 # Tuples
-(1, "hello", .True())       # Tuple
+(1, "hello", True)       # Tuple
 
 # Constructors
 .Some(value)                # Constructor with value
@@ -103,7 +103,7 @@
 .Err("error")               # Error constructor
 
 # Pattern Matching (in lambdas)
-\(.Some ~x) -> ~x           # Pattern in lambda
+\(Some ~x) -> ~x           # Pattern in lambda
 \[] -> 0                    # Empty list pattern
 | \(~h : ~t) -> ~h          # Alternative pattern (cons)
 
@@ -125,7 +125,7 @@
 #### Common Patterns
 ```lzscr
 # Conditional (pattern matching on Bool)
-(\~cond -> (\(.True()) -> then_val | \(.False()) -> else_val) ~cond)
+(\~cond -> (\True -> then_val | \False -> else_val) ~cond)
 
 # Let-like binding (via lambda)
 (\~x -> body_using_x) value

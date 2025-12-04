@@ -62,13 +62,18 @@ pub struct Module {
 
 pub fn lower_expr_to_core(e: &Expr) -> Term {
     fn print_type_expr(t: &TypeExpr) -> String {
+        fn dotted(name: &str) -> String {
+            let mut s = String::from(".");
+            s.push_str(name);
+            s
+        }
         match t {
-            TypeExpr::Unit => "Unit".into(),
-            TypeExpr::Int => "Int".into(),
-            TypeExpr::Float => "Float".into(),
-            TypeExpr::Bool => "Bool".into(),
-            TypeExpr::Str => "Str".into(),
-            TypeExpr::Char => "Char".into(),
+            TypeExpr::Unit => dotted("Unit"),
+            TypeExpr::Int => dotted("Int"),
+            TypeExpr::Float => dotted("Float"),
+            TypeExpr::Bool => dotted("Bool"),
+            TypeExpr::Str => dotted("Str"),
+            TypeExpr::Char => dotted("Char"),
             TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(opt) => {
                 if let Some(a) = opt {
@@ -92,12 +97,13 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             }
             TypeExpr::Fun(a, b) => format!("{} -> {}", print_type_expr(a), print_type_expr(b)),
             TypeExpr::Ctor { tag, args } => {
+                let head = dotted(tag);
                 if args.is_empty() {
-                    tag.clone()
+                    head
                 } else {
                     format!(
                         "{} {}",
-                        tag,
+                        head,
                         args.iter().map(print_type_expr).collect::<Vec<_>>().join(" ")
                     )
                 }
@@ -415,7 +421,7 @@ fn eval_term_with_env(
         Op::Unit => Ok(IrValue::Unit),
         Op::Int(n) => Ok(IrValue::Int(*n)),
         Op::Float(f) => Ok(IrValue::Float(*f)),
-        Op::Bool(b) => Ok(IrValue::Str(if *b { ".True".into() } else { ".False".into() })),
+        Op::Bool(b) => Ok(IrValue::Str(if *b { "True".into() } else { "False".into() })),
         Op::Str(s) => Ok(IrValue::Str(s.clone())),
         Op::Char(c) => Ok(IrValue::Char(*c)),
         Op::Ref(n) => {
@@ -592,8 +598,8 @@ mod tests {
             name: "Option".into(),
             params: vec!["a".into()],
             body: TypeDefBody::Sum(vec![
-                (".None".into(), vec![]),
-                (".Some".into(), vec![TypeExpr::Var("a".into())]),
+                ("None".into(), vec![]),
+                ("Some".into(), vec![TypeExpr::Var("a".into())]),
             ]),
             span: Span::new(0, 0),
         };

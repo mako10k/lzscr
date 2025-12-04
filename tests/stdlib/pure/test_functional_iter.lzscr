@@ -1,9 +1,9 @@
  # Test for stdlib/pure/functional/iter.lzscr (finite-only)
   # Inline iter definitions (finite)
-  ~enumFromTo = \~start ~end -> ((\.True -> [] | \.False -> (~start : (~enumFromTo (~start + 1) ~end))) (~start > ~end));
+  ~enumFromTo = \~start ~end -> (\(True -> [] | \False -> (~start : (~enumFromTo (~start + 1) ~end))) (~start > ~end));
   ~scanl = \~f ~acc ~xs -> (~acc : ((\[] -> [] | \(~h : ~t) -> (~scanl ~f (~f ~acc ~h) ~t)) ~xs));
   # Helper
-  ~and = \~a ~b -> ((\.True -> ~b | \.False -> .False) ~a);
+  ~and = \~a ~b -> (\(True -> ~b | \False -> False) ~a);
   ~length = \~xs -> ((\[] -> 0 | \(~_ : ~t) -> (1 + (~length ~t))) ~xs);
   ~head = \~xs -> ((\(~h : ~_) -> ~h) ~xs);
   # Test enumFromTo

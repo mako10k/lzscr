@@ -10,7 +10,7 @@ This document consolidates the practical overview, design choices, and roadmap f
 	- Reference: `~name` resolves to a statically-bound slot at runtime evaluation.
 	- Lambda: `\x -> expr`. Blocks `{ expr }` are expressions.
 	- Lists/tuples/records: have sugars and desugars, consistent with the parser and formatter.
-	- Constructors: values use .Member-only tags, like `.Some`, `.None`, `.Ok`, `.Err`. Zero-arity forms are written as `.Tag()`. Bare `Tag` is a variable; `.Tag` is a constructor tag/symbol.
+	- Constructors: values use bare tagged identifiers like `Some`, `None`, `Ok`, `Err`. Zero-arity forms are written as the tag itself. Dot-prefixed forms (`.member`) remain symbols/method names, not constructors.
 - Syntax sugar (current root module is `Builtins` via prelude wiring):
 	- Effect sugar: `!name` → `(~effects .name)`
 	- Do-notation: `!{ ... }` → desugars to `chain/bind` sequencing
@@ -192,14 +192,14 @@ Representative builtin kinds:
 - `seq : a -> b -> b` (Pure; second arg may be IO under context check)
 - `chain/bind` are context-driven (checked by the runtime and, future, by kinds)
 
-Note: Booleans are represented by constructors `.True` / `.False` (the earlier `~true` / `~false` aliases and `true()`/`false()` sugar have been removed).
+Note: Booleans are represented by constructors `True` / `False` (the earlier `~true` / `~false` aliases and `true()`/`false()` sugar have been removed).
 
-### 10) Constructors and patterns (.Member-only)
+### 10) Constructors and patterns (bare identifiers)
 
-Policy: Constructors at the surface level are .Member-only.
-- Values: `.Tag arg1 arg2 ...`; zero-arity must be `.Tag()`
-- Patterns: `\(.Tag ~x ~y) -> ...`; zero-arity: `.Tag()`
-- Bare uppercase identifiers have no special meaning; they are just variables.
+Policy: Constructors at the surface level are bare identifiers.
+- Values: `Tag arg1 arg2 ...`; zero-arity is simply `Tag`
+- Patterns: `\(Tag ~x ~y) -> ...`; zero-arity: `Tag`
+- Dot-prefixed names remain symbols/member references and cannot be applied as constructors.
 
 Sugars and operators (excerpt):
 - Arithmetic: `+ - * /` (Int), float: `.+ .- .* ./`
@@ -218,17 +218,17 @@ CLI example:
 
 ```
 # Analyze with an expected constructor arity map
-cargo run -p lzscr-cli -- -e '.Foo 1 2' --analyze --ctor-arity 'Foo=1'
+cargo run -p lzscr-cli -- -e 'Foo 1 2' --analyze --ctor-arity 'Foo=1'
 
 # Same, JSON output
-cargo run -p lzscr-cli -- -e '.Foo 1 2' --analyze --format json --ctor-arity 'Foo=1'
+cargo run -p lzscr-cli -- -e 'Foo 1 2' --analyze --format json --ctor-arity 'Foo=1'
 
 # Runtime error example (over-application)
-cargo run -p lzscr-cli -- -e '.Bar 1 2' --ctor-arity 'Bar=1'
+cargo run -p lzscr-cli -- -e 'Bar 1 2' --ctor-arity 'Bar=1'
 ```
 
 - Current provisional behavior:
-- Parser: `Ident` at value position is a `Symbol` (constructor-like tag) and `.Member` is the canonical constructor/symbol form; `~Ident` is a `Ref`.
-- Evaluator: a `Symbol`/member tag acts like a constructor token that accumulates arguments; materialization is finalized after type/resolution work. For now, `.S()`, `.S a`, `.S a b`, etc. render as partially constructed `<fun>` values (to be finalized with type/IR work).
+- Parser: `Ident` at value position becomes a constructor `Symbol`; `.member` remains a bare symbol for member access. `~Ident` is still a `Ref`.
+- Evaluator: a constructor symbol acts like a callable that accumulates arguments until it reaches its declared arity; dot-prefixed symbols cannot be applied.
 - Builtins: resolved via references, so `~` is required. Example: `(~to_str (~add 1 2))`.
 

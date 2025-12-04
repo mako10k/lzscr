@@ -1,37 +1,37 @@
 # stdlib: Option module
-# Provides functional helpers around .Some/.None option-like constructors.
+# Provides functional helpers around Some/None option-like constructors.
 
 # Predicates
-~is_some = \(.Some _) -> .True | \.None -> .False;
-~is_none = \(.Some _) -> .False | \.None -> .True;
+~is_some = \(Some _) -> True | \_ -> False;
+~is_none = \(Some _) -> False | \_ -> True;
 
 # map (f : a -> b) : Option a -> Option b
-~map ~f = \(.Some ~x) -> .Some (~f ~x) | \.None -> .None;
+~map ~f = \(Some ~x) -> Some (~f ~x) | \_ -> None;
 
 # and_then / flat_map
-~and_then ~f = \(.Some ~x) -> (~f ~x) | \.None -> .None;
+~and_then ~f = \(Some ~x) -> (~f ~x) | \_ -> None;
 
 # or_else : Option a -> (Unit -> Option a) -> Option a (lazy alt)
 # Implemented by passing a thunk lambda with unit param
-~or_else ~th = \(.Some ~x) -> .Some ~x | \.None -> (~th ());
+~or_else ~th = \(Some ~x) -> Some ~x | \_ -> (~th ());
 
 # unwrap_or : Option a -> a -> a  (default eager)
-~unwrap_or ~def = \(.Some ~x) -> ~x | \.None -> ~def;
+~unwrap_or ~def = \(Some ~x) -> ~x | \_ -> ~def;
 
 # unwrap_or_else : Option a -> (Unit -> a) -> a (lazy default)
-~unwrap_or_else ~th = \(.Some ~x) -> ~x | \.None -> (~th ());
+~unwrap_or_else ~th = \(Some ~x) -> ~x | \_ -> (~th ());
 
 # to_list : Option a -> List a
-~to_list = \(.Some ~x) -> (~cons ~x []) | \.None -> [];
+~to_list = \(Some ~x) -> (~cons ~x []) | \_ -> [];
 
 # from_bool : Bool -> a -> Option a (true => Some a)
-~from_bool ~b ~x = (~if ~b (.Some ~x) .None);
+~from_bool ~b ~x = (~if ~b (Some ~x) None);
 
 # maybe : b -> (a -> b) -> Option a -> b
-~maybe ~def ~f = \(.Some ~x) -> (~f ~x) | \.None -> ~def;
+~maybe ~def ~f = \(Some ~x) -> (~f ~x) | \_ -> ~def;
 
 # contains : (Eq) a => a -> Option a -> Bool
-~contains ~needle = \(.Some ~x) -> (~x == ~needle) | \.None -> .False;
+~contains ~needle = \(Some ~x) -> (~x == ~needle) | \_ -> False;
 
 {
   is_some: ~is_some,

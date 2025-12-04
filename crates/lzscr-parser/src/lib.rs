@@ -725,6 +725,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             matches!(
                 tok,
                 Tok::Member(_)
+                    | Tok::Ident
                     | Tok::TyVar(_)
                     | Tok::LBracket
                     | Tok::LParen
@@ -733,91 +734,96 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             )
         }
 
-        fn ctor_from_member<'b>(
+        fn ctor_from_name<'b>(
             j: &mut usize,
             toks: &'b [lzscr_lexer::Lexed<'b>],
             raw: &str,
             span: Span,
+            allow_builtin_shorthand: bool,
         ) -> Result<TypeExpr, ParseError> {
             fn apply_ctor_rules(
                 tag: &str,
                 args: Vec<TypeExpr>,
                 span: Span,
+                allow_builtin_shorthand: bool,
             ) -> Result<TypeExpr, ParseError> {
-                match tag {
-                    "Unit" => {
-                        if !args.is_empty() {
-                            return Err(ParseError::WithSpan {
-                                msg: "`.Unit` does not take type arguments".into(),
-                                span_offset: span.offset,
-                                span_len: span.len,
-                            });
+                if allow_builtin_shorthand {
+                    match tag {
+                        "Unit" => {
+                            if !args.is_empty() {
+                                return Err(ParseError::WithSpan {
+                                    msg: "`.Unit` does not take type arguments".into(),
+                                    span_offset: span.offset,
+                                    span_len: span.len,
+                                });
+                            }
+                            return Ok(TypeExpr::Unit);
                         }
-                        Ok(TypeExpr::Unit)
-                    }
-                    "Int" => {
-                        if !args.is_empty() {
-                            return Err(ParseError::WithSpan {
-                                msg: "`.Int` does not take type arguments".into(),
-                                span_offset: span.offset,
-                                span_len: span.len,
-                            });
+                        "Int" => {
+                            if !args.is_empty() {
+                                return Err(ParseError::WithSpan {
+                                    msg: "`.Int` does not take type arguments".into(),
+                                    span_offset: span.offset,
+                                    span_len: span.len,
+                                });
+                            }
+                            return Ok(TypeExpr::Int);
                         }
-                        Ok(TypeExpr::Int)
-                    }
-                    "Float" => {
-                        if !args.is_empty() {
-                            return Err(ParseError::WithSpan {
-                                msg: "`.Float` does not take type arguments".into(),
-                                span_offset: span.offset,
-                                span_len: span.len,
-                            });
+                        "Float" => {
+                            if !args.is_empty() {
+                                return Err(ParseError::WithSpan {
+                                    msg: "`.Float` does not take type arguments".into(),
+                                    span_offset: span.offset,
+                                    span_len: span.len,
+                                });
+                            }
+                            return Ok(TypeExpr::Float);
                         }
-                        Ok(TypeExpr::Float)
-                    }
-                    "Bool" => {
-                        if !args.is_empty() {
-                            return Err(ParseError::WithSpan {
-                                msg: "`.Bool` does not take type arguments".into(),
-                                span_offset: span.offset,
-                                span_len: span.len,
-                            });
+                        "Bool" => {
+                            if !args.is_empty() {
+                                return Err(ParseError::WithSpan {
+                                    msg: "`.Bool` does not take type arguments".into(),
+                                    span_offset: span.offset,
+                                    span_len: span.len,
+                                });
+                            }
+                            return Ok(TypeExpr::Bool);
                         }
-                        Ok(TypeExpr::Bool)
-                    }
-                    "Str" => {
-                        if !args.is_empty() {
-                            return Err(ParseError::WithSpan {
-                                msg: "`.Str` does not take type arguments".into(),
-                                span_offset: span.offset,
-                                span_len: span.len,
-                            });
+                        "Str" => {
+                            if !args.is_empty() {
+                                return Err(ParseError::WithSpan {
+                                    msg: "`.Str` does not take type arguments".into(),
+                                    span_offset: span.offset,
+                                    span_len: span.len,
+                                });
+                            }
+                            return Ok(TypeExpr::Str);
                         }
-                        Ok(TypeExpr::Str)
-                    }
-                    "Char" => {
-                        if !args.is_empty() {
-                            return Err(ParseError::WithSpan {
-                                msg: "`.Char` does not take type arguments".into(),
-                                span_offset: span.offset,
-                                span_len: span.len,
-                            });
+                        "Char" => {
+                            if !args.is_empty() {
+                                return Err(ParseError::WithSpan {
+                                    msg: "`.Char` does not take type arguments".into(),
+                                    span_offset: span.offset,
+                                    span_len: span.len,
+                                });
+                            }
+                            return Ok(TypeExpr::Char);
                         }
-                        Ok(TypeExpr::Char)
-                    }
-                    "List" => {
-                        if args.len() != 1 {
-                            return Err(ParseError::WithSpan {
-                                msg: "`.List` expects exactly one type argument".into(),
-                                span_offset: span.offset,
-                                span_len: span.len,
-                            });
+                        "List" => {
+                            if args.len() != 1 {
+                                return Err(ParseError::WithSpan {
+                                    msg: "`.List` expects exactly one type argument".into(),
+                                    span_offset: span.offset,
+                                    span_len: span.len,
+                                });
+                            }
+                            return Ok(TypeExpr::List(Box::new(args.into_iter().next().unwrap())));
                         }
-                        Ok(TypeExpr::List(Box::new(args.into_iter().next().unwrap())))
+                        "Tuple" => return Ok(TypeExpr::Tuple(args)),
+                        _ => {}
                     }
-                    "Tuple" => Ok(TypeExpr::Tuple(args)),
-                    other => Ok(TypeExpr::Ctor { tag: other.to_string(), args }),
                 }
+                Ok(TypeExpr::Ctor { tag: tag.to_string(), args })
             }
 
             let mut args = Vec::new();
@@ -829,8 +835,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 let arg = parse_type_expr_bp(j, toks, 6)?;
                 args.push(arg);
             }
-            let tag = raw.trim_start_matches('.');
-            apply_ctor_rules(tag, args, span)
+            let tag = if allow_builtin_shorthand { raw.trim_start_matches('.') } else { raw };
+            apply_ctor_rules(tag, args, span, allow_builtin_shorthand)
         }
 
         fn parse_type_atom<'b>(
@@ -839,15 +845,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         ) -> Result<TypeExpr, ParseError> {
             let t = bump(j, toks).ok_or_else(|| ParseError::Generic("expected type".into()))?;
             Ok(match &t.tok {
-                Tok::Member(name) => ctor_from_member(j, toks, name, t.span)?,
+                Tok::Member(name) => ctor_from_name(j, toks, name, t.span, true)?,
                 Tok::TyVar(name) => TypeExpr::Var(name.clone()),
-                Tok::Ident => {
-                    return Err(ParseError::WithSpan {
-                        msg: "constructors in types must use dotted identifiers (e.g., .Foo)".into(),
-                        span_offset: t.span.offset,
-                        span_len: t.span.len,
-                    })
-                }
+                Tok::Ident => ctor_from_name(j, toks, t.text, t.span, false)?,
                 Tok::LBracket => {
                     let inner = parse_type_expr(j, toks)?;
                     let rb = bump(j, toks)
@@ -1034,14 +1034,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             };
             let tag = match &tagtok.tok {
                 Tok::Member(name) => name.trim_start_matches('.').to_string(),
-                Tok::Ident => {
-                    return Err(ParseError::WithSpan {
-                        msg: "constructors in type definitions must use dotted identifiers (e.g., .Foo)"
-                            .into(),
-                        span_offset: tagtok.span.offset,
-                        span_len: tagtok.span.len,
-                    });
-                }
+                Tok::Ident => tagtok.text.to_string(),
                 _ => {
                     *j = save;
                     return Ok(None);
@@ -2311,31 +2304,36 @@ mod tests {
     }
 
     #[test]
-    fn type_annotation_requires_dotted_constructors() {
-        let src = "%{Int} 1";
-        let err = parse_expr(src).expect_err("bare constructors should be rejected");
-        match err {
-            ParseError::WithSpan { msg, .. } => assert!(
-                msg.contains("dotted"),
-                "unexpected error message: {}",
-                msg
-            ),
-            other => panic!("unexpected error variant: {:?}", other),
+    fn type_annotation_accepts_bare_constructors() {
+        let src = "%{Foo} Foo";
+        let expr = parse_expr(src).expect("bare ctor type annotation should parse");
+        match expr.kind {
+            ExprKind::Annot { ty, .. } => match ty {
+                TypeExpr::Ctor { tag, args } => {
+                    assert_eq!(tag, "Foo");
+                    assert!(args.is_empty());
+                }
+                other => panic!("expected ctor type, got {:?}", other),
+            },
+            other => panic!("expected annotation, got {:?}", other),
         }
     }
 
     #[test]
-    fn type_decl_requires_dotted_constructors() {
+    fn type_decl_accepts_bare_constructors() {
         let src = "( %Maybe %a = %{ Just %a | Nothing }; 0 )";
-        let err = parse_expr(src).expect_err("bare ctor should fail");
-        match err {
-            ParseError::WithSpan { msg, .. } => assert!(
-                msg.contains("dotted"),
-                "unexpected error message: {}",
-                msg
-            ),
-            other => panic!("unexpected error variant: {:?}", other),
-        }
+        let expr = parse_expr(src).expect("bare ctor decl should parse");
+        let ExprKind::LetGroup { type_decls, .. } = expr.kind else {
+            panic!("expected let group with type decls");
+        };
+        assert_eq!(type_decls.len(), 1);
+        let decl = &type_decls[0];
+        let alts = match &decl.body {
+            TypeDefBody::Sum(alts) => alts,
+        };
+        assert_eq!(alts.len(), 2);
+        assert_eq!(alts[0].0, "Just");
+        assert_eq!(alts[1].0, "Nothing");
     }
 
     #[test]

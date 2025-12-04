@@ -207,9 +207,9 @@ search_paths = ["./stdlib", "./vendor"]
   Scan: ~Scan,
   Unicode: ~Unicode,
   # Type aliases
-  "%Bool": %{ .True | .False },
-  "%Option": %forall %a . %{ .Some %a | .None },
-  "%Result": %forall %a %e . %{ .Ok %a | .Err %e }
+  "%Bool": %{ True | False },
+  "%Option": %forall %a . %{ Some %a | None },
+  "%Result": %forall %a %e . %{ Ok %a | Err %e }
 }
 ```
 

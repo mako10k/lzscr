@@ -1,33 +1,33 @@
  # Test: stdlib/core/result.lzscr
   ~Res = (~require .core .result);
   # Test is_ok / is_err
-  ~test_predicates = ((~assert ((~Res .is_ok .Ok 42) == .True) "is_ok detects Ok");
-    (~assert ((~Res .is_ok .Err "fail") == .False) "is_ok rejects Err");
-    (~assert ((~Res .is_err .Err "fail") == .True) "is_err detects Err");
-    (~assert ((~Res .is_err .Ok 42) == .False) "is_err rejects Ok"));
+  ~test_predicates = ((~assert ((~Res .is_ok Ok 42) == True) "is_ok detects Ok");
+    (~assert ((~Res .is_ok Err "fail") == False) "is_ok rejects Err");
+    (~assert ((~Res .is_err Err "fail") == True) "is_err detects Err");
+    (~assert ((~Res .is_err Ok 42) == False) "is_err rejects Ok"));
   # Test map
   ~test_map = (~inc = \~n -> ~n + 1;
-    (~assert ((~Res .map ~inc .Ok 5) == .Ok 6) "map Ok applies function");
-    (~assert ((~Res .map ~inc .Err "e") == .Err "e") "map Err propagates error"));
+    (~assert ((~Res .map ~inc Ok 5) == Ok 6) "map Ok applies function");
+    (~assert ((~Res .map ~inc Err "e") == Err "e") "map Err propagates error"));
   # Test map_err
   ~test_map_err = (~upper = \~s -> (~Str .concat ~s "!");
-    (~assert ((~Res .map_err ~upper .Err "fail") == .Err "fail!") "map_err transforms error");
-    (~assert ((~Res .map_err ~upper .Ok 42) == .Ok 42) "map_err leaves Ok unchanged"));
+    (~assert ((~Res .map_err ~upper Err "fail") == Err "fail!") "map_err transforms error");
+    (~assert ((~Res .map_err ~upper Ok 42) == Ok 42) "map_err leaves Ok unchanged"));
   # Test and_then
-  ~test_and_then = (~safe_div = \~n -> ((\.True -> .Err "div_by_zero" | \.False -> .Ok (10 / ~n)) (~n == 0));
-    (~assert ((~Res .and_then ~safe_div .Ok 2) == .Ok 5) "and_then Ok computes");
-    (~assert ((~Res .and_then ~safe_div .Ok 0) == .Err "div_by_zero") "and_then Ok can fail");
-    (~assert ((~Res .and_then ~safe_div .Err "e") == .Err "e") "and_then Err propagates"));
+  ~test_and_then = (~safe_div = \~n -> (\(True -> Err "div_by_zero" | \False -> Ok (10 / ~n)) (~n == 0));
+    (~assert ((~Res .and_then ~safe_div Ok 2) == Ok 5) "and_then Ok computes");
+    (~assert ((~Res .and_then ~safe_div Ok 0) == Err "div_by_zero") "and_then Ok can fail");
+    (~assert ((~Res .and_then ~safe_div Err "e") == Err "e") "and_then Err propagates"));
   # Test unwrap_or
-  ~test_unwrap_or = ((~assert ((~Res .unwrap_or 99 .Ok 42) == 42) "unwrap_or Ok returns value");
-    (~assert ((~Res .unwrap_or 99 .Err "e") == 99) "unwrap_or Err returns default"));
+  ~test_unwrap_or = ((~assert ((~Res .unwrap_or 99 Ok 42) == 42) "unwrap_or Ok returns value");
+    (~assert ((~Res .unwrap_or 99 Err "e") == 99) "unwrap_or Err returns default"));
   # Test to_option
-  ~test_to_option = ((~assert ((~Res .to_option .Ok 42) == .Some 42) "to_option Ok becomes Some");
-    (~assert ((~Res .to_option .Err "e") == .None) "to_option Err becomes None"));
+  ~test_to_option = ((~assert ((~Res .to_option Ok 42) == Some 42) "to_option Ok becomes Some");
+    (~assert ((~Res .to_option Err "e") == None) "to_option Err becomes None"));
   # Test flatten
-  ~test_flatten = ((~assert ((~Res .flatten .Ok .Ok 42) == .Ok 42) "flatten Ok Ok extracts inner");
-    (~assert ((~Res .flatten .Ok .Err "inner") == .Err "inner") "flatten Ok Err propagates inner error");
-    (~assert ((~Res .flatten .Err "outer") == .Err "outer") "flatten Err propagates outer error"));
+  ~test_flatten = ((~assert ((~Res .flatten Ok Ok 42) == Ok 42) "flatten Ok Ok extracts inner");
+    (~assert ((~Res .flatten Ok Err "inner") == Err "inner") "flatten Ok Err propagates inner error");
+    (~assert ((~Res .flatten Err "outer") == Err "outer") "flatten Err propagates outer error"));
   # Run all tests
   ~run_tests = (_ = ~test_predicates;
     _ = ~test_map;

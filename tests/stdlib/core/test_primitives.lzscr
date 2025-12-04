@@ -20,7 +20,7 @@
   ~test_apply = (~inc = \~n -> (~n + 1);
     ((~Prim .apply ~inc 5) == 6));
   # Run all tests - returns true if all pass
-  (~and = \~a ~b -> ((\.True -> ~b | \.False -> .False) ~a);
+  (~and = \~a ~b -> (\(True -> ~b | \False -> False) ~a);
     ~r1 = ~test_id;
     ~r2 = ~test_compose;
     ~r3 = ~test_const;

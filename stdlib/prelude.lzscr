@@ -8,7 +8,7 @@
 ~Unicode = ~Builtins .unicode;
 
 # Core helpers
-%Bool = %{ .True | .False };
+%Bool = %{ True | False };
 
 ~id ~x = ~x;
 ~compose ~f ~g ~x = ~f (~g ~x);
@@ -57,7 +57,7 @@
 ~starts_with ~s ~pre = (
   ~n = (~Str .len ~pre);
   ~m = (~Str .len ~s);
-  ~if (~m >= ~n) (((~Str .slice ~s 0 ~n) == ~pre)) .False
+  ~if (~m >= ~n) (((~Str .slice ~s 0 ~n) == ~pre)) False
 );
 
 ~ends_with ~s ~suf = (
@@ -66,22 +66,22 @@
   ~if (~m >= ~n) (
     ~st = ~m - ~n;
     ((~Str .slice ~s ~st ~n) == ~suf)
-  ) .False
+  ) False
 );
 
-# String find: index of first occurrence of a character, else .None
+# String find: index of first occurrence of a character, else None
 ~find_char ~s ~ch = (
   ~sc = (~Scan .new ~s);
   ~loop ~st = (
-    ((\.True -> .None)
-     | (\.False -> (
+    ~if ((~Scan .eof ~st))
+      None
+      (
         ~i = (~Scan .pos ~st);
         ~opt = (~Scan .peek ~st);
-  ((\(.Some ~c) -> (~if (~c == ~ch) (.Some ~i) (~loop (~Scan .set_pos ~st (~i + 1)))))
-         | (\.None -> .None))
+        ((\(Some ~c) -> (~if (~c == ~ch) (Some ~i) (~loop (~Scan .set_pos ~st (~i + 1)))))
+         | \_ -> None)
         ~opt
-      )))
-    ((~Scan .eof ~st))
+      )
   );
   ~loop ~sc
 );
@@ -95,29 +95,30 @@
 # Range: inclusive ascending [a..b]; [] if a>b
 ~range ~a ~b = (~if (~a > ~b) [] (~cons ~a (~range (~a + 1) ~b)));
 
-# Find substring: .Some index | .None
+# Find substring: Some index | None
 ~find ~s ~pat = (
   ~n = (~Str .len ~s);
   ~m = (~Str .len ~pat);
   ~lim = ~n - ~m;
-  ~loop ~i = (~if (~i > ~lim) .None (
-    ~if (((~Str .slice ~s ~i ~m) == ~pat)) (.Some ~i) (~loop (~i + 1))
+  ~loop ~i = (~if (~i > ~lim) None (
+    ~if (((~Str .slice ~s ~i ~m) == ~pat)) (Some ~i) (~loop (~i + 1))
   ));
-  (~if (~m == 0) (.Some 0) (~loop 0))
+  (~if (~m == 0) (Some 0) (~loop 0))
 );
 
 # Split by single character separator into [Str]
 ~split_char ~s ~ch = (
   ~sc = (~Scan .new ~s);
   ~loop ~st ~start ~acc = (
-    ((\.True -> (
+    ~if ((~Scan .eof ~st))
+      (
         ~end = (~Scan .pos ~st);
         ~seg = (~Scan .slice_span ~st ~start ~end);
         (~reverse (~cons ~seg ~acc))
-      ))
-     | (\.False -> (
+      )
+      (
         ~i = (~Scan .pos ~st);
-        ((\(.Some ~c) -> (
+        ((\(Some ~c) -> (
             ~if ((~c == ~ch)) (
               ~seg = (~Scan .slice_span ~st ~start ~i);
               ~loop (~Scan .set_pos ~st (~i + 1)) (~i + 1) (~cons ~seg ~acc)
@@ -125,14 +126,13 @@
               ~loop (~Scan .set_pos ~st (~i + 1)) ~start ~acc
             )
           ))
-         | (\.None -> (
+         | \_ -> (
             ~end = (~Scan .pos ~st);
             ~seg = (~Scan .slice_span ~st ~start ~end);
             (~reverse (~cons ~seg ~acc))
-          )))
+          ))
         ((~Scan .peek ~st))
-      )))
-    ((~Scan .eof ~st))
+      )
   );
   ~loop ~sc 0 []
 );
@@ -141,20 +141,20 @@
 ~int_to_str ~n = (~to_str ~n);
 ~str_to_int ~s = (
   ~len = (~Str .len ~s);
-  ~if (~len == 0) .None (
+  ~if (~len == 0) None (
     ~neg = ((~Str .slice ~s 0 1) == "-");
     ~start = (~if (~neg) 1 0);
-    ~if (~start >= ~len) .None (
-  ~loop ~i ~acc = (~if (~i >= ~len) (.True, ~acc) (
-        ((\(.Some ~c) -> (~if ((~Char .is_digit ~c)) (
+    ~if (~start >= ~len) None (
+  ~loop ~i ~acc = (~if (~i >= ~len) (True, ~acc) (
+        ((\(Some ~c) -> (~if ((~Char .is_digit ~c)) (
             ~d = ((~Unicode .to_int ~c) - (~Unicode .to_int '0'));
             ~loop (~i + 1) ((~acc * 10) + ~d)
-          ) ( .False , ~acc )))
-         | (\.None -> ( .False , ~acc )))
+          ) ( False , ~acc )))
+         | \_ -> ( False , ~acc ))
         ((~Str .char_at ~s ~i))
       ));
       ~res = (~loop ~start 0);
-      (((\( (~ok , ~v) ) -> (~if (~ok) (.Some (~if (~neg) (0 - ~v) ~v)) .None)))) ~res
+      (((\( (~ok , ~v) ) -> (~if (~ok) (Some (~if (~neg) (0 - ~v) ~v)) None)))) ~res
     )
   )
 );
@@ -162,11 +162,7 @@
 # Inspect/render helpers ---------------------------------------------------
 ~inspect_int ~n = (~to_str ~n);
 
-~inspect_bool ~b = (
-  ((\.True -> ".True")
-   | (\.False -> ".False"))
-  ~b
-);
+~inspect_bool ~b = (~if ~b "True" "False");
 
 ~inspect_str ~s = (~Str .concat "\"" (~Str .concat ~s "\""));
 
@@ -177,14 +173,14 @@
 );
 
 ~inspect_option ~elem_inspect ~opt = (
-  (((\.None -> ".None")
-    | (\(.Some ~v) -> (~Str .concat ".Some " (~elem_inspect ~v))))
+  ((\(Some ~v) -> (~Str .concat "Some " (~elem_inspect ~v)))
+    | \_ -> "None")
    ~opt)
 );
 
 ~inspect_result ~ok_inspect ~err_inspect ~res = (
-  (((\(.Ok ~v) -> (~Str .concat ".Ok " (~ok_inspect ~v)))
-    | (\(.Err ~e) -> (~Str .concat ".Err " (~err_inspect ~e))))
+  (((\(Ok ~v) -> (~Str .concat "Ok " (~ok_inspect ~v)))
+    | (\(Err ~e) -> (~Str .concat "Err " (~err_inspect ~e))))
    ~res)
 );
 

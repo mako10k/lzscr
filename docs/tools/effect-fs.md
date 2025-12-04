@@ -1,7 +1,7 @@
 # effect/fs Module Specification
 
 ## Overview
-The `stdlib/effect/fs.lzscr` module wraps the runtime filesystem effects (`!fs.*`) so callers work with ergonomic `Result` types. Each operation returns `(.Ok value | .Err msg)` and provides convenience helpers for error handling.
+The `stdlib/effect/fs.lzscr` module wraps the runtime filesystem effects (`!fs.*`) so callers work with ergonomic `Result` types. Each operation returns `(Ok value | Err msg)` and provides convenience helpers for error handling.
 
 ## Module Path
 - **Namespace**: `.effect .fs`
@@ -13,9 +13,9 @@ The `stdlib/effect/fs.lzscr` module wraps the runtime filesystem effects (`!fs.*
 
 #### `~read_text_result`
 ```lzscr
-~read_text_result : Str -> Effect (.Ok Str | .Err Str)
+~read_text_result : Str -> Effect (Ok Str | Err Str)
 ```
-Reads entire file as a string, returning `(.Ok contents)` on success or `(.Err msg)` on failure.
+Reads entire file as a string, returning `(Ok contents)` on success or `(Err msg)` on failure.
 
 **Example**:
 ```lzscr
@@ -55,9 +55,9 @@ Returns file contents on success; calls the error handler with the error message
 
 #### `~write_text_result`
 ```lzscr
-~write_text_result : Str -> Str -> Effect (.Ok Unit | .Err Str)
+~write_text_result : Str -> Str -> Effect (Ok Unit | Err Str)
 ```
-Writes text to file (creating or truncating), returning `(.Ok ())` or `(.Err msg)`.
+Writes text to file (creating or truncating), returning `(Ok ())` or `(Err msg)`.
 
 **Example**:
 ```lzscr
@@ -86,9 +86,9 @@ Writes text to file; calls error handler with the error message on failure.
 
 #### `~append_text_result`
 ```lzscr
-~append_text_result : Str -> Str -> Effect (.Ok Unit | .Err Str)
+~append_text_result : Str -> Str -> Effect (Ok Unit | Err Str)
 ```
-Appends text to file (creating if needed), returning `(.Ok ())` or `(.Err msg)`.
+Appends text to file (creating if needed), returning `(Ok ())` or `(Err msg)`.
 
 **Example**:
 ```lzscr
@@ -117,9 +117,9 @@ Appends text; calls error handler with the error message on failure.
 
 #### `~list_dir_result`
 ```lzscr
-~list_dir_result : Str -> Effect (.Ok [Str] | .Err Str)
+~list_dir_result : Str -> Effect (Ok [Str] | Err Str)
 ```
-Lists directory entries (filenames only), returning `(.Ok entries)` or `(.Err msg)`.
+Lists directory entries (filenames only), returning `(Ok entries)` or `(Err msg)`.
 
 **Example**:
 ```lzscr
@@ -148,9 +148,9 @@ Returns directory entries on success; calls error handler on failure.
 
 #### `~remove_file_result`
 ```lzscr
-~remove_file_result : Str -> Effect (.Ok Unit | .Err Str)
+~remove_file_result : Str -> Effect (Ok Unit | Err Str)
 ```
-Deletes file, returning `(.Ok ())` or `(.Err msg)`.
+Deletes file, returning `(Ok ())` or `(Err msg)`.
 
 **Example**:
 ```lzscr
@@ -179,9 +179,9 @@ Deletes file; calls error handler on failure.
 
 #### `~create_dir_result`
 ```lzscr
-~create_dir_result : Str -> Effect (.Ok Unit | .Err Str)
+~create_dir_result : Str -> Effect (Ok Unit | Err Str)
 ```
-Creates directory (including parent directories), returning `(.Ok ())` or `(.Err msg)`.
+Creates directory (including parent directories), returning `(Ok ())` or `(Err msg)`.
 
 **Example**:
 ```lzscr
@@ -210,14 +210,14 @@ Creates directory; calls error handler on failure.
 
 #### `~metadata_result`
 ```lzscr
-~metadata_result : Str -> Effect (.Ok { size: Int, is_dir: Bool, is_file: Bool, readonly: Bool, modified_ms: (.Some Int | .None) } | .Err Str)
+~metadata_result : Str -> Effect (Ok { size: Int, is_dir: Bool, is_file: Bool, readonly: Bool, modified_ms: (Some Int | None) } | Err Str)
 ```
 Fetches file metadata record:
 - `size`: File size in bytes (clamped to `i64::MAX`)
 - `is_dir`: True if directory
 - `is_file`: True if regular file
 - `readonly`: True if read-only
-- `modified_ms`: Last modified time as epoch milliseconds wrapped in `(.Some Int | .None)` (None when platform doesn't support timestamps)
+- `modified_ms`: Last modified time as epoch milliseconds wrapped in `(Some Int | None)` (None when platform doesn't support timestamps)
 
 **Example**:
 ```lzscr

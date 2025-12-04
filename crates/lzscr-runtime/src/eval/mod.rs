@@ -304,13 +304,18 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
 
 pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
     fn print_type_expr(t: &TypeExpr) -> String {
+        fn dotted(name: &str) -> String {
+            let mut s = String::from(".");
+            s.push_str(name);
+            s
+        }
         match t {
-            TypeExpr::Unit => "Unit".into(),
-            TypeExpr::Int => "Int".into(),
-            TypeExpr::Float => "Float".into(),
-            TypeExpr::Bool => "Bool".into(),
-            TypeExpr::Str => "Str".into(),
-            TypeExpr::Char => "Char".into(),
+            TypeExpr::Unit => dotted("Unit"),
+            TypeExpr::Int => dotted("Int"),
+            TypeExpr::Float => dotted("Float"),
+            TypeExpr::Bool => dotted("Bool"),
+            TypeExpr::Str => dotted("Str"),
+            TypeExpr::Char => dotted("Char"),
             TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(Some(a)) => format!("?{}", a),
             TypeExpr::Hole(opt) => {
@@ -335,12 +340,13 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             }
             TypeExpr::Fun(a, b) => format!("{} -> {}", print_type_expr(a), print_type_expr(b)),
             TypeExpr::Ctor { tag, args } => {
+                let head = dotted(tag);
                 if args.is_empty() {
-                    tag.clone()
+                    head
                 } else {
                     format!(
                         "{} {}",
-                        tag,
+                        head,
                         args.iter().map(print_type_expr).collect::<Vec<_>>().join(" ")
                     )
                 }

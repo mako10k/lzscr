@@ -37,7 +37,7 @@ Run `python scripts/check_stdlib_classification.py` to ensure every `.lzscr` fil
 Use the surface form `(~require .pure .option)` when running inside this repository (the CLI already adds `./stdlib` to the search path). End-users can always spell the fully-qualified path `(~require .stdlib .pure .option)` if they want to be explicit. Example CLI invocation:
 
 ```
-cargo run -p lzscr-cli -- -e '( (~require .pure .option) .is_some (.Some 1) )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .option) .is_some (Some 1) )'
 ```
 
 > Effect namespaces (e.g. `(~require .effect ...)`) are gated. Run tooling with `--stdlib-mode=allow-effects` to opt in; the default `pure` mode rejects those imports to keep builds deterministic by default.
@@ -67,10 +67,10 @@ Until a dedicated test harness is wired, quick manual checks:
 
 ```
 # Option
-cargo run -p lzscr-cli -- -e '( (~require .pure .option) .map (\~x -> (~x + 1)) (.Some 41) )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .option) .map (\~x -> (~x + 1)) (Some 41) )'
 
 # Result
-cargo run -p lzscr-cli -- -e '( (~require .pure .result) .map (\~x -> (~x * 2)) (.Ok 5) )'
+cargo run -p lzscr-cli -- -e '( (~require .pure .result) .map (\~x -> (~x * 2)) (Ok 5) )'
 
 # List zip
 cargo run -p lzscr-cli -- -e '( (~require .pure .list) .zip [1,2,3] [4,5] )'

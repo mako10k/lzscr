@@ -32,8 +32,8 @@ cargo run -p lzscr-cli -- -e '(1, 2, 3)'
 cargo run -p lzscr-cli -- -e '{a: 1, b: 2}'
 # => equivalent to {"a": 1, "b": 2} (rendering order may vary)
 
-# Booleans use constructor form: .True() / .False()
-cargo run -p lzscr-cli -- -e 'if .True() 10 20'
+# Booleans use constructor form: True / False
+cargo run -p lzscr-cli -- -e 'if True 10 20'
 # => 10
 
 ## File extension / MIME / running from file (--file)

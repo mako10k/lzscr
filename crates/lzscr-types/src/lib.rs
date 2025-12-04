@@ -394,7 +394,7 @@ pub mod api {
             ("len", Type::fun(Type::Str, Type::Int)),
             ("concat", Type::fun(Type::Str, Type::fun(Type::Str, Type::Str))),
             ("slice", Type::fun(Type::Str, Type::fun(Type::Int, Type::fun(Type::Int, Type::Str)))),
-            // char_at : Str -> Int -> (.Some Char | .None)
+            // char_at : Str -> Int -> (Some Char | None)
             (
                 "char_at",
                 Type::fun(
@@ -402,8 +402,8 @@ pub mod api {
                     Type::fun(
                         Type::Int,
                         Type::SumCtor(vec![
-                            (".Some".into(), vec![Type::Char]),
-                            (".None".into(), vec![]),
+                            ("Some".into(), vec![Type::Char]),
+                            ("None".into(), vec![]),
                         ]),
                     ),
                 ),
@@ -434,45 +434,43 @@ pub mod api {
         ]);
         let scan_ns = record(vec![
             ("new", Type::fun(Type::Str, scan_state.clone())),
-            // eof returns a symbol union used in AltLambda patterns: .True | .False
+            // eof returns a symbol union used in AltLambda patterns: True | False
             (
                 "eof",
                 Type::fun(
                     scan_state.clone(),
-                    Type::SumCtor(vec![(".True".into(), vec![]), (".False".into(), vec![])]),
+                    Type::SumCtor(vec![("True".into(), vec![]), ("False".into(), vec![])]),
                 ),
             ),
             ("pos", Type::fun(scan_state.clone(), Type::Int)),
             ("set_pos", Type::fun(scan_state.clone(), Type::fun(Type::Int, scan_state.clone()))),
-            // peek : ScanState -> (.Some Char | .None)
+            // peek : ScanState -> (Some Char | None)
             (
                 "peek",
                 Type::fun(
                     scan_state.clone(),
-                    Type::SumCtor(vec![
-                        (".Some".into(), vec![Type::Char]),
-                        (".None".into(), vec![]),
-                    ]),
+                    Type::SumCtor(vec![("Some".into(), vec![Type::Char]), ("None".into(), vec![])]),
                 ),
             ),
-            // next : ScanState -> (.Some (., Char Scan) | .None)
+            // next : ScanState -> (Some (Char, Scan) | None)
             (
                 "next",
                 Type::fun(
                     scan_state.clone(),
                     Type::SumCtor(vec![
                         (
-                            ".Some".into(),
+                            "Some".into(),
                             vec![Type::Ctor {
-                                tag: ".,".into(),
+                                // Todo: Should be tuple constructor helper?
+                                tag: ",".into(),
                                 payload: vec![Type::Char, scan_state.clone()],
                             }],
                         ),
-                        (".None".into(), vec![]),
+                        ("None".into(), vec![]),
                     ]),
                 ),
             ),
-            // take_if : (Char -> Bool-like) -> ScanState -> (.Some (., Char Scan) | .None)
+            // take_if : (Char -> Bool-like) -> ScanState -> (Some (., Char Scan) | None)
             (
                 "take_if",
                 Type::fun(
@@ -481,13 +479,13 @@ pub mod api {
                         scan_state.clone(),
                         Type::SumCtor(vec![
                             (
-                                ".Some".into(),
+                                "Some".into(),
                                 vec![Type::Ctor {
-                                    tag: ".,".into(),
+                                    tag: ",".into(),
                                     payload: vec![Type::Char, scan_state.clone()],
                                 }],
                             ),
-                            (".None".into(), vec![]),
+                            ("None".into(), vec![]),
                         ]),
                     ),
                 ),
@@ -500,13 +498,13 @@ pub mod api {
                     Type::fun(
                         scan_state.clone(),
                         Type::Ctor {
-                            tag: ".,".into(),
+                            tag: ",".into(),
                             payload: vec![Type::Str, scan_state.clone()],
                         },
                     ),
                 ),
             ),
-            // take_while1 : (Char -> Bool-like) -> ScanState -> (.Some (., Str Scan) | .None)
+            // take_while1 : (Char -> Bool-like) -> ScanState -> (Some (., Str Scan) | None)
             (
                 "take_while1",
                 Type::fun(
@@ -515,13 +513,13 @@ pub mod api {
                         scan_state.clone(),
                         Type::SumCtor(vec![
                             (
-                                ".Some".into(),
+                                "Some".into(),
                                 vec![Type::Ctor {
-                                    tag: ".,".into(),
+                                    tag: ",".into(),
                                     payload: vec![Type::Str, scan_state.clone()],
                                 }],
                             ),
-                            (".None".into(), vec![]),
+                            ("None".into(), vec![]),
                         ]),
                     ),
                 ),
@@ -553,6 +551,6 @@ mod tests {
     #[test]
     fn infer_char_literal() {
         let t = infer_program("'x'").unwrap();
-        assert_eq!(t, "Char");
+        assert_eq!(t, ".Char");
     }
 }

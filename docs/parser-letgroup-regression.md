@@ -14,7 +14,7 @@ cargo run -p lzscr-cli -- --no-stdlib -f tests/min_repro.lzscr
 cargo run -p lzscr-cli -- --no-stdlib -f tests/hyp_nested.lzscr
 ```
 
-Before the fix both commands stopped at `expected , or )`. After the fix they evaluate successfully and print `%{Int} 1`.
+Before the fix both commands stopped at `expected , or )`. After the fix they evaluate successfully and print `%{.Int} 1`.
 
 ## Regression coverage
 `cargo test -p lzscr-parser --lib tests::letgroup_trailing_effect_statements`
