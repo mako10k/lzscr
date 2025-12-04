@@ -459,7 +459,16 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             let val = env.vars.get(n).cloned().ok_or_else(|| EvalError::Unbound(n.clone()))?;
             force_value(env, &val)
         }
-        ExprKind::Symbol(s) => Ok(Value::Symbol(env.intern_symbol(s))),
+        ExprKind::Symbol(s) => {
+            fn is_tuple_tag(name: &str) -> bool {
+                name.starts_with('.') && name.chars().skip(1).all(|c| c == ',')
+            }
+            if s.starts_with('.') && !is_tuple_tag(s) {
+                Ok(Value::Symbol(env.intern_symbol(s)))
+            } else {
+                Ok(Value::Ctor { name: s.clone(), args: vec![] })
+            }
+        }
         ExprKind::Lambda { param, body } => {
             Ok(Value::Closure { param: param.clone(), body: *body.clone(), env: env.clone() })
         }

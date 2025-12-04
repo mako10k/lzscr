@@ -1442,8 +1442,11 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                 }
                                 // not a '<-' after pattern: backtrack; treat as body expr
                                 *i = before;
+                            } else {
+                                // parsing failed: restore position for expr parsing path
+                                *i = before;
                             }
-                            // Parse an expression statement; if followed by ';', it's a sequencing expr; otherwise it's the final expr
+                            // Parse an expression statement; sequence if terminated by ';', else treat as final expr
                             let ex = parse_expr_bp(i, toks, 0)?;
                             if let Some(semi) = peek(*i, toks) {
                                 if matches!(semi.tok, Tok::Semicolon) {

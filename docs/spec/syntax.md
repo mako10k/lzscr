@@ -28,7 +28,7 @@
 - **Effects**: `!println` → `(~effects .println)`
 - **Type annotation**: `%{Int} expr` (annotate expression with type)
 - **Type value**: `%{Int -> Bool}` (first-class type value)
-- **Type declaration**: `%TypeName = %{ .Ctor1 T1 | .Ctor2 T2 }` (sum type definition)
+- **Type declaration**: `%TypeName = %{ Ctor1 T1 | Ctor2 T2 }` (sum type definition)
 - **Pattern type binding**: `%{'a, ?x} pat` (bind type variables in pattern scope)
 
 ### do-notation and sequencing
