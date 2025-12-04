@@ -322,11 +322,8 @@ pub(crate) fn infer_expr(
             // Special-case: constructor application via symbol, e.g., (Some x) or (., a) b or (.,, a) b c
             if let ExprKind::Symbol(tag) = &func.kind {
                 let is_tuple_ctor = tag.starts_with('.') && tag.chars().skip(1).all(|c| c == ',');
-                let is_bare_ctor = tag
-                    .chars()
-                    .next()
-                    .map(|c| c.is_ascii_uppercase())
-                    .unwrap_or(false);
+                let is_bare_ctor =
+                    tag.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false);
                 let is_dot_ctor = tag
                     .strip_prefix('.')
                     .and_then(|rest| rest.chars().next())
