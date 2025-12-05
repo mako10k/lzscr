@@ -916,10 +916,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (type_decls, mut bindings) = match flatten_prelude_bindings(prelude_rebased) {
             Ok(res) => res,
             Err(kind) => {
-                eprintln!(
-                    "stdlib prelude must consist of top-level let bindings; found {}",
-                    kind
-                );
+                eprintln!("stdlib prelude must consist of top-level let bindings; found {}", kind);
                 std::process::exit(2);
             }
         };
@@ -933,14 +930,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
         if !has_inspect_record || !has_inspect_result {
             let fallback_wrapped = format!("({})", INSPECT_FALLBACK_SRC);
-            let fallback_expr = parse_expr(&fallback_wrapped).expect("fallback inspect snippet parses");
+            let fallback_expr =
+                parse_expr(&fallback_wrapped).expect("fallback inspect snippet parses");
             let fallback_rebased = rebase_expr_spans_with_minus(&fallback_expr, 1, 1);
             if let Ok((_, mut extras)) = flatten_prelude_bindings(fallback_rebased) {
                 for (pat, expr) in extras.drain(..) {
                     if let PatternKind::Var(name) = &pat.kind {
-                        let should_add =
-                            (!has_inspect_result && name == "inspect_result")
-                                || (!has_inspect_record && name == "Inspect");
+                        let should_add = (!has_inspect_result && name == "inspect_result")
+                            || (!has_inspect_record && name == "Inspect");
                         if should_add {
                             bindings.push((pat, expr));
                         }
@@ -1793,11 +1790,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             || rendered.contains(',')
                             || rendered.contains('{')
                             || rendered.contains('[');
-                        let wrapped = if needs_wrap {
-                            format!("({})", rendered)
-                        } else {
-                            rendered
-                        };
+                        let wrapped = if needs_wrap { format!("({})", rendered) } else { rendered };
                         format!("{}: {}", k, wrapped)
                     })
                     .collect::<Vec<_>>()
@@ -2111,7 +2104,9 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
     Expr { kind, span: new_span }
 }
 
-fn flatten_prelude_bindings(mut expr: Expr) -> Result<(Vec<TypeDecl>, Vec<(Pattern, Expr)>), String> {
+fn flatten_prelude_bindings(
+    mut expr: Expr,
+) -> Result<(Vec<TypeDecl>, Vec<(Pattern, Expr)>), String> {
     let mut type_decls = Vec::new();
     let mut bindings = Vec::new();
     loop {
