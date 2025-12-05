@@ -880,23 +880,90 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let user_seg = Some((input_name.clone(), user_raw.clone(), raw_start));
         (prelude_seg, user_seg, wrapped_start)
     };
-    if prelude_for_diag.is_some() {
-        if let ExprKind::LetGroup { body, .. } = &mut ast0.kind {
-            match lzscr_parser::parse_expr(&user_code_wrapped) {
-                Ok(user_expr_raw) => {
-                    let rebased =
-                        rebase_expr_spans_with_minus(&user_expr_raw, user_wrapped_segment_start, 0);
-                    *body = Box::new(rebased);
+    if let Some((pre_src, pre_name)) = &prelude_for_diag {
+        let prelude_wrapped = format!("({})", pre_src);
+        let prelude_expr = match lzscr_parser::parse_expr(&prelude_wrapped) {
+            Ok(expr) => expr,
+            Err(err) => {
+                use lzscr_parser::ParseError;
+                match err {
+                    ParseError::WithSpan { msg, span_offset, span_len } => {
+                        let adj = span_offset.saturating_sub(1);
+                        let block = format_span_caret(pre_src, pre_name, adj, span_len);
+                        eprintln!("parse error in stdlib prelude: {}\n{}", msg, block);
+                    }
+                    ParseError::WithSpan2 {
+                        msg,
+                        span1_offset,
+                        span1_len,
+                        span2_offset,
+                        span2_len,
+                    } => {
+                        let adj1 = span1_offset.saturating_sub(1);
+                        let adj2 = span2_offset.saturating_sub(1);
+                        let block1 = format_span_caret(pre_src, pre_name, adj1, span1_len);
+                        let block2 = format_span_caret(pre_src, pre_name, adj2, span2_len);
+                        eprintln!("parse error in stdlib prelude: {}\n{}\n{}", msg, block1, block2);
+                    }
+                    other => {
+                        eprintln!("parse error in stdlib prelude: {}", other);
+                    }
                 }
-                Err(e) => {
-                    eprintln!(
-                        "internal error: failed to reparse user program for stdlib prelude: {}",
-                        e
-                    );
-                    std::process::exit(2);
+                std::process::exit(2);
+            }
+        };
+        let prelude_rebased = rebase_expr_spans_with_minus(&prelude_expr, 1, 1);
+        let (type_decls, mut bindings) = match flatten_prelude_bindings(prelude_rebased) {
+            Ok(res) => res,
+            Err(kind) => {
+                eprintln!(
+                    "stdlib prelude must consist of top-level let bindings; found {}",
+                    kind
+                );
+                std::process::exit(2);
+            }
+        };
+        let has_inspect_record = bindings.iter().any(|(pat, _)| match &pat.kind {
+            PatternKind::Var(name) if name == "Inspect" => true,
+            _ => false,
+        });
+        let has_inspect_result = bindings.iter().any(|(pat, _)| match &pat.kind {
+            PatternKind::Var(name) if name == "inspect_result" => true,
+            _ => false,
+        });
+        if !has_inspect_record || !has_inspect_result {
+            let fallback_wrapped = format!("({})", INSPECT_FALLBACK_SRC);
+            let fallback_expr = parse_expr(&fallback_wrapped).expect("fallback inspect snippet parses");
+            let fallback_rebased = rebase_expr_spans_with_minus(&fallback_expr, 1, 1);
+            if let Ok((_, mut extras)) = flatten_prelude_bindings(fallback_rebased) {
+                for (pat, expr) in extras.drain(..) {
+                    if let PatternKind::Var(name) = &pat.kind {
+                        let should_add =
+                            (!has_inspect_result && name == "inspect_result")
+                                || (!has_inspect_record && name == "Inspect");
+                        if should_add {
+                            bindings.push((pat, expr));
+                        }
+                    }
                 }
             }
         }
+        let user_expr_raw = match lzscr_parser::parse_expr(&user_code_wrapped) {
+            Ok(expr) => expr,
+            Err(e) => {
+                eprintln!(
+                    "internal error: failed to reparse user program for stdlib prelude: {}",
+                    e
+                );
+                std::process::exit(2);
+            }
+        };
+        let user_rebased =
+            rebase_expr_spans_with_minus(&user_expr_raw, user_wrapped_segment_start, 0);
+        ast0 = Expr {
+            span: lzscr_ast::span::Span::new(0, code.len()),
+            kind: ExprKind::LetGroup { type_decls, bindings, body: Box::new(user_rebased) },
+        };
     }
     let mut src_reg =
         SourceRegistry::with_segments(input_name.clone(), code.clone(), prelude_seg, user_seg);
@@ -1699,6 +1766,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )
                 } else if args.is_empty() {
                     name.clone()
+                } else if args.len() == 1 {
+                    format!("{} {}", name, val_to_string(env, &args[0]))
                 } else {
                     format!(
                         "{}({})",
@@ -1718,7 +1787,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Value::Record(map) => {
                 let inner = map
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, val_to_string(env, v)))
+                    .map(|(k, v)| {
+                        let rendered = val_to_string(env, v);
+                        let needs_wrap = rendered.chars().any(|ch| ch.is_whitespace())
+                            || rendered.contains(',')
+                            || rendered.contains('{')
+                            || rendered.contains('[');
+                        let wrapped = if needs_wrap {
+                            format!("({})", rendered)
+                        } else {
+                            rendered
+                        };
+                        format!("{}: {}", k, wrapped)
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{}}}", inner)
@@ -2029,6 +2110,31 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
     };
     Expr { kind, span: new_span }
 }
+
+fn flatten_prelude_bindings(mut expr: Expr) -> Result<(Vec<TypeDecl>, Vec<(Pattern, Expr)>), String> {
+    let mut type_decls = Vec::new();
+    let mut bindings = Vec::new();
+    loop {
+        match expr.kind {
+            ExprKind::LetGroup { type_decls: decls, bindings: mut group_bindings, body } => {
+                type_decls.extend(decls);
+                bindings.append(&mut group_bindings);
+                expr = *body;
+            }
+            ExprKind::Block(inner) => {
+                expr = *inner;
+            }
+            ExprKind::Unit => break,
+            other => return Err(node_kind_name(&other).to_string()),
+        }
+    }
+    Ok((type_decls, bindings))
+}
+
+const INSPECT_FALLBACK_SRC: &str = r#"
+    ~inspect_result ~ok_inspect ~err_inspect ~res = ((((\(Ok ~v) -> (~Str .concat "Ok " (~ok_inspect ~v))) | (\(Err ~e) -> (~Str .concat "Err " (~err_inspect ~e)))) ~res));
+    ~Inspect = {int : ~inspect_int,bool : ~inspect_bool,str : ~inspect_str,list : ~inspect_list,option : ~inspect_option,result : ~inspect_result};
+"#;
 
 fn rebase_pattern_with_minus(p: &Pattern, add: usize, minus: usize) -> Pattern {
     let kind = match &p.kind {

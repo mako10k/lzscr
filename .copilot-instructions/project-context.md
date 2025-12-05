@@ -97,19 +97,19 @@
 (1, "hello", True)       # Tuple
 
 # Constructors
-.Some(value)                # Constructor with value
-.None()                     # Zero-arity constructor
-.Ok(42)                     # Result type constructor
-.Err("error")               # Error constructor
+Some value                  # Constructor with value
+None                        # Zero-arity constructor
+Ok 42                       # Result type constructor
+Err "error"                 # Error constructor
 
 # Pattern Matching (in lambdas)
-\(Some ~x) -> ~x           # Pattern in lambda
+\(Some ~x) -> ~x            # Pattern in lambda
 \[] -> 0                    # Empty list pattern
 | \(~h : ~t) -> ~h          # Alternative pattern (cons)
 
 # Type Annotations
-%{ Int }                    # Type value
-%{ { age : Int } } { age : 25 }   # Annotated record
+%{ .Int }                   # Type value
+%{ { age : .Int } } { age : 25 }   # Annotated record
 %{ %a -> [%a] }             # Polymorphic type
 %{ ?x -> [?x] }             # Type with hole
 
@@ -393,12 +393,14 @@ gh config set git_protocol ssh
 
 ---
 
-## 📚 詳細ドキュメント
+## 📚 Detailed Documentation
 
-上記ルールの詳細版は以下に保存されています (MCPメモリシステム):
+Detailed versions of the above rules are stored below (MCP memory system):
 
-1. **Git Workflow Rules**: Git戦略、PR管理、CI/CD、マージ戦略の詳細
-2. **Development Standards**: コーディング規約、テスト標準、エラーハンドリング、パフォーマンス考慮事項
-3. **Quality Gates**: 品質チェック、リリース基準、インシデント対応、品質モニタリング
+1. **Git Workflow Rules**: Details of Git strategy, PR management, CI/CD, merge strategy
 
-これらはメモリシステムに保存され、全ての開発セッションで参照可能です。
+2. **Development Standards**: Coding conventions, testing standards, error handling, performance considerations
+
+3. **Quality Gates**: Quality checks, release criteria, incident response, quality monitoring
+
+These are stored in the memory system and can be referenced in all development sessions.
