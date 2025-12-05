@@ -913,38 +913,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         let prelude_rebased = rebase_expr_spans_with_minus(&prelude_expr, 1, 1);
-        let (type_decls, mut bindings) = match flatten_prelude_bindings(prelude_rebased) {
+        let (type_decls, bindings) = match flatten_prelude_bindings(prelude_rebased) {
             Ok(res) => res,
             Err(kind) => {
                 eprintln!("stdlib prelude must consist of top-level let bindings; found {}", kind);
                 std::process::exit(2);
             }
         };
-        let has_inspect_record = bindings.iter().any(|(pat, _)| match &pat.kind {
-            PatternKind::Var(name) if name == "Inspect" => true,
-            _ => false,
-        });
-        let has_inspect_result = bindings.iter().any(|(pat, _)| match &pat.kind {
-            PatternKind::Var(name) if name == "inspect_result" => true,
-            _ => false,
-        });
-        if !has_inspect_record || !has_inspect_result {
-            let fallback_wrapped = format!("({})", INSPECT_FALLBACK_SRC);
-            let fallback_expr =
-                parse_expr(&fallback_wrapped).expect("fallback inspect snippet parses");
-            let fallback_rebased = rebase_expr_spans_with_minus(&fallback_expr, 1, 1);
-            if let Ok((_, mut extras)) = flatten_prelude_bindings(fallback_rebased) {
-                for (pat, expr) in extras.drain(..) {
-                    if let PatternKind::Var(name) = &pat.kind {
-                        let should_add = (!has_inspect_result && name == "inspect_result")
-                            || (!has_inspect_record && name == "Inspect");
-                        if should_add {
-                            bindings.push((pat, expr));
-                        }
-                    }
-                }
-            }
-        }
         let user_expr_raw = match lzscr_parser::parse_expr(&user_code_wrapped) {
             Ok(expr) => expr,
             Err(e) => {
@@ -957,6 +932,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let user_rebased =
             rebase_expr_spans_with_minus(&user_expr_raw, user_wrapped_segment_start, 0);
+        let binding_has_name = |pat: &Pattern, needle: &str| -> bool {
+            match &pat.kind {
+                PatternKind::Var(name) | PatternKind::Symbol(name) => name == needle,
+                _ => false,
+            }
+        };
+        let has_inspect_record =
+            bindings.iter().any(|(pat, _)| binding_has_name(pat, "Inspect"));
+        let has_inspect_result =
+            bindings.iter().any(|(pat, _)| binding_has_name(pat, "inspect_result"));
+        if !has_inspect_record || !has_inspect_result {
+            eprintln!(
+                "stdlib prelude is missing required Inspect helpers (inspect_result, Inspect record)."
+            );
+            eprintln!(
+                "please ensure --stdlib-dir points to a matching stdlib that defines these bindings"
+            );
+            std::process::exit(2);
+        }
         ast0 = Expr {
             span: lzscr_ast::span::Span::new(0, code.len()),
             kind: ExprKind::LetGroup { type_decls, bindings, body: Box::new(user_rebased) },
@@ -2125,11 +2119,6 @@ fn flatten_prelude_bindings(
     }
     Ok((type_decls, bindings))
 }
-
-const INSPECT_FALLBACK_SRC: &str = r#"
-    ~inspect_result ~ok_inspect ~err_inspect ~res = ((((\(Ok ~v) -> (~Str .concat "Ok " (~ok_inspect ~v))) | (\(Err ~e) -> (~Str .concat "Err " (~err_inspect ~e)))) ~res));
-    ~Inspect = {int : ~inspect_int,bool : ~inspect_bool,str : ~inspect_str,list : ~inspect_list,option : ~inspect_option,result : ~inspect_result};
-"#;
 
 fn rebase_pattern_with_minus(p: &Pattern, add: usize, minus: usize) -> Pattern {
     let kind = match &p.kind {

@@ -9,6 +9,15 @@ The `stdlib/effect/fs.lzscr` module wraps the runtime filesystem effects (`!fs.*
 
 ## Exported API
 
+Every helper returns a `Result` so callers decide how to handle failures. Compose your own defaults with pattern matching, e.g.
+
+```lzscr
+(~Fs = (~require .effect .fs);
+	((\(Ok ~contents) -> ~contents)
+	 | (\(Err ~msg) -> (~panic (~Str .concat "fs error: " ~msg))))
+	(~Fs .read_text_result "/tmp/input"))
+```
+
 ### File Reading
 
 #### `~read_text_result`
@@ -24,32 +33,6 @@ Reads entire file as a string, returning `(Ok contents)` on success or `(Err msg
 
 ---
 
-#### `~read_text_or`
-```lzscr
-~read_text_or : Str -> Str -> Effect Str
-```
-Returns file contents on success; falls back to the provided default string on error.
-
-**Example**:
-```lzscr
-(~Fs = (~require .effect .fs); (~Fs .read_text_or "/tmp/file.txt" "default"))
-```
-
----
-
-#### `~read_text_or_else`
-```lzscr
-~read_text_or_else : Str -> (Str -> Str) -> Effect Str
-```
-Returns file contents on success; calls the error handler with the error message on failure.
-
-**Example**:
-```lzscr
-(~Fs = (~require .effect .fs); 
- (~Fs .read_text_or_else "/tmp/file.txt" (\~err -> "fallback")))
-```
-
----
 
 ### File Writing
 
@@ -66,21 +49,6 @@ Writes text to file (creating or truncating), returning `(Ok ())` or `(Err msg)`
 
 ---
 
-#### `~write_text_or`
-```lzscr
-~write_text_or : Str -> Str -> Unit -> Effect Unit
-```
-Writes text to file; returns `()` on success or the provided fallback value on error.
-
----
-
-#### `~write_text_or_else`
-```lzscr
-~write_text_or_else : Str -> Str -> (Str -> Unit) -> Effect Unit
-```
-Writes text to file; calls error handler with the error message on failure.
-
----
 
 ### File Appending
 
@@ -97,21 +65,6 @@ Appends text to file (creating if needed), returning `(Ok ())` or `(Err msg)`.
 
 ---
 
-#### `~append_text_or`
-```lzscr
-~append_text_or : Str -> Str -> Unit -> Effect Unit
-```
-Appends text; returns `()` on success or the provided fallback on error.
-
----
-
-#### `~append_text_or_else`
-```lzscr
-~append_text_or_else : Str -> Str -> (Str -> Unit) -> Effect Unit
-```
-Appends text; calls error handler with the error message on failure.
-
----
 
 ### Directory Listing
 
@@ -128,21 +81,6 @@ Lists directory entries (filenames only), returning `(Ok entries)` or `(Err msg)
 
 ---
 
-#### `~list_dir_or`
-```lzscr
-~list_dir_or : Str -> [Str] -> Effect [Str]
-```
-Returns directory entries on success; falls back to the provided list on error.
-
----
-
-#### `~list_dir_or_else`
-```lzscr
-~list_dir_or_else : Str -> (Str -> [Str]) -> Effect [Str]
-```
-Returns directory entries on success; calls error handler on failure.
-
----
 
 ### File Deletion
 
@@ -159,21 +97,6 @@ Deletes file, returning `(Ok ())` or `(Err msg)`.
 
 ---
 
-#### `~remove_file_or`
-```lzscr
-~remove_file_or : Str -> Unit -> Effect Unit
-```
-Deletes file; returns `()` on success or the provided fallback on error.
-
----
-
-#### `~remove_file_or_else`
-```lzscr
-~remove_file_or_else : Str -> (Str -> Unit) -> Effect Unit
-```
-Deletes file; calls error handler on failure.
-
----
 
 ### Directory Creation
 
@@ -190,21 +113,6 @@ Creates directory (including parent directories), returning `(Ok ())` or `(Err m
 
 ---
 
-#### `~create_dir_or`
-```lzscr
-~create_dir_or : Str -> Unit -> Effect Unit
-```
-Creates directory; returns `()` on success or the provided fallback on error.
-
----
-
-#### `~create_dir_or_else`
-```lzscr
-~create_dir_or_else : Str -> (Str -> Unit) -> Effect Unit
-```
-Creates directory; calls error handler on failure.
-
----
 
 ### File Metadata
 
@@ -226,21 +134,6 @@ Fetches file metadata record:
 
 ---
 
-#### `~metadata_or`
-```lzscr
-~metadata_or : Str -> { ... } -> Effect { ... }
-```
-Returns metadata record on success; falls back to the provided record on error.
-
----
-
-#### `~metadata_or_else`
-```lzscr
-~metadata_or_else : Str -> (Str -> { ... }) -> Effect { ... }
-```
-Returns metadata record on success; calls error handler on failure.
-
----
 
 ## Implementation Notes
 - All operations return `Effect` and must be sequenced with `~chain`.
