@@ -884,11 +884,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let ExprKind::LetGroup { body, .. } = &mut ast0.kind {
             match lzscr_parser::parse_expr(&user_code_wrapped) {
                 Ok(user_expr_raw) => {
-                    let rebased = rebase_expr_spans_with_minus(&user_expr_raw, user_wrapped_segment_start, 0);
+                    let rebased =
+                        rebase_expr_spans_with_minus(&user_expr_raw, user_wrapped_segment_start, 0);
                     *body = Box::new(rebased);
                 }
                 Err(e) => {
-                    eprintln!("internal error: failed to reparse user program for stdlib prelude: {}", e);
+                    eprintln!(
+                        "internal error: failed to reparse user program for stdlib prelude: {}",
+                        e
+                    );
                     std::process::exit(2);
                 }
             }
