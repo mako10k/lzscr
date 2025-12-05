@@ -779,6 +779,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("no input; try -e '...' or --file path");
         return Ok(());
     };
+    let user_code_wrapped = code.clone();
 
     // Preload stdlib (M1): prepend prelude as a let-group unless disabled or in formatting mode
     let stdlib_enabled = !opt.no_stdlib && !opt.format_code;
@@ -816,7 +817,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t_req_start = Instant::now();
     let module_search_paths =
         build_module_search_paths(&resolved_stdlib_dir, opt.module_path.as_deref());
-    let ast0 = match lzscr_parser::parse_expr(&code) {
+    let mut ast0 = match lzscr_parser::parse_expr(&code) {
         Ok(x) => x,
         Err(e) => {
             use lzscr_parser::ParseError;
@@ -856,7 +857,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     // Build source registry and expand requires while rebasing spans for modules
     // Build SourceRegistry with precise segment mapping back to prelude and original user file
-    let (prelude_seg, user_seg) = {
+    let (prelude_seg, user_seg, user_wrapped_segment_start) = {
         // Compute prelude segment if present
         let prelude_seg = prelude_for_diag.as_ref().map(|(pre_src, pre_name)| {
             // Combined buffer layout when prelude is enabled:
@@ -864,24 +865,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let prelude_start = 1usize; // after leading '('
             (pre_name.clone(), pre_src.clone(), prelude_start)
         });
-        // Compute user segment start in the combined buffer
-        let user_start = if let Some((pre_src, _)) = prelude_for_diag.as_ref() {
-            let mut s = 1 + pre_src.len() + 1; // '(' + prelude + '\n'
+        // Compute user segment starts (wrapped vs raw) in the combined buffer
+        let (wrapped_start, raw_start) = if let Some((pre_src, _)) = prelude_for_diag.as_ref() {
+            let wrapped = 1 + pre_src.len() + 1; // '(' + prelude + '\n'
+            let mut raw = wrapped;
             if user_wrapped_parens {
-                s += 1; // the extra '('
+                raw += 1; // skip synthetic '('
             }
-            s
+            (wrapped, raw)
         } else {
-            // No prelude; we may still have wrapped parens for file input
-            if user_wrapped_parens {
-                1
-            } else {
-                0
-            }
+            let start = if user_wrapped_parens { 1 } else { 0 };
+            (start, start)
         };
-        let user_seg = Some((input_name.clone(), user_raw.clone(), user_start));
-        (prelude_seg, user_seg)
+        let user_seg = Some((input_name.clone(), user_raw.clone(), raw_start));
+        (prelude_seg, user_seg, wrapped_start)
     };
+    if prelude_for_diag.is_some() {
+        if let ExprKind::LetGroup { body, .. } = &mut ast0.kind {
+            match lzscr_parser::parse_expr(&user_code_wrapped) {
+                Ok(user_expr_raw) => {
+                    let rebased = rebase_expr_spans_with_minus(&user_expr_raw, user_wrapped_segment_start, 0);
+                    *body = Box::new(rebased);
+                }
+                Err(e) => {
+                    eprintln!("internal error: failed to reparse user program for stdlib prelude: {}", e);
+                    std::process::exit(2);
+                }
+            }
+        }
+    }
     let mut src_reg =
         SourceRegistry::with_segments(input_name.clone(), code.clone(), prelude_seg, user_seg);
     let ast = match expand_requires_in_expr(
