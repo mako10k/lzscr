@@ -214,6 +214,30 @@ Tuples/records sugars:
 - `{k:v,...}` → `(.Record (.KV "k" v) ...)` (keys are identifiers)
 - Field access is function-call style with a symbol: `{a:1, b:2} .a`
 
+#### Mode-tagged values
+
+- `.{ ModeA: valueA, ModeB: valueB, ... }` forms a mode map. Each key is a dot-symbol (interned once) and selects the value to use when the evaluator enters that mode. Unmentioned modes fall back to the default (`Pure`).
+- `.Mode expr` is sugar for `.{ Mode: expr }`. The notation nests, so `(.Strict (.Effect expr))` layers multiple tags before the final value is read.
+- Mode maps merge the same way records do; writing `.{ Strict: (~seq ...) , Pure: (~chain ...) }` lets you ship per-mode implementations from one definition or `~require .mode .lib` result. Consumers pick the branch that matches the current evaluation context.
+- This syntax keeps the function type `(%a -> %b)` unchanged while still letting the type checker propagate a phantom `Mode` parameter (`Fn Mode %a %b`) behind the scenes.
+
+##### Pure/Strict polymorphism implementation plan
+
+1. **Parser & AST**: extend the record grammar so `.{ ... }` parses into a dedicated `ModeMap` node; keep `.Mode expr` as sugar. Ensure nesting composes during desugar.
+2. **Type system**:
+	- Introduce `Fn Mode %a %b` alias; default unresolved functions to `Fn Pure`.
+	- When a `ModeMap` wraps a function, infer each branch separately and build a `Mode → Fn Mode %a %b` table; unify overlapping branches using standard type equality.
+	- Emit diagnostics if a requested mode lacks a branch (i.e., Strict context but only Pure defined) so authors can intentionally omit or stub values.
+3. **Runtime**:
+	- Teach `Value::Closure`/`Record` to optionally carry a compact Mode table (symbol id → value). Selecting a mode clones the cached branch rather than re-evaluating.
+	- Update evaluator entry points (`seq`, `chain`, `bind`, CLI `--strict-effects`) to request the Strict branch once the context flips `in_effect_context = true`.
+	- Provide a fallback rule: if Strict is missing, fall back to Pure to preserve backward compatibility unless the author marked the mode as `.{ Strict: !missing }`.
+4. **Stdlib wiring**:
+	- Wrap sequencing helpers (`seq`, `chain`, `bind`) plus any strict-only IO shims in `.{ Strict: ..., Pure: ... }` blocks.
+	- Allow modules to export both branches via `.{ Mode: (~require ...) }` so entire namespaces become mode-polymorphic.
+5. **Tooling & docs**: update formatter/highlighter to recognize the new syntax, add CLI examples showing Strict-only definitions, and note the fallback behavior in the stdlib README.
+6. **Testing**: add parser/typechecker regressions for nested mode maps, runtime tests that assert Strict branches activate only under strict contexts, and CLI snapshots for missing-branch diagnostics.
+
 CLI example:
 
 ```

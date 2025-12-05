@@ -166,10 +166,8 @@ fn effect_fs_read_text_allowed_with_flag() {
     let mut tmp = NamedTempFile::new().unwrap();
     write!(tmp, "hello-fs").unwrap();
     let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
-    let program = format!(
-        "(~Fs = (~require .effect .fs); (~Fs .read_text_result {}))",
-        path_literal
-    );
+    let program =
+        format!("(~Fs = (~require .effect .fs); (~Fs .read_text_result {}))", path_literal);
 
     let mut cmd = cli_cmd();
     cmd.args([
@@ -235,7 +233,8 @@ fn effect_fs_list_dir_allowed_with_flag() {
     fs::write(&file_a, "a").unwrap();
     fs::write(&file_b, "b").unwrap();
     let path_literal = format!("{:?}", dir.path().to_str().unwrap());
-    let program = format!("(~Fs = (~require .effect .fs); (~Fs .list_dir_result {}))", path_literal);
+    let program =
+        format!("(~Fs = (~require .effect .fs); (~Fs .list_dir_result {}))", path_literal);
 
     let mut cmd = cli_cmd();
     cmd.args([

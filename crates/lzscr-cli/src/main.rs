@@ -938,8 +938,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => false,
             }
         };
-        let has_inspect_record =
-            bindings.iter().any(|(pat, _)| binding_has_name(pat, "Inspect"));
+        let has_inspect_record = bindings.iter().any(|(pat, _)| binding_has_name(pat, "Inspect"));
         let has_inspect_result =
             bindings.iter().any(|(pat, _)| binding_has_name(pat, "inspect_result"));
         if !has_inspect_record || !has_inspect_result {
