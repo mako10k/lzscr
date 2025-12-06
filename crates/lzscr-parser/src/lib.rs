@@ -831,12 +831,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         ) -> Result<TypeExpr, ParseError> {
             let t = bump(j, toks).ok_or_else(|| ParseError::Generic("expected type".into()))?;
             Ok(match &t.tok {
-                Tok::Member(_) => {
-                    return Err(ParseError::WithSpan {
-                        msg: "type constructors no longer use a leading '.'; remove the dot".into(),
-                        span_offset: t.span.offset,
-                        span_len: t.span.len,
-                    });
+                Tok::Member(name) => {
+                    ctor_from_name(j, toks, name.strip_prefix('.').unwrap_or(name), t.span)?
                 }
                 Tok::TyVar(name) => TypeExpr::Var(name.clone()),
                 Tok::Ident => ctor_from_name(j, toks, t.text, t.span)?,
@@ -1026,13 +1022,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             };
             let tag = match &tagtok.tok {
                 Tok::Ident => tagtok.text.to_string(),
-                Tok::Member(_) => {
-                    return Err(ParseError::WithSpan {
-                        msg: "type constructors no longer use a leading '.'; remove the dot".into(),
-                        span_offset: tagtok.span.offset,
-                        span_len: tagtok.span.len,
-                    });
-                }
+                Tok::Member(name) => name.strip_prefix('.').unwrap_or(name).to_string(),
                 _ => {
                     *j = save;
                     return Ok(None);
@@ -2305,6 +2295,22 @@ mod tests {
     fn type_annotation_accepts_bare_constructors() {
         let src = "%{Foo} Foo";
         let expr = parse_expr(src).expect("bare ctor type annotation should parse");
+        match expr.kind {
+            ExprKind::Annot { ty, .. } => match ty {
+                TypeExpr::Ctor { tag, args } => {
+                    assert_eq!(tag, "Foo");
+                    assert!(args.is_empty());
+                }
+                other => panic!("expected ctor type, got {:?}", other),
+            },
+            other => panic!("expected annotation, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn type_annotation_accepts_dotted_constructors() {
+        let src = "%{.Foo} Foo";
+        let expr = parse_expr(src).expect("dotted ctor type annotation should parse");
         match expr.kind {
             ExprKind::Annot { ty, .. } => match ty {
                 TypeExpr::Ctor { tag, args } => {
