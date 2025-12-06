@@ -831,12 +831,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         ) -> Result<TypeExpr, ParseError> {
             let t = bump(j, toks).ok_or_else(|| ParseError::Generic("expected type".into()))?;
             Ok(match &t.tok {
-                Tok::Member(_) => {
-                    return Err(ParseError::WithSpan {
-                        msg: "type constructors no longer use a leading '.'; remove the dot".into(),
-                        span_offset: t.span.offset,
-                        span_len: t.span.len,
-                    });
+                Tok::Member(name) => {
+                    ctor_from_name(j, toks, name.strip_prefix('.').unwrap_or(name), t.span)?
                 }
                 Tok::TyVar(name) => TypeExpr::Var(name.clone()),
                 Tok::Ident => ctor_from_name(j, toks, t.text, t.span)?,
@@ -1026,13 +1022,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             };
             let tag = match &tagtok.tok {
                 Tok::Ident => tagtok.text.to_string(),
-                Tok::Member(_) => {
-                    return Err(ParseError::WithSpan {
-                        msg: "type constructors no longer use a leading '.'; remove the dot".into(),
-                        span_offset: tagtok.span.offset,
-                        span_len: tagtok.span.len,
-                    });
-                }
+                Tok::Member(name) => name.strip_prefix('.').unwrap_or(name).to_string(),
                 _ => {
                     *j = save;
                     return Ok(None);
@@ -2238,6 +2228,24 @@ mod tests {
             ),
             other => panic!("expected Err(ParseError::Generic), got {:?}", other),
         }
+    }
+
+    #[test]
+    fn record_pattern_captures_field_name_span() {
+        // Phase 5 Step 7: ensure pattern record fields track name spans.
+        let src = "\\{a:~x,bb:~y}->~x";
+        let r = parse_expr(src).expect("parse error");
+        let ExprKind::Lambda { param, .. } = r.kind else {
+            panic!("expected lambda pattern");
+        };
+        let PatternKind::Record(fields) = param.kind else {
+            panic!("expected record pattern");
+        };
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].name, "a");
+        assert_eq!(fields[0].name_span, Span::new(2, 1));
+        assert_eq!(fields[1].name, "bb");
+        assert_eq!(fields[1].name_span, Span::new(7, 2));
     }
 
     #[test]
