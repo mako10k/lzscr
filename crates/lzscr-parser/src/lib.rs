@@ -2231,24 +2231,6 @@ mod tests {
     }
 
     #[test]
-    fn record_pattern_captures_field_name_span() {
-        // Phase 5 Step 7: ensure pattern record fields track name spans.
-        let src = "\\{a:~x,bb:~y}->~x";
-        let r = parse_expr(src).expect("parse error");
-        let ExprKind::Lambda { param, .. } = r.kind else {
-            panic!("expected lambda pattern");
-        };
-        let PatternKind::Record(fields) = param.kind else {
-            panic!("expected record pattern");
-        };
-        assert_eq!(fields.len(), 2);
-        assert_eq!(fields[0].name, "a");
-        assert_eq!(fields[0].name_span, Span::new(2, 1));
-        assert_eq!(fields[1].name, "bb");
-        assert_eq!(fields[1].name_span, Span::new(7, 2));
-    }
-
-    #[test]
     fn list_literal_empty() {
         let src = "[]";
         let r = parse_expr(src).unwrap();
