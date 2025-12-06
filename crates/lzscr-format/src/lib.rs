@@ -40,14 +40,7 @@ pub fn format_source_with_options(src: &str, opts: FormatOptions) -> Result<Stri
 /// LetGroup only within parentheses, we wrap the input to parse. The output will
 /// omit the wrapping parentheses when the top-level is a LetGroup.
 pub fn format_file_source(src: &str) -> Result<String, FormatError> {
-    let wrapped = format!("({})", src);
-    let pre = to_preast(&wrapped).map_err(|e| FormatError::Parse(e.to_string()))?;
-    // naive: just drop leading '(' and trailing ')' if present in tokenization
-    let mut out = preast_to_source(&pre);
-    if out.starts_with('(') && out.ends_with(')') {
-        out = out[1..out.len() - 1].to_string();
-    }
-    Ok(out)
+    format_source(src)
 }
 
 /// File-like formatting with options.
@@ -55,14 +48,7 @@ pub fn format_file_source_with_options(
     src: &str,
     opts: FormatOptions,
 ) -> Result<String, FormatError> {
-    let wrapped = format!("({})", src);
-    let pre = to_preast(&wrapped).map_err(|e| FormatError::Parse(e.to_string()))?;
-    let p = PreFormatOpts { indent: opts.indent, max_width: opts.max_width };
-    let mut out = preast_to_source_with_opts(&pre, &p);
-    if out.starts_with('(') && out.ends_with(')') {
-        out = out[1..out.len() - 1].to_string();
-    }
-    Ok(out)
+    format_source_with_options(src, opts)
 }
 
 #[cfg(test)]
@@ -75,5 +61,19 @@ mod tests {
         let out = format_source(src).unwrap();
         // expect normalized spacing and original infix preserved
         assert_eq!(out, "1 + 2 * 3");
+    }
+
+    #[test]
+    fn format_file_does_not_indent_top_level() {
+        let src = "let a = 1; let b = 2;";
+        let out = format_file_source(src).unwrap();
+        assert_eq!(out, "let a = 1;\nlet b = 2;\n");
+    }
+
+    #[test]
+    fn formats_records_multiline() {
+        let src = "{a:1,b:{c:2,d:3}}";
+        let out = format_source(src).unwrap();
+        assert_eq!(out, "{\n  a: 1,\n  b: {\n    c: 2,\n    d: 3\n  }\n}",);
     }
 }
