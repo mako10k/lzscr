@@ -984,6 +984,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Block(inner) => 1 + count(inner),
                 List(xs) => 1 + xs.iter().map(count).sum::<usize>(),
                 Record(fs) => 1 + fs.iter().map(|f| count(&f.value)).sum::<usize>(),
+                ModeMap(fs) => 1 + fs.iter().map(|f| count(&f.value)).sum::<usize>(),
                 LetGroup { bindings, body, .. } => {
                     1 + count(body) + bindings.iter().map(|(_, ex)| count(ex)).sum::<usize>()
                 }
@@ -1962,6 +1963,23 @@ fn expand_requires_in_expr(
                 })
                 .collect::<Result<Vec<_>, String>>()?,
         ),
+        ModeMap(fs) => ModeMap(
+            fs.iter()
+                .map(|f| {
+                    Ok(ExprRecordField::new(
+                        f.name.clone(),
+                        f.name_span,
+                        expand_requires_in_expr(
+                            &f.value,
+                            search_paths,
+                            stack,
+                            src_reg,
+                            stdlib_mode,
+                        )?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()?,
+        ),
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
@@ -2073,6 +2091,13 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
                 new.push(ExprRecordField::new(f.name.clone(), f.name_span, map_expr(&f.value)));
             }
             Record(new)
+        }
+        ModeMap(fields) => {
+            let mut new = Vec::with_capacity(fields.len());
+            for f in fields.iter() {
+                new.push(ExprRecordField::new(f.name.clone(), f.name_span, map_expr(&f.value)));
+            }
+            ModeMap(new)
         }
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
@@ -2272,6 +2297,7 @@ fn node_kind_name(k: &ExprKind) -> &'static str {
         ExprKind::Block(_) => "Block",
         ExprKind::List(_) => "List",
         ExprKind::Record(_) => "Record",
+        ExprKind::ModeMap(_) => "ModeMap",
         ExprKind::LetGroup { .. } => "LetGroup",
         ExprKind::Raise(_) => "Raise",
         ExprKind::AltLambda { .. } => "AltLambda",

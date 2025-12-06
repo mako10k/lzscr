@@ -748,6 +748,20 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             }
         }
         ExprKind::Block(inner) => eval(env, inner),
+        ExprKind::ModeMap(fields) => {
+            // Evaluate each field expression and collect into a record-like structure
+            // Store as Value::Record for consistency with record evaluation
+            let mut result_fields: std::collections::BTreeMap<String, Value> =
+                std::collections::BTreeMap::new();
+            for f in fields {
+                let v = eval(env, &f.value)?;
+                if let Value::Raised(_) = v {
+                    return Ok(v);
+                }
+                result_fields.insert(f.name.clone(), v);
+            }
+            Ok(Value::Record(result_fields))
+        }
         ExprKind::AltLambda { left, right } => {
             // Desugar to closure: \x -> (~alt left right x)
             let param =

@@ -106,11 +106,7 @@ fn pp_type_with_renaming(
                 .into_iter()
                 .map(|(tag, ps)| match ps.len() {
                     0 => tag,
-                    1 => format!(
-                        "{} {}",
-                        tag,
-                        pp_atom_with_renaming(&ps[0], rename_map, counter)
-                    ),
+                    1 => format!("{} {}", tag, pp_atom_with_renaming(&ps[0], rename_map, counter)),
                     _ => {
                         let parts: Vec<String> = ps
                             .into_iter()

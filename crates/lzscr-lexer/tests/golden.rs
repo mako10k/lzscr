@@ -45,6 +45,7 @@ fn format_tokens(src: &str) -> String {
             Tok::DotLess => "DotLess",
             Tok::DotGreaterEq => "DotGreaterEq",
             Tok::DotGreater => "DotGreater",
+            Tok::Dot => "Dot",
             Tok::Tilde => "Tilde",
             Tok::Float(_) => "Float",
             Tok::Int(_) => "Int",
@@ -91,5 +92,13 @@ fn golden_numbers_radix_float() {
     let input = "0x1f 0xDEAD 0o77 0b101 3.14 0.5 2e10 6.02e+23 7e-4 1.5E-2";
     let got = format_tokens(input);
     let want = read_golden("numbers_radix_float");
+    assert_eq!(got.trim(), want.trim());
+}
+
+#[test]
+fn golden_mode_map_prefix_dot() {
+    let input = ".{ Pure: 1 }";
+    let got = format_tokens(input);
+    let want = read_golden("mode_map_prefix_dot");
     assert_eq!(got.trim(), want.trim());
 }

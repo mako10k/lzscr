@@ -37,10 +37,7 @@ fn fs_write_text_types_as_result() {
     let got = infer_program(src);
     assert!(got.is_ok(), "unexpected error: {}", pretty(got));
     let ty = got.unwrap();
-    assert!(
-        ty == "(Ok Unit | Err Str)" || ty == "(Err Str | Ok Unit)",
-        "unexpected type: {ty}"
-    );
+    assert!(ty == "(Ok Unit | Err Str)" || ty == "(Err Str | Ok Unit)", "unexpected type: {ty}");
 }
 
 #[test]
@@ -49,10 +46,7 @@ fn fs_append_text_types_as_result() {
     let got = infer_program(src);
     assert!(got.is_ok(), "unexpected error: {}", pretty(got));
     let ty = got.unwrap();
-    assert!(
-        ty == "(Ok Unit | Err Str)" || ty == "(Err Str | Ok Unit)",
-        "unexpected type: {ty}"
-    );
+    assert!(ty == "(Ok Unit | Err Str)" || ty == "(Err Str | Ok Unit)", "unexpected type: {ty}");
 }
 
 #[test]
@@ -61,10 +55,7 @@ fn fs_list_dir_types_as_result() {
     let got = infer_program(src);
     assert!(got.is_ok(), "unexpected error: {}", pretty(got));
     let ty = got.unwrap();
-    assert!(
-        ty == "(Ok [Str] | Err Str)" || ty == "(Err Str | Ok [Str])",
-        "unexpected type: {ty}"
-    );
+    assert!(ty == "(Ok [Str] | Err Str)" || ty == "(Err Str | Ok [Str])", "unexpected type: {ty}");
 }
 
 #[test]
@@ -73,10 +64,7 @@ fn fs_remove_file_types_as_result() {
     let got = infer_program(src);
     assert!(got.is_ok(), "unexpected error: {}", pretty(got));
     let ty = got.unwrap();
-    assert!(
-        ty == "(Ok Unit | Err Str)" || ty == "(Err Str | Ok Unit)",
-        "unexpected type: {ty}"
-    );
+    assert!(ty == "(Ok Unit | Err Str)" || ty == "(Err Str | Ok Unit)", "unexpected type: {ty}");
 }
 
 #[test]
@@ -85,10 +73,7 @@ fn fs_create_dir_types_as_result() {
     let got = infer_program(src);
     assert!(got.is_ok(), "unexpected error: {}", pretty(got));
     let ty = got.unwrap();
-    assert!(
-        ty == "(Ok Unit | Err Str)" || ty == "(Err Str | Ok Unit)",
-        "unexpected type: {ty}"
-    );
+    assert!(ty == "(Ok Unit | Err Str)" || ty == "(Err Str | Ok Unit)", "unexpected type: {ty}");
 }
 
 #[test]

@@ -183,12 +183,21 @@ Minimal policy (current state may be ahead; see specs for details):
 - Patterns constrain by RHS type and bind variable types
 - Exceptions: `^(e)` introduces non-returning paths; caret handlers align return types
 
+**Built-in types vs. user-defined types:**
+- Built-in primitives use **dotted prefix** (`.Int`, `.Float`, `.Str`, `.Char`, `.Bool`, `.Unit`) to distinguish them from type constructor variables.
+- User-defined type constructors are **bare identifiers** (e.g., `Maybe`, `Result`) and may be applied: `Maybe Int`, `Result Int Str`.
+- Example type inference outputs:
+  - `6` → `.Int` (built-in)
+  - `'x'` → `.Char` (built-in)
+  - `Some 1` → `Maybe .Int` (user type applied to built-in)
+  - A type variable `%a` remains abstract unless constrained.
+
 Representative builtin kinds:
-- `to_str : forall a. a -> Str` (Pure)
-- `add/sub : Int -> Int -> Int` (Pure)
-- `eq : forall a. a -> a -> Bool` (Pure)
-- `lt : Int -> Int -> Bool` (Pure)
-- `print/println : Str -> Unit` (IO)
+- `to_str : forall a. a -> .Str` (Pure)
+- `add/sub : .Int -> .Int -> .Int` (Pure)
+- `eq : forall a. a -> a -> .Bool` (Pure)
+- `lt : .Int -> .Int -> .Bool` (Pure)
+- `print/println : .Str -> .Unit` (IO)
 - `seq : a -> b -> b` (Pure; second arg may be IO under context check)
 - `chain/bind` are context-driven (checked by the runtime and, future, by kinds)
 

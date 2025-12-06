@@ -475,6 +475,16 @@ pub(crate) fn infer_expr(
             }
             Ok((Type::Record(map), subst))
         }
+        ExprKind::ModeMap(fields) => {
+            // ModeMap is like a record but for mode-based dispatch
+            // For now treat as unit; phase 2 will handle polymorphic modes
+            let mut subst = Subst::new();
+            for f in fields {
+                let (_tv, sv) = infer_expr(ctx, &f.value, allow_effects)?;
+                subst = sv.compose(subst);
+            }
+            Ok((Type::Unit, subst))
+        }
         ExprKind::LetGroup { type_decls, bindings, body, .. } => {
             // Recursive let-group inference (Algorithm W style for letrec):
             // 1) Create monomorphic assumptions for each binder in all patterns using fresh type vars.
@@ -1016,5 +1026,6 @@ pub(crate) fn short_expr_kind(k: &ExprKind) -> &'static str {
         OrElse { .. } => "OrElse",
         Catch { .. } => "Catch",
         AltLambda { .. } => "AltLambda",
+        ModeMap(_) => "ModeMap",
     }
 }

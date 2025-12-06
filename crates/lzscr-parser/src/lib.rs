@@ -1090,6 +1090,78 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     ) -> Result<Expr, ParseError> {
         let t = bump(i, toks).ok_or_else(|| ParseError::Generic("unexpected EOF".into()))?;
         Ok(match &t.tok {
+            // Check for mode map syntax: .{ Mode: expr, ... }
+            Tok::Dot => {
+                // Bare dot; check if followed by {
+                if let Some(nxt) = peek(*i, toks) {
+                    if matches!(nxt.tok, Tok::LBrace) {
+                        let _ = bump(i, toks); // consume '{'
+
+                        // Parse mode map fields
+                        if let Some(check_empty) = peek(*i, toks) {
+                            if matches!(check_empty.tok, Tok::RBrace) {
+                                let r = bump(i, toks).unwrap();
+                                let span_all = Span::new(
+                                    t.span.offset,
+                                    r.span.offset + r.span.len - t.span.offset,
+                                );
+                                return Ok(Expr::new(ExprKind::ModeMap(vec![]), span_all));
+                            }
+                        }
+
+                        let mut fields: Vec<lzscr_ast::ast::ExprRecordField> = Vec::new();
+                        loop {
+                            let ktok = bump(i, toks)
+                                .ok_or_else(|| ParseError::Generic("expected mode name".into()))?;
+                            let key = match &ktok.tok {
+                                Tok::Ident => ktok.text.to_string(),
+                                _ => {
+                                    return Err(ParseError::WithSpan {
+                                        msg: "expected mode name (ident) in mode map".into(),
+                                        span_offset: ktok.span.offset,
+                                        span_len: ktok.span.len,
+                                    })
+                                }
+                            };
+                            let key_span = ktok.span;
+                            let col = bump(i, toks).ok_or_else(|| {
+                                ParseError::Generic("expected : after mode name".into())
+                            })?;
+                            if !matches!(col.tok, Tok::Colon) {
+                                return Err(ParseError::WithSpan {
+                                    msg: ": expected after mode name".into(),
+                                    span_offset: col.span.offset,
+                                    span_len: col.span.len,
+                                });
+                            }
+                            let val = parse_expr_bp(i, toks, 0)?;
+                            fields.push(lzscr_ast::ast::ExprRecordField::new(key, key_span, val));
+                            let sep = bump(i, toks).ok_or_else(|| {
+                                ParseError::Generic("expected , or } in mode map".into())
+                            })?;
+                            match sep.tok {
+                                Tok::Comma => continue,
+                                Tok::RBrace => {
+                                    let span_all = Span::new(
+                                        t.span.offset,
+                                        sep.span.offset + sep.span.len - t.span.offset,
+                                    );
+                                    return Ok(Expr::new(ExprKind::ModeMap(fields), span_all));
+                                }
+                                _ => {
+                                    return Err(ParseError::WithSpan {
+                                        msg: "expected , or } in mode map".into(),
+                                        span_offset: sep.span.offset,
+                                        span_len: sep.span.len,
+                                    })
+                                }
+                            }
+                        }
+                    }
+                }
+                // Just a dot symbol
+                Expr::new(ExprKind::Symbol(".".to_string()), t.span)
+            }
             Tok::TypeOpen => {
                 let mut j = *i;
                 let ty = parse_type_expr(&mut j, toks)?;
@@ -2580,6 +2652,61 @@ mod tests {
                 }
             }
             _ => panic!("expected LetGroup with Unit body when only leading binds"),
+        }
+    }
+
+    #[test]
+    fn mode_map_empty() {
+        let src = ".{}";
+        let r = parse_expr(src).expect("empty mode map should parse");
+        match r.kind {
+            ExprKind::ModeMap(fields) => assert!(fields.is_empty()),
+            other => panic!("expected ModeMap, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn mode_map_single_mode() {
+        let src = ".{ Pure: 1 }";
+        let r = parse_expr(src).expect("mode map with single mode should parse");
+        match r.kind {
+            ExprKind::ModeMap(fields) => {
+                assert_eq!(fields.len(), 1);
+                assert_eq!(fields[0].name, "Pure");
+                match &fields[0].value.kind {
+                    ExprKind::Int(1) => {}
+                    other => panic!("expected Int(1), got {:?}", other),
+                }
+            }
+            other => panic!("expected ModeMap, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn mode_map_multiple_modes() {
+        let src = ".{ Pure: 1, Strict: 2, Lazy: 3 }";
+        let r = parse_expr(src).expect("mode map with multiple modes should parse");
+        match r.kind {
+            ExprKind::ModeMap(fields) => {
+                assert_eq!(fields.len(), 3);
+                assert_eq!(fields[0].name, "Pure");
+                assert_eq!(fields[1].name, "Strict");
+                assert_eq!(fields[2].name, "Lazy");
+            }
+            other => panic!("expected ModeMap, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn mode_map_with_complex_expressions() {
+        let src = ".{ Pure: \\x -> x, Strict: (1 + 2) }";
+        let r = parse_expr(src).expect("mode map with complex expressions should parse");
+        match r.kind {
+            ExprKind::ModeMap(fields) => {
+                assert_eq!(fields.len(), 2);
+                matches!(fields[0].value.kind, ExprKind::Lambda { .. });
+            }
+            other => panic!("expected ModeMap, got {:?}", other),
         }
     }
 }

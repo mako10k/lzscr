@@ -181,6 +181,22 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             }
             acc
         }
+        ExprKind::ModeMap(fields) => {
+            // ModeMap: similar structure to Record, but tagged as "MODEMAP"
+            // Will be desugared further in Type and Runtime phases
+            let mut acc = Term::new(Op::Symbol("MODEMAP".into()));
+            for f in fields {
+                let kv_sym = Term::new(Op::Symbol("KV".into()));
+                let key = Term::new(Op::Str(f.name.clone()));
+                let kv1 = Term::new(Op::App { func: Box::new(kv_sym), arg: Box::new(key) });
+                let kv2 = Term::new(Op::App {
+                    func: Box::new(kv1),
+                    arg: Box::new(lower_expr_to_core(&f.value)),
+                });
+                acc = Term::new(Op::App { func: Box::new(acc), arg: Box::new(kv2) });
+            }
+            acc
+        }
         ExprKind::LetGroup { bindings, body, .. } => {
             let bs: Vec<(String, Term)> =
                 bindings.iter().map(|(p, ex)| (print_pattern(p), lower_expr_to_core(ex))).collect();

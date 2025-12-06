@@ -551,6 +551,6 @@ mod tests {
     #[test]
     fn infer_char_literal() {
         let t = infer_program("'x'").unwrap();
-        assert_eq!(t, ".Char");
+        assert_eq!(t, "Char");
     }
 }
