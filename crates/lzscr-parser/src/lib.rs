@@ -2308,6 +2308,22 @@ mod tests {
     }
 
     #[test]
+    fn type_annotation_accepts_dotted_constructors() {
+        let src = "%{.Foo} Foo";
+        let expr = parse_expr(src).expect("dotted ctor type annotation should parse");
+        match expr.kind {
+            ExprKind::Annot { ty, .. } => match ty {
+                TypeExpr::Ctor { tag, args } => {
+                    assert_eq!(tag, "Foo");
+                    assert!(args.is_empty());
+                }
+                other => panic!("expected ctor type, got {:?}", other),
+            },
+            other => panic!("expected annotation, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn type_decl_accepts_bare_constructors() {
         let src = "( %Maybe %a = %{ Just %a | Nothing }; 0 )";
         let expr = parse_expr(src).expect("bare ctor decl should parse");
