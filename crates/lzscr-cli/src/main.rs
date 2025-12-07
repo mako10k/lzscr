@@ -2124,9 +2124,7 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
     Expr { kind, span: new_span }
 }
 
-fn flatten_prelude_bindings(
-    mut expr: Expr,
-) -> Result<TypeDeclsAndExprs, String> {
+fn flatten_prelude_bindings(mut expr: Expr) -> Result<TypeDeclsAndExprs, String> {
     let mut type_decls = Vec::new();
     let mut bindings = Vec::new();
     loop {
