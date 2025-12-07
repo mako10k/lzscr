@@ -14,6 +14,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
+type TypeDeclsAndExprs = (Vec<TypeDecl>, Vec<(Pattern, Expr)>);
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum StdlibMode {
     Pure,
@@ -2124,7 +2126,7 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
 
 fn flatten_prelude_bindings(
     mut expr: Expr,
-) -> Result<(Vec<TypeDecl>, Vec<(Pattern, Expr)>), String> {
+) -> Result<TypeDeclsAndExprs, String> {
     let mut type_decls = Vec::new();
     let mut bindings = Vec::new();
     loop {

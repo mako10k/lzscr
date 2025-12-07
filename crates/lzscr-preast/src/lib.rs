@@ -209,9 +209,7 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                             at_line_start = true;
                         }
                     }
-                    if indent_level > 0 {
-                        indent_level -= 1;
-                    }
+                    indent_level = indent_level.saturating_sub(1);
                     if at_line_start {
                         col = indent_level * opts.indent;
                     }
@@ -255,35 +253,33 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                         at_line_start = false;
                     }
                     prev_is_op = false;
-                } else {
-                    if is_op {
-                        if !at_line_start && needs_space_before(&out) {
-                            out.push(' ');
-                            col += 1;
-                        }
-                        push_str(s, &mut col, &mut out);
+                } else if is_op {
+                    if !at_line_start && needs_space_before(&out) {
                         out.push(' ');
                         col += 1;
-                        prev_is_op = true;
-                        at_line_start = false;
-                    } else {
-                        if prev_is_op {
-                            if !out.ends_with(' ') {
-                                out.push(' ');
-                                col += 1;
-                            }
-                        } else if !at_line_start
-                            && needs_space_before(&out)
-                            && needs_space_before_token(s)
-                            && !out.ends_with(' ')
-                        {
+                    }
+                    push_str(s, &mut col, &mut out);
+                    out.push(' ');
+                    col += 1;
+                    prev_is_op = true;
+                    at_line_start = false;
+                } else {
+                    if prev_is_op {
+                        if !out.ends_with(' ') {
                             out.push(' ');
                             col += 1;
                         }
-                        push_str(s, &mut col, &mut out);
-                        prev_is_op = false;
-                        at_line_start = false;
+                    } else if !at_line_start
+                        && needs_space_before(&out)
+                        && needs_space_before_token(s)
+                        && !out.ends_with(' ')
+                    {
+                        out.push(' ');
+                        col += 1;
                     }
+                    push_str(s, &mut col, &mut out);
+                    prev_is_op = false;
+                    at_line_start = false;
                 }
 
                 if is_lparen || is_lbrace || is_lbracket {

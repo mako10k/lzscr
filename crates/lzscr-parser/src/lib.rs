@@ -2404,9 +2404,7 @@ mod tests {
         };
         assert_eq!(type_decls.len(), 1);
         let decl = &type_decls[0];
-        let alts = match &decl.body {
-            TypeDefBody::Sum(alts) => alts,
-        };
+        let TypeDefBody::Sum(alts) = &decl.body;
         assert_eq!(alts.len(), 2);
         assert_eq!(alts[0].0, "Just");
         assert_eq!(alts[1].0, "Nothing");
@@ -2421,9 +2419,7 @@ mod tests {
         };
         assert_eq!(type_decls.len(), 1);
         let decl = &type_decls[0];
-        let alts = match &decl.body {
-            TypeDefBody::Sum(alts) => alts,
-        };
+        let TypeDefBody::Sum(alts) = &decl.body;
         assert_eq!(alts.len(), 2);
         assert_eq!(alts[0].0, "Just");
         assert_eq!(alts[1].0, "Nothing");
