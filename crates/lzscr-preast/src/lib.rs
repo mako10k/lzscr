@@ -151,6 +151,7 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
     };
 
     let mut idx = 0usize;
+    let mut last_was_blank = false;
     while idx < pre.items.len() {
         let it = &pre.items[idx];
         let next_token = pre.items.get(idx + 1);
@@ -189,6 +190,26 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                 at_line_start = false;
             }
             PreTokenKind::Token(s) => {
+                // Preserve whitespace-only tokens (including blank lines)
+                if s.chars().all(|c| c.is_whitespace()) {
+                    // If there are any newlines in this whitespace token, collapse
+                    // consecutive blank-line runs to a single blank line.
+                    let has_newline = s.chars().any(|c| c == '\n');
+                    if has_newline {
+                        if !last_was_blank {
+                            out.push('\n');
+                            for _ in 0..(indent_level * opts.indent) {
+                                out.push(' ');
+                            }
+                            col = indent_level * opts.indent;
+                            at_line_start = true;
+                            prev_is_op = false;
+                            last_was_blank = true;
+                        }
+                    }
+                    idx += 1;
+                    continue;
+                }
                 let token_len = s.chars().count();
                 let is_op = is_operator_token(s);
                 let is_semi = s == ";";
@@ -280,6 +301,7 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                     push_str(s, &mut col, &mut out);
                     prev_is_op = false;
                     at_line_start = false;
+                    last_was_blank = false;
                 }
 
                 if is_lparen || is_lbrace || is_lbracket {
