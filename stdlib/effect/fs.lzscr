@@ -34,11 +34,11 @@
   !fs .metadata ~path
 };
 {
-  read_text_result: ~read_text_result,
-  write_text_result: ~write_text_result,
+  read_text_result  : ~read_text_result,
+  write_text_result : ~write_text_result,
   append_text_result: ~append_text_result,
-  list_dir_result: ~list_dir_result,
+  list_dir_result   : ~list_dir_result,
   remove_file_result: ~remove_file_result,
-  create_dir_result: ~create_dir_result,
-  metadata_result: ~metadata_result
+  create_dir_result : ~create_dir_result,
+  metadata_result   : ~metadata_result
 }
