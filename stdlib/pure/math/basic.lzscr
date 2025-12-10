@@ -1,25 +1,42 @@
- # stdlib/pure/math/basic.lzscr
-  # Basic mathematical operations (pure functions)
-  ~Math = ~Builtins .math;
-  # Absolute value
-  ~abs ~n = (\(True -> (0 - ~n) | \False -> ~n) (~n < 0));
-  # Minimum of two values
-  ~min ~a ~b = (\(True -> ~a | \False -> ~b) (~a < ~b));
-  # Maximum of two values
-  ~max ~a ~b = (\(True -> ~a | \False -> ~b) (~a > ~b));
-  # Clamp value between min and max
-  ~clamp ~low ~high ~val = ((\(True -> ~low | \False -> ((\(True -> ~high | \False -> ~val) (~val > ~high)))) (~val < ~low)));
-  # Sign function: -1 for negative, 0 for zero, 1 for positive
-  ~sign ~n = ((\(True -> 0 | \False -> ((\(True -> 1 | \False -> (0 - 1)) (~n > 0)))) (~n == 0)));
-  # Even/odd predicates
-  ~is_even ~n = (((~n 2) == 0));
-  ~is_odd ~n = (((~n 2) != 0));
-  # Power function (integer exponent only, via repeated multiplication)
-  ~pow ~base ~exp = (~loop = \~acc ~e -> ((\(True -> ~acc | \False -> (~loop ((~acc * ~base)) ((~e - 1)))) (~e <= 0)));
-    (\(True -> 1 | \False -> (~loop ~base ~exp)) (~exp < 0)));
-  # Greatest common divisor (Euclidean algorithm)
-  ~gcd ~a ~b = ((\(True -> ~a | \False -> (~gcd ~b ((~a ~b)))) (~b == 0)));
-  # Least common multiple
-  ~lcm ~a ~b = (~g = (~gcd ~a ~b);
-    (((~a * ~b) / ~g)));
-  {abs : ~abs,min : ~min,max : ~max,clamp : ~clamp,sign : ~sign,is_even : ~is_even,is_odd : ~is_odd,pow : ~pow,gcd : ~gcd,lcm : ~lcm}
+# stdlib/pure/math/basic.lzscr
+# Basic mathematical operations (pure functions)
+~Math                  = ~Builtins .math;
+# Absolute value
+~abs ~n                = (\(True -> (0 - ~n) | \False -> ~n) (~n < 0));
+# Minimum of two values
+~min ~a ~b             = (\(True -> ~a | \False -> ~b) (~a < ~b));
+# Maximum of two values
+~max ~a ~b             = (\(True -> ~a | \False -> ~b) (~a > ~b));
+# Clamp value between min and max
+~clamp ~low ~high ~val = ((\(True -> ~low | \False -> ((\(True -> ~high | \False -> ~val) (~val > ~
+            high
+          )))) (~val < ~low)));
+# Sign function: -1 for negative, 0 for zero, 1 for positive
+~sign ~n               = ((\(True -> 0 | \False -> ((\(True -> 1 | \False -> (0 - 1)) (~n > 0)))) (~n == 0)));
+# Even/odd predicates
+~is_even ~n            = (((~n 2) == 0));
+~is_odd ~n             = (((~n 2) != 0));
+# Power function (integer exponent only, via repeated multiplication)
+~pow ~base ~exp        = (~loop = \~acc ~e -> ((\(True -> ~acc | \False -> (~loop ((~acc * ~base)) ((~e - 
+              1
+            )))) (~e <= 0)));
+  (\(True -> 1 | \False -> (~loop ~base ~exp)) (~exp < 0))
+);
+# Greatest common divisor (Euclidean algorithm)
+~gcd ~a ~b             = ((\(True -> ~a | \False -> (~gcd ~b ((~a ~b)))) (~b == 0)));
+# Least common multiple
+~lcm ~a ~b             = (~g = (~gcd ~a ~b);
+  (((~a * ~b) / ~g))
+);
+{
+  abs    : ~abs,
+  min    : ~min,
+  max    : ~max,
+  clamp  : ~clamp,
+  sign   : ~sign,
+  is_even: ~is_even,
+  is_odd : ~is_odd,
+  pow    : ~pow,
+  gcd    : ~gcd,
+  lcm    : ~lcm
+}

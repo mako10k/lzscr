@@ -2,27 +2,26 @@
 # Wrappers around the builtin `!print` / `!println` effects plus a few conveniences
 # for rendering values in effect contexts.
 
-~Str = ~Builtins .string;
+~Str               = ~Builtins .string;
 
-~print ~msg = (~chain (!print ~msg) ());
-~println ~msg = (~chain (!println ~msg) ());
+~print ~msg        = (~chain (!print ~msg) ());
+~println ~msg      = (~chain (!println ~msg) ());
 
 # show: print the string form of any value (uses ~to_str)
-~show ~value = (~chain (~println (~to_str ~value)) ());
+~show ~value       = (~chain (~println (~to_str ~value)) ());
 
 # log: prefix label + rendered value on a single line
-~log ~label ~value = (
-  ~rendered = (~Str .concat ~label (~to_str ~value));
+~log ~label ~value = (~rendered = (~Str .concat ~label (~to_str ~value));
   (~chain (~println ~rendered) ())
 );
 
 # say_all: print each string in the list, each on its own line
-~say_all ~xs = ((\[] -> () | \( ~head : ~tail ) -> (~chain (~println ~head) (~say_all ~tail))) ~xs);
+~say_all ~xs       = ((\[] -> () | \(~head: ~tail) -> (~chain (~println ~head) (~say_all ~tail))) ~xs);
 
 {
-  print: ~print,
+  print  : ~print,
   println: ~println,
-  show: ~show,
-  log: ~log,
+  show   : ~show,
+  log    : ~log,
   say_all: ~say_all
 }

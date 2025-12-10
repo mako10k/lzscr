@@ -1,18 +1,25 @@
- # stdlib/core/bool.lzscr
-  # Boolean type operations
-  # Constructors: True | False
-  # Type definition (for documentation)
-  %Bool = %{True | False};
-  # Logical NOT
-  ~not ~b = \(True -> False | \False -> True) ~b;
-  # Logical AND (short-circuit via lazy evaluation)
-  ~and ~a ~b = \(True -> ~b | \False -> False) ~a;
-  # Logical OR (short-circuit via lazy evaluation)
-  ~or ~a ~b = \(True -> True | \False -> ~b) ~a;
-  # Logical XOR
-  ~xor ~a ~b = (\(True -> (~not ~b) | \False -> ~b) ~a);
-  # Conditional: if condition then-branch else-branch
-  ~if ~cond ~then ~else = \(True -> ~then | \False -> ~else) ~cond;
-  # Boolean equality
-  ~eq ~a ~b = (\(True -> ~b | \False -> (~not ~b)) ~a);
-  {not : ~not,and : ~and,or : ~or,xor : ~xor,if : ~if,eq : ~eq}
+# stdlib/core/bool.lzscr
+# Boolean type operations
+# Constructors: True | False
+# Type definition (for documentation)
+%Bool                 = %{True | False};
+# Logical NOT
+~not ~b               = \(True -> False | \False -> True) ~b;
+# Logical AND (short-circuit via lazy evaluation)
+~and ~a ~b            = \(True -> ~b | \False -> False) ~a;
+# Logical OR (short-circuit via lazy evaluation)
+~or ~a ~b             = \(True -> True | \False -> ~b) ~a;
+# Logical XOR
+~xor ~a ~b            = (\(True -> (~not ~b) | \False -> ~b) ~a);
+# Conditional: if condition then-branch else-branch
+~if ~cond ~then ~else = \(True -> ~then | \False -> ~else) ~cond;
+# Boolean equality
+~eq ~a ~b             = (\(True -> ~b | \False -> (~not ~b)) ~a);
+{
+  not: ~not,
+  and: ~and,
+  or : ~or,
+  xor: ~xor,
+  if : ~if,
+  eq : ~eq
+}

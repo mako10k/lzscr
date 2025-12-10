@@ -3,50 +3,51 @@
 # `stdlib/prelude.lzscr`. Each alias logs a warning via `effect/log` before
 # delegating to the canonical helper under `stdlib/pure/*`.
 
-~Str = ~Builtins .string;
-~Option = (~require .pure .option);
-~Result = (~require .pure .result);
-~Log = (~require .effect .log);
+~Str                              = ~Builtins .string;
+~Option                           = (~require .pure .option);
+~Result                           = (~require .pure .result);
+~Log                              = (~require .effect .log);
 
-~warn_alias ~alias ~target ~value = (
-  ~msg = (~Str .concat ~alias (~Str .concat " is deprecated; call " ~target));
+~warn_alias ~alias ~target ~value = (~msg = (~Str .concat ~alias (~Str .concat
+      " is deprecated; call " ~target
+    ));
   (~chain ((~Log .warn) "stdlib.compat" ~msg) ~value)
 );
 
-~is_some ~opt = (
-  ~warn_alias "~is_some" "(~require .pure .option) .is_some" ((~Option .is_some) ~opt)
-);
+~is_some ~opt                     = (~warn_alias "~is_some" "(~require .pure .option) .is_some" ((~Option .is_some) ~
+    opt
+  ));
 
-~is_none ~opt = (
-  ~warn_alias "~is_none" "(~require .pure .option) .is_none" ((~Option .is_none) ~opt)
-);
+~is_none ~opt                     = (~warn_alias "~is_none" "(~require .pure .option) .is_none" ((~Option .is_none) ~
+    opt
+  ));
 
-~map_option ~f ~opt = (
-  ~warn_alias "~map_option" "(~require .pure .option) .map" ((~Option .map) ~f ~opt)
-);
+~map_option ~f ~opt               = (~warn_alias "~map_option" "(~require .pure .option) .map" ((~Option .map) ~f
+    ~opt
+  ));
 
-~unwrap_or ~fallback ~opt = (
-  ~warn_alias "~unwrap_or" "(~require .pure .option) .unwrap_or" ((~Option .unwrap_or) ~fallback ~opt)
-);
+~unwrap_or ~fallback ~opt         = (~warn_alias "~unwrap_or" "(~require .pure .option) .unwrap_or" ((~
+      Option .unwrap_or
+    ) ~fallback ~opt));
 
-~map_result ~f ~res = (
-  ~warn_alias "~map_result" "(~require .pure .result) .map" ((~Result .map) ~f ~res)
-);
+~map_result ~f ~res               = (~warn_alias "~map_result" "(~require .pure .result) .map" ((~Result .map) ~f
+    ~res
+  ));
 
-~map_err ~f ~res = (
-  ~warn_alias "~map_err" "(~require .pure .result) .map_err" ((~Result .map_err) ~f ~res)
-);
+~map_err ~f ~res                  = (~warn_alias "~map_err" "(~require .pure .result) .map_err" ((~Result .map_err) ~
+    f ~res
+  ));
 
-~unwrap_or_else ~handler ~res = (
-  ~warn_alias "~unwrap_or_else" "(~require .pure .result) .unwrap_or_else" ((~Result .unwrap_or_else) ~handler ~res)
+~unwrap_or_else ~handler ~res     = (~warn_alias "~unwrap_or_else"
+  "(~require .pure .result) .unwrap_or_else" ((~Result .unwrap_or_else) ~handler ~res)
 );
 
 {
-  is_some: ~is_some,
-  is_none: ~is_none,
-  map_option: ~map_option,
-  unwrap_or: ~unwrap_or,
-  map_result: ~map_result,
-  map_err: ~map_err,
+  is_some       : ~is_some,
+  is_none       : ~is_none,
+  map_option    : ~map_option,
+  unwrap_or     : ~unwrap_or,
+  map_result    : ~map_result,
+  map_err       : ~map_err,
   unwrap_or_else: ~unwrap_or_else
 }

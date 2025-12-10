@@ -1,66 +1,66 @@
 # stdlib: List extra utilities built atop core prelude (~cons, ~foldl, etc.)
 
 # any : (a -> Bool) -> [a] -> Bool
-~any ~p ~xs = (\[] -> False | \( ~h : ~t ) -> (~if (~p ~h) True (~any ~p ~t))) ~xs;
+~any ~p ~xs           = (\[] -> False | \(~h: ~t) -> (~if (~p ~h) True (~any ~p ~t))) ~xs;
 
 # all : (a -> Bool) -> [a] -> Bool
-~all ~p ~xs = (\[] -> True | \( ~h : ~t ) -> (~if (~p ~h) (~all ~p ~t) False)) ~xs;
+~all ~p ~xs           = (\[] -> True | \(~h: ~t) -> (~if (~p ~h) (~all ~p ~t) False)) ~xs;
 
 # sum : [Int] -> Int
-~sum ~xs = (~foldl (\~acc ~x -> (~acc + ~x)) 0 ~xs);
+~sum ~xs              = (~foldl (\~acc ~x -> (~acc + ~x)) 0 ~xs);
 
 # product : [Int] -> Int
-~product ~xs = (~foldl (\~acc ~x -> (~acc * ~x)) 1 ~xs);
+~product ~xs          = (~foldl (\~acc ~x -> (~acc * ~x)) 1 ~xs);
 
 # head : [a] -> Option a
-~head ~xs = (\[] -> None | \( ~h : ~_ ) -> Some ~h) ~xs;
+~head ~xs             = (\[] -> None | \(~h: ~_) -> Some ~h) ~xs;
 
 # tail : [a] -> Option [a]
-~tail ~xs = (\[] -> None | \( _ : ~t ) -> Some ~t) ~xs;
+~tail ~xs             = (\[] -> None | \(_: ~t) -> Some ~t) ~xs;
 
 # take_while : (a -> Bool) -> [a] -> [a]
-~take_while ~p ~xs = (\[] -> [] | \( ~h : ~t ) -> (~if (~p ~h) (~cons ~h (~take_while ~p ~t)) [])) ~xs;
+~take_while ~p ~xs    = (\[] -> [] | \(~h: ~t) -> (~if (~p ~h) (~cons ~h (~take_while ~p ~t)) [])) ~xs;
 
 # drop_while : (a -> Bool) -> [a] -> [a]
-~drop_while ~p ~xs = (\[] -> [] | \( ~h : ~t ) -> (~if (~p ~h) (~drop_while ~p ~t) (~cons ~h ~t))) ~xs;
+~drop_while ~p ~xs    = (\[] -> [] | \(~h: ~t) -> (~if (~p ~h) (~drop_while ~p ~t) (~cons ~h ~t))) ~xs;
 
 # concat : [[a]] -> [a]
-~concat ~xss = (~foldr (\~xs ~acc -> (~foldr (~cons) ~acc ~xs)) [] ~xss);
+~concat ~xss          = (~foldr (\~xs ~acc -> (~foldr (~cons) ~acc ~xs)) [] ~xss);
 
 # flat_map : (a -> [b]) -> [a] -> [b]
-~flat_map ~f ~xs = (~concat (~map ~f ~xs));
+~flat_map ~f ~xs      = (~concat (~map ~f ~xs));
 
 # zip_with : (a -> b -> c) -> [a] -> [b] -> [c]
-~zip_with ~f ~xs ~ys = (
-  ~go ~as ~bs = (\[] -> [] | \( ~ha : ~ta ) -> (
-    (\[] -> [] | \( ~hb : ~tb ) -> (~cons (~f ~ha ~hb) (~go ~ta ~tb))) ~bs
-  )) ~as;
+~zip_with ~f ~xs ~ys  = (~go ~as ~bs = (\[] -> [] | \(~ha: ~ta) -> ((\[] -> [] | \(~hb: ~tb) -> (~
+          cons (~f ~ha ~hb) (~go ~ta ~tb)
+        )) ~bs)) ~as;
   ~go ~xs ~ys
 );
 
 # zip : [a] -> [b] -> [(a,b)]
-~zip ~xs ~ys = (~zip_with (\~a ~b -> (~a, ~b)) ~xs ~ys);
+~zip ~xs ~ys          = (~zip_with (\~a ~b -> (~a,
+      ~b
+    )) ~xs ~ys);
 
 # intersperse : a -> [a] -> [a]
-~intersperse ~sep ~xs = (
-  ~go ~list = (\[] -> [] | \( ~h : ~t ) -> (
-    (\[] -> (~cons ~h [])) | (\_ -> (~cons ~h (~cons ~sep (~go ~t))))
-  ) ~t) ~list;
+~intersperse ~sep ~xs = (~go ~list = (\[] -> [] | \(~h: ~t) -> ((\[] -> (~cons ~h [])) | (\_ -> (~
+          cons ~h (~cons ~sep (~go ~t))
+        ))) ~t) ~list;
   ~go ~xs
 );
 
 {
-  any: ~any,
-  all: ~all,
-  sum: ~sum,
-  product: ~product,
-  head: ~head,
-  tail: ~tail,
-  take_while: ~take_while,
-  drop_while: ~drop_while,
-  concat: ~concat,
-  flat_map: ~flat_map,
-  zip_with: ~zip_with,
-  zip: ~zip,
+  any        : ~any,
+  all        : ~all,
+  sum        : ~sum,
+  product    : ~product,
+  head       : ~head,
+  tail       : ~tail,
+  take_while : ~take_while,
+  drop_while : ~drop_while,
+  concat     : ~concat,
+  flat_map   : ~flat_map,
+  zip_with   : ~zip_with,
+  zip        : ~zip,
   intersperse: ~intersperse
 }
