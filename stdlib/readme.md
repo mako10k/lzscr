@@ -40,6 +40,7 @@ core namespaces from the runtime `Builtins` plus foundational list/string/option
 | `effect/log.lzscr` | Effect | Level-tagged logging helpers with tap utilities, field builders, scoped field combinators, and `key=value` / JSON emitters; depends on `effect/io`. | Extend with richer structured emitters (JSON, spans) once runtime protocols exist. |
 | `effect/fs.lzscr` | Effect | Filesystem helpers wrapping `!fs.read_text` / `!fs.write_text` / `!fs.append_text` / `!fs.list_dir` / `!fs.remove_file` / `!fs.create_dir` / `!fs.metadata`, returning `Result` interfaces so callers decide exactly how to surface errors. Metadata now reports `size`, `is_dir`, `is_file`, `readonly`, and `modified_ms` (Option Int). | Future: extend metadata further once platform-specific signals (e.g. perms bits) are consistently exposed. |
 | `compat/prelude_aliases.lzscr` | Effect | Deprecated helper aliases that log warnings and delegate to `pure/option.lzscr` / `pure/result.lzscr`. | Eventually drop entirely once downstream crates migrate. |
+| `pure/tuple.lzscr` | Pure | Minimal 2-tuple helpers: constructor `tuple2` and accessors `fst` / `snd` implemented as record-based pairs. | None |                                                  
 
 Run `python scripts/check_stdlib_classification.py` to ensure every `.lzscr` file listed under `stdlib/` has an up-to-date entry in this table before sending a PR.
 
