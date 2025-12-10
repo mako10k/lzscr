@@ -1,20 +1,38 @@
 # stdlib effect: filesystem helpers
 # Wraps runtime filesystem effects so callers get ergonomic Result utilities.
 # read_text_result: run the filesystem read effect and return (Ok contents | Err msg)
-~read_text_result ~path = (~chain () (!fs .read_text ~path));
+~read_text_result ~path = !{
+  !fs .read_text ~path
+};
 # write_text_result: run the filesystem write effect and return (Ok () | Err msg)
-~write_text_result ~path ~contents = (~chain () (!fs .write_text ~path ~contents));
+~write_text_result ~path ~contents = !{
+  !fs .write_text ~path ~contents
+};
+
 # append_text_result: append to file and return (Ok () | Err msg)
-~append_text_result ~path ~contents = (~chain () (!fs .append_text ~path ~contents));
+~append_text_result ~path ~contents = !{
+  !fs .append_text ~path ~contents
+};
+
 # list_dir_result: list directory contents and return (Ok entries | Err msg)
-~list_dir_result ~path = (~chain () (!fs .list_dir ~path));
+~list_dir_result ~path = !{
+  !fs .list_dir ~path
+};
+
 # remove_file_result: delete file and return (Ok () | Err msg)
-~remove_file_result ~path = (~chain () (!fs .remove_file ~path));
+~remove_file_result ~path = !{
+  !fs .remove_file ~path
+};
+
 # create_dir_result: create directory (including parents) and return (Ok () | Err msg)
-~create_dir_result ~path = (~chain () (!fs .create_dir ~path));
+~create_dir_result ~path = !{
+  !fs .create_dir ~path
+};
 # metadata_result: fetch file metadata as { size, is_dir, is_file, readonly, modified_ms }
 # where modified_ms is (Some Int | None) epoch millis
-~metadata_result ~path = (~chain () (!fs .metadata ~path));
+~metadata_result ~path = !{
+  !fs .metadata ~path
+};
 {
   read_text_result: ~read_text_result,
   write_text_result: ~write_text_result,

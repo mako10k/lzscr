@@ -14,6 +14,7 @@ pub enum PreTokenKind {
 pub struct PreToken {
     pub kind: PreTokenKind,
     pub span: Span,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -36,17 +37,22 @@ pub fn to_preast(src: &str) -> Result<PreAst, PreAstError> {
                 items.push(PreToken {
                     kind: PreTokenKind::CommentLine(t.text.to_string()),
                     span: t.span,
+                    line: t.line,
                 });
             }
             Tok::CommentBlock => {
                 items.push(PreToken {
                     kind: PreTokenKind::CommentBlock(t.text.to_string()),
                     span: t.span,
+                    line: t.line,
                 });
             }
             _ => {
-                items
-                    .push(PreToken { kind: PreTokenKind::Token(t.text.to_string()), span: t.span });
+                items.push(PreToken {
+                    kind: PreTokenKind::Token(t.text.to_string()),
+                    span: t.span,
+                    line: t.line,
+                });
             }
         }
     }
@@ -152,8 +158,50 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
 
     let mut idx = 0usize;
     let mut last_was_blank = false;
+    let mut prev_line: Option<usize> = None;
     while idx < pre.items.len() {
         let it = &pre.items[idx];
+        if prev_line.is_none() && it.line > 1 {
+            if !last_was_blank {
+                out.push('\n');
+                let indent_spaces = indent_level * opts.indent;
+                if indent_spaces == 0 {
+                    col = 0;
+                } else {
+                    for _ in 0..indent_spaces {
+                        out.push(' ');
+                    }
+                    col = indent_spaces;
+                }
+                at_line_start = true;
+                prev_is_op = false;
+                last_was_blank = true;
+            }
+        } else if let Some(pl) = prev_line {
+            if it.line >= pl + 2 {
+                if !at_line_start {
+                    let indent_spaces = indent_level * opts.indent;
+                    newline(indent_level, &mut col, &mut out, &mut group_stack);
+                    if indent_spaces > 0 {
+                        let new_len = out.len().saturating_sub(indent_spaces);
+                        out.truncate(new_len);
+                    }
+                }
+                out.push('\n');
+                let indent_spaces = indent_level * opts.indent;
+                if indent_spaces == 0 {
+                    col = 0;
+                } else {
+                    for _ in 0..indent_spaces {
+                        out.push(' ');
+                    }
+                    col = indent_spaces;
+                }
+                at_line_start = true;
+                prev_is_op = false;
+                last_was_blank = true;
+            }
+        }
         let next_token = pre.items.get(idx + 1);
         match &it.kind {
             PreTokenKind::CommentLine(s) => {
@@ -178,6 +226,7 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                 }
                 prev_is_op = false;
                 at_line_start = true;
+                last_was_blank = false;
             }
             PreTokenKind::CommentBlock(s) => {
                 let trimmed = s;
@@ -188,6 +237,7 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                 push_str(trimmed, &mut col, &mut out);
                 prev_is_op = false;
                 at_line_start = false;
+                last_was_blank = false;
             }
             PreTokenKind::Token(s) => {
                 // Preserve whitespace-only tokens (including blank lines)
@@ -198,10 +248,15 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                     if has_newline {
                         if !last_was_blank {
                             out.push('\n');
-                            for _ in 0..(indent_level * opts.indent) {
-                                out.push(' ');
+                            let indent_spaces = indent_level * opts.indent;
+                            if indent_spaces == 0 {
+                                col = 0;
+                            } else {
+                                for _ in 0..indent_spaces {
+                                    out.push(' ');
+                                }
+                                col = indent_spaces;
                             }
-                            col = indent_level * opts.indent;
                             at_line_start = true;
                             prev_is_op = false;
                             last_was_blank = true;
@@ -329,6 +384,7 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
             }
         }
         idx += 1;
+        prev_line = Some(it.line);
     }
     out
 }

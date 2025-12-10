@@ -56,6 +56,16 @@ Shebang example (when the binary is installed as `lzscr`):
 ~add 1 2;
 ```
 
+## Installing the CLI binary
+
+To install the formatter/runtime CLI into your local Cargo bin directory:
+
+```bash
+cargo install --path crates/lzscr-cli
+```
+
+The command builds an optimized binary and places `lzscr-cli` under `~/.cargo/bin` (make sure that directory is on your `PATH`). Re-run the same command with `--force` whenever you need to reinstall after local changes. Verify the install via `lzscr-cli --help` or `lzscr-cli --version`.
+
 ## ゴールデンテスト (tokenizer)
 
 CLI 経由で self-hosted tokenizer を検証するゴールデンテストを追加しました。
