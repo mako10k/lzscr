@@ -1,6 +1,4 @@
-use lzscr_preast::{
-    preast_to_source, preast_to_source_with_opts, to_preast, FormatOpts as PreFormatOpts,
-};
+use lzscr_preast::{preast_to_source_with_opts, to_preast, FormatOpts as PreFormatOpts};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -13,34 +11,33 @@ pub enum FormatError {
 pub struct FormatOptions {
     pub indent: usize,
     pub max_width: usize,
+    pub treat_file_as_closure: bool,
 }
 
 impl Default for FormatOptions {
     fn default() -> Self {
-        Self { indent: 2, max_width: 100 }
+        Self { indent: 2, max_width: 100, treat_file_as_closure: false }
     }
 }
 
 /// Format a source string by parsing and pretty-printing the AST.
 /// This is a minimal formatter MVP that preserves semantics via round-trip.
 pub fn format_source(src: &str) -> Result<String, FormatError> {
-    // PRE-AST preserving comments; for now return normalized spacing around original tokens/comments
-    let pre = to_preast(src).map_err(|e| FormatError::Parse(e.to_string()))?;
-    Ok(preast_to_source(&pre))
+    format_source_with_options(src, FormatOptions::default())
 }
 
 /// Same as `format_source`, but with options.
 pub fn format_source_with_options(src: &str, opts: FormatOptions) -> Result<String, FormatError> {
-    let pre = to_preast(src).map_err(|e| FormatError::Parse(e.to_string()))?;
-    let p = PreFormatOpts { indent: opts.indent, max_width: opts.max_width };
-    Ok(preast_to_source_with_opts(&pre, &p))
+    format_with_pre_opts(src, opts)
 }
 
 /// Format "file-like" content. Since the language parser currently recognizes
 /// LetGroup only within parentheses, we wrap the input to parse. The output will
 /// omit the wrapping parentheses when the top-level is a LetGroup.
 pub fn format_file_source(src: &str) -> Result<String, FormatError> {
-    format_source(src)
+    let mut opts = FormatOptions::default();
+    opts.treat_file_as_closure = true;
+    format_with_pre_opts(src, opts)
 }
 
 /// File-like formatting with options.
@@ -48,7 +45,19 @@ pub fn format_file_source_with_options(
     src: &str,
     opts: FormatOptions,
 ) -> Result<String, FormatError> {
-    format_source_with_options(src, opts)
+    let mut opts = opts;
+    opts.treat_file_as_closure = true;
+    format_with_pre_opts(src, opts)
+}
+
+fn format_with_pre_opts(src: &str, opts: FormatOptions) -> Result<String, FormatError> {
+    let pre = to_preast(src).map_err(|e| FormatError::Parse(e.to_string()))?;
+    let p = PreFormatOpts {
+        indent: opts.indent,
+        max_width: opts.max_width,
+        treat_file_as_closure: opts.treat_file_as_closure,
+    };
+    Ok(preast_to_source_with_opts(&pre, &p))
 }
 
 #[cfg(test)]

@@ -109,11 +109,12 @@ fn is_operator_token(s: &str) -> bool {
 pub struct FormatOpts {
     pub indent: usize,
     pub max_width: usize,
+    pub treat_file_as_closure: bool,
 }
 
 impl Default for FormatOpts {
     fn default() -> Self {
-        Self { indent: 2, max_width: 100 }
+        Self { indent: 2, max_width: 100, treat_file_as_closure: false }
     }
 }
 
@@ -386,7 +387,7 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
         idx += 1;
         prev_line = Some(it.line);
     }
-    align_assignment_and_record_columns(out)
+    align_assignment_and_record_columns(out, opts.treat_file_as_closure)
 }
 // Placeholder: actual PRE-AST -> AST conversion will live in parser crate using this token stream.
 
@@ -408,9 +409,12 @@ struct AlignContext {
     entries: Vec<AlignEntry>,
 }
 
-fn align_assignment_and_record_columns(src: String) -> String {
+fn align_assignment_and_record_columns(src: String, treat_file_as_closure: bool) -> String {
     let mut lines: Vec<String> = src.split('\n').map(|s| s.to_string()).collect();
     let mut stack: Vec<AlignContext> = Vec::new();
+    if treat_file_as_closure {
+        stack.push(AlignContext { kind: AlignContextKind::Closure, entries: Vec::new() });
+    }
 
     for line_idx in 0..lines.len() {
         let line = lines[line_idx].clone();

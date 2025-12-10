@@ -607,7 +607,8 @@ fn handle_format_mode(
     indent: usize,
     max_width: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let fmt_opts = lzscr_format::FormatOptions { indent, max_width };
+    let fmt_opts =
+        lzscr_format::FormatOptions { indent, max_width, treat_file_as_closure: from_file };
     let out = if from_file {
         lzscr_format::format_file_source_with_options(code, fmt_opts)
     } else {
