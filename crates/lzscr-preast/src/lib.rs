@@ -386,6 +386,191 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
         idx += 1;
         prev_line = Some(it.line);
     }
-    out
+    align_assignment_and_record_columns(out)
 }
 // Placeholder: actual PRE-AST -> AST conversion will live in parser crate using this token stream.
+
+#[derive(Clone, Copy)]
+enum AlignContextKind {
+    Closure,
+    Record,
+}
+
+#[derive(Clone, Copy)]
+struct AlignEntry {
+    line_idx: usize,
+    byte_idx: usize,
+    col: usize,
+}
+
+struct AlignContext {
+    kind: AlignContextKind,
+    entries: Vec<AlignEntry>,
+}
+
+fn align_assignment_and_record_columns(src: String) -> String {
+    let mut lines: Vec<String> = src.split('\n').map(|s| s.to_string()).collect();
+    let mut stack: Vec<AlignContext> = Vec::new();
+
+    for line_idx in 0..lines.len() {
+        let line = lines[line_idx].clone();
+        let mut iter = line.char_indices().peekable();
+        let mut char_col = 0usize;
+        let mut last_non_ws: Option<char> = None;
+        let mut in_string = false;
+        let mut escape = false;
+
+        while let Some((byte_idx, ch)) = iter.next() {
+            if in_string {
+                if escape {
+                    escape = false;
+                } else if ch == '\\' {
+                    escape = true;
+                } else if ch == '"' {
+                    in_string = false;
+                }
+                char_col += 1;
+                continue;
+            }
+
+            if ch == '"' {
+                in_string = true;
+                char_col += 1;
+                continue;
+            }
+
+            if ch == '#' {
+                break;
+            }
+
+            let curr_col = char_col;
+
+            match ch {
+                '{' => {
+                    let kind = if matches!(last_non_ws, Some('!')) {
+                        AlignContextKind::Closure
+                    } else {
+                        AlignContextKind::Record
+                    };
+                    stack.push(AlignContext { kind, entries: Vec::new() });
+                }
+                '}' => {
+                    if let Some(ctx) = stack.pop() {
+                        apply_alignment(&mut lines, ctx);
+                    }
+                }
+                '=' => {
+                    if let Some(ctx) = stack.last_mut() {
+                        if matches!(ctx.kind, AlignContextKind::Closure)
+                            && is_valid_assignment_eq(
+                                &line,
+                                byte_idx,
+                                last_non_ws,
+                                next_non_whitespace_char(&line, byte_idx + ch.len_utf8()),
+                            )
+                            && ctx.entries.iter().all(|e| e.line_idx != line_idx)
+                        {
+                            ctx.entries.push(AlignEntry { line_idx, byte_idx, col: curr_col });
+                        }
+                    }
+                }
+                ':' => {
+                    if let Some(ctx) = stack.last_mut() {
+                        if matches!(ctx.kind, AlignContextKind::Record)
+                            && is_valid_record_colon(
+                                &line,
+                                byte_idx,
+                                next_non_whitespace_char(&line, byte_idx + ch.len_utf8()),
+                            )
+                            && ctx.entries.iter().all(|e| e.line_idx != line_idx)
+                        {
+                            ctx.entries.push(AlignEntry { line_idx, byte_idx, col: curr_col });
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            if !ch.is_whitespace() {
+                last_non_ws = Some(ch);
+            }
+            char_col = curr_col + 1;
+        }
+    }
+
+    while let Some(ctx) = stack.pop() {
+        apply_alignment(&mut lines, ctx);
+    }
+
+    lines.join("\n")
+}
+
+fn apply_alignment(lines: &mut [String], ctx: AlignContext) {
+    if ctx.entries.len() < 2 {
+        return;
+    }
+    let max_col = ctx.entries.iter().map(|e| e.col).max().unwrap_or(0);
+    for entry in ctx.entries {
+        if let Some(line) = lines.get_mut(entry.line_idx) {
+            let diff = max_col.saturating_sub(entry.col);
+            if diff == 0 {
+                continue;
+            }
+            let (head, tail) = line.split_at(entry.byte_idx);
+            let mut rebuilt = String::with_capacity(line.len() + diff);
+            rebuilt.push_str(head);
+            for _ in 0..diff {
+                rebuilt.push(' ');
+            }
+            rebuilt.push_str(tail);
+            *line = rebuilt;
+        }
+    }
+}
+
+fn is_valid_assignment_eq(
+    line: &str,
+    byte_idx: usize,
+    prev_non_ws: Option<char>,
+    next_non_ws: Option<char>,
+) -> bool {
+    if prev_non_ws.is_none() || !has_non_ws_after(line, byte_idx, 1) {
+        return false;
+    }
+    if matches!(prev_non_ws, Some('=' | '<' | '>' | '!')) {
+        return false;
+    }
+    if matches!(next_non_ws, Some('=' | '>')) {
+        return false;
+    }
+    true
+}
+
+fn is_valid_record_colon(line: &str, byte_idx: usize, next_non_ws: Option<char>) -> bool {
+    if !has_non_ws_before(line, byte_idx) || !has_non_ws_after(line, byte_idx, 1) {
+        return false;
+    }
+    if matches!(next_non_ws, Some(':')) {
+        return false;
+    }
+    true
+}
+
+fn has_non_ws_before(line: &str, idx: usize) -> bool {
+    line[..idx].chars().any(|c| !c.is_whitespace())
+}
+
+fn has_non_ws_after(line: &str, idx: usize, len: usize) -> bool {
+    let start = idx + len;
+    if start >= line.len() {
+        return false;
+    }
+    line[start..].chars().any(|c| !c.is_whitespace())
+}
+
+fn next_non_whitespace_char(line: &str, start: usize) -> Option<char> {
+    if start >= line.len() {
+        return None;
+    }
+    line[start..].chars().find(|c| !c.is_whitespace())
+}

@@ -76,4 +76,24 @@ mod tests {
         let out = format_source(src).unwrap();
         assert_eq!(out, "{\n  a: 1,\n  b: {\n    c: 2,\n    d: 3\n  }\n}",);
     }
+
+    #[test]
+    fn aligns_assignments_inside_closure() {
+        let src = "!{\n  short = 1;\n  much_longer_name = 22;\n  mid = 3;\n}";
+        let out = format_source(src).unwrap();
+        assert_eq!(
+            out,
+            "!{\n  short            = 1;\n  much_longer_name = 22;\n  mid              = 3;\n  }",
+        );
+    }
+
+    #[test]
+    fn aligns_record_fields() {
+        let src = "{\n  short: 1,\n  much_longer_key: 22,\n  mid: 3\n}";
+        let out = format_source(src).unwrap();
+        assert_eq!(
+            out,
+            "{\n  short          : 1,\n  much_longer_key: 22,\n  mid            : 3\n}",
+        );
+    }
 }
