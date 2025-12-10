@@ -7,6 +7,7 @@ pub enum EvalError {
     UnknownEffect(String),
     EffectNotAllowed,
     NotFunc,
+    NotApplicable(String), // Value cannot be applied (with type description)
     Traced { kind: Box<EvalError>, spans: Vec<lzscr_ast::span::Span> },
 }
 
@@ -18,6 +19,7 @@ impl std::fmt::Display for EvalError {
             EvalError::UnknownEffect(e) => write!(f, "unknown effect: {e}"),
             EvalError::EffectNotAllowed => write!(f, "effects not allowed in this context"),
             EvalError::NotFunc => write!(f, "not a function"),
+            EvalError::NotApplicable(desc) => write!(f, "cannot apply argument to {desc}"),
             EvalError::Traced { kind, .. } => write!(f, "{kind}"),
         }
     }

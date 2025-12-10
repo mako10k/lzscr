@@ -63,37 +63,37 @@ pub fn char_literal_string(c: i32) -> String {
 
 pub fn bool_ctor(b: bool) -> Value {
     if b {
-        Value::Ctor { name: ".True".into(), args: vec![] }
+        Value::Ctor { name: "True".into(), args: vec![] }
     } else {
-        Value::Ctor { name: ".False".into(), args: vec![] }
+        Value::Ctor { name: "False".into(), args: vec![] }
     }
 }
 
 pub fn option_value(value: Option<Value>) -> Value {
     match value {
-        Some(v) => Value::Ctor { name: ".Some".into(), args: vec![v] },
-        None => Value::Ctor { name: ".None".into(), args: vec![] },
+        Some(v) => Value::Ctor { name: "Some".into(), args: vec![v] },
+        None => Value::Ctor { name: "None".into(), args: vec![] },
     }
 }
 
 pub fn result_ok(value: Value) -> Value {
-    Value::Ctor { name: ".Ok".into(), args: vec![value] }
+    Value::Ctor { name: "Ok".into(), args: vec![value] }
 }
 
 pub fn result_err(value: Value) -> Value {
-    Value::Ctor { name: ".Err".into(), args: vec![value] }
+    Value::Ctor { name: "Err".into(), args: vec![value] }
 }
 
 pub fn as_bool(env: &Env, v: &Value) -> Result<bool, EvalError> {
     let v = force_value(env, v)?;
     match &v {
-        Value::Ctor { name, args } if args.is_empty() && name == ".True" => Ok(true),
-        Value::Ctor { name, args } if args.is_empty() && name == ".False" => Ok(false),
+        Value::Ctor { name, args } if args.is_empty() && name == "True" => Ok(true),
+        Value::Ctor { name, args } if args.is_empty() && name == "False" => Ok(false),
         Value::Symbol(id) => {
             let s = env.symbol_name(*id);
-            if s == ".True" {
+            if s == "True" {
                 Ok(true)
-            } else if s == ".False" {
+            } else if s == "False" {
                 Ok(false)
             } else {
                 Err(EvalError::TypeError)

@@ -2,12 +2,13 @@
 Disclaimer: This document describes the current PoC behavior. Items labeled as planned or provisional are WIP and may change.
 
 - Evaluator: `crates/lzscr-runtime`
-  - Values: Unit/Int/Float/Bool/Str/Symbol/List/Tuple/Record/Native/Closure
+  - Values: Unit/Int/Float/Bool/Str/Symbol/List/Tuple/Record/Ctor/Native/Closure
   - Env: `vars: HashMap<String, Value>`, `strict_effects: bool`, `in_effect_context: bool`
   - Application:
     - Native: curried; execute when arity is satisfied; extra args are applied to the result
     - Closure: bind value to `param` via pattern and evaluate `body`
-    - Symbol: behaves like an unapplied constructor/function-like value (PoC semantics)
+    - Ctor: bare identifier constructors support ordinary application; arity checks happen at runtime via the constructor table
+    - Symbol: is a pure atom. Applying a symbol always raises `EvalError::NotApplicable` (no ctor conversion)
   - Special forms:
     - `(~seq a b)`: evaluate `a`, then evaluate `b` in effect-context
     - `(~chain a b)`: evaluate `a`, then evaluate `b` in effect-context and return its value
@@ -23,7 +24,7 @@ Disclaimer: This document describes the current PoC behavior. Items labeled as p
   - `seq : a -> b -> b` (implemented via ref + special form)
   - `effects .println : Str -> Unit` (only in effect-context)
 Notes:
-- Bool represented by constructors `.True` / `.False` (no implicit variable aliases)
+- Bool represented by constructors `True` / `False` (no implicit variable aliases)
 - Float supports literals (e.g., 1.0, .5, 10.)
 - Char is currently treated as Int (intended 0..=0x10FFFF); dedicated literal not implemented
 - List/Tuple/Record are immutable values with runtime display and to_str support

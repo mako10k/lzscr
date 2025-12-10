@@ -35,7 +35,7 @@ pub(crate) fn infer_expr(
     ctx.push_span(e.span);
     ctx.depth += 1;
     // Helper: convert TypeExpr to Type using ctx.tyvars and a local holes table for '?'
-    // Helper: try to find the span of a constructor symbol (e.g., .Some/.None) in an expression.
+    // Helper: try to find the span of a constructor symbol (e.g., Some/None) in an expression.
     fn find_ctor_symbol_span_in_expr(expr: &Expr) -> Option<Span> {
         match &expr.kind {
             ExprKind::Symbol(_) => Some(expr.span),
@@ -188,12 +188,8 @@ pub(crate) fn infer_expr(
             Ok((inst, Subst::new()))
         }
         ExprKind::Symbol(name) => {
-            if name == ".True" || name == ".False" {
-                Ok((Type::Ctor { tag: name.clone(), payload: vec![] }, Subst::new()))
-            } else {
-                // Treat other bare symbol as 0-arity ctor
-                Ok((Type::Ctor { tag: name.clone(), payload: vec![] }, Subst::new()))
-            }
+            // Treat every symbol as a zero-arity constructor in value position.
+            Ok((Type::Ctor { tag: name.clone(), payload: vec![] }, Subst::new()))
         }
         ExprKind::Lambda { param, body } => {
             // Handle pattern-level type binders: push frames while inferring param and body
@@ -297,7 +293,7 @@ pub(crate) fn infer_expr(
                             // Fallback to regular if typing: unify branch types to a common var
                             let r = ctx.fresh_tv();
                             let s1 = ctx_unify(ctx, &tt.apply(&se).apply(&s_acc), &r)?;
-                            // 2回目の unify 失敗時に then/else のスパン（可能なら .Some/.None の記号位置）を添えて返す
+                            // 2回目の unify 失敗時に then/else のスパン（可能なら Some/None の記号位置）を添えて返す
                             let s2 =
                                 match ctx_unify(ctx, &te.apply(&s1).apply(&se).apply(&s_acc), &r) {
                                     Ok(s) => s,
@@ -323,12 +319,19 @@ pub(crate) fn infer_expr(
                     }
                 }
             }
-            // Special-case: constructor application via symbol, e.g., (.Some x) or (., a) b or (.,, a) b c
+            // Special-case: constructor application via symbol, e.g., (Some x) or (., a) b or (.,, a) b c
             if let ExprKind::Symbol(tag) = &func.kind {
-                if tag.starts_with('.') {
+                let is_tuple_ctor = tag.starts_with('.') && tag.chars().skip(1).all(|c| c == ',');
+                let is_bare_ctor =
+                    tag.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false);
+                let is_dot_ctor = tag
+                    .strip_prefix('.')
+                    .and_then(|rest| rest.chars().next())
+                    .map(|c| c.is_ascii_uppercase())
+                    .unwrap_or(false);
+                if is_tuple_ctor || is_bare_ctor || is_dot_ctor {
                     let (ta, sa) = infer_expr(ctx, arg, allow_effects)?;
-                    // Tuple-like tags: leading '.' followed by one or more ','; total payload arity = (number of commas) + 1
-                    if tag.chars().skip(1).all(|c| c == ',') {
+                    if is_tuple_ctor {
                         let n_commas = tag.chars().skip(1).count();
                         let total_arity = n_commas + 1;
                         if total_arity == 0 {
@@ -471,6 +474,16 @@ pub(crate) fn infer_expr(
                 map.insert(f.name.clone(), (tv.apply(&subst), Some(f.name_span)));
             }
             Ok((Type::Record(map), subst))
+        }
+        ExprKind::ModeMap(fields) => {
+            // ModeMap is like a record but for mode-based dispatch
+            // For now treat as unit; phase 2 will handle polymorphic modes
+            let mut subst = Subst::new();
+            for f in fields {
+                let (_tv, sv) = infer_expr(ctx, &f.value, allow_effects)?;
+                subst = sv.compose(subst);
+            }
+            Ok((Type::Unit, subst))
         }
         ExprKind::LetGroup { type_decls, bindings, body, .. } => {
             // Recursive let-group inference (Algorithm W style for letrec):
@@ -681,7 +694,7 @@ pub(crate) fn infer_expr(
         ExprKind::OrElse { left, right } => {
             let (tl, sl) = infer_expr(ctx, left, allow_effects)?;
             let (tr, sr) = infer_expr(ctx, right, allow_effects)?;
-            // On unification failure, return both sides' spans (.Some/.None 記号位置があれば優先) for better diagnostics
+            // On unification failure, return both sides' spans (Some/None 記号位置があれば優先) for better diagnostics
             let s1 = match ctx_unify(ctx, &tl.apply(&sr).apply(&sl), &tr.apply(&sr)) {
                 Ok(s) => s,
                 Err(TypeError::Mismatch { expected, actual, .. }) => {
@@ -1013,5 +1026,6 @@ pub(crate) fn short_expr_kind(k: &ExprKind) -> &'static str {
         OrElse { .. } => "OrElse",
         Catch { .. } => "Catch",
         AltLambda { .. } => "AltLambda",
+        ModeMap(_) => "ModeMap",
     }
 }

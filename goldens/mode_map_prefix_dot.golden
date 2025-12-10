@@ -1,0 +1,6 @@
+Dot:.
+LBrace:{
+Ident:Pure
+Colon::
+Int:1
+RBrace:}

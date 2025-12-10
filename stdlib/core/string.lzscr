@@ -1,0 +1,62 @@
+ # stdlib/core/string.lzscr
+  # Core string operations (pure functions wrapping runtime builtins)
+  # Strings are immutable sequences of Unicode characters
+  # Runtime builtin access
+  ~Str = ~Builtins .string;
+  ~Char = ~Builtins .char;
+  ~Scan = ~Builtins .scan;
+  ~Unicode = ~Builtins .unicode;
+  # Basic string operations
+  ~len ~s = (~Str .len ~s);
+  ~concat ~a ~b = (~Str .concat ~a ~b);
+  ~slice ~s ~start ~length = (~Str .slice ~s ~start ~length);
+  ~char_at ~s ~i = (~Str .char_at ~s ~i);
+  # String predicates
+  ~is_empty ~s = ((~Str .len ~s) == 0);
+  ~starts_with ~s ~pre = (~n = (~Str .len ~pre);
+    ~m = (~Str .len ~s);
+    (\(True -> (((~Str .slice ~s 0 ~n) == ~pre)) | \False -> False) (~m >= ~n)));
+  ~ends_with ~s ~suf = (~n = (~Str .len ~suf);
+    ~m = (~Str .len ~s);
+    (\(True -> (~st = (~m - ~n);
+          ((~Str .slice ~s ~st ~n) == ~suf)) | \False -> False) (~m >= ~n)));
+  # Find character in string
+  ~find_char ~s ~ch = (~sc = (~Scan .new ~s);
+    ~loop ~st = ((\(True -> None) | \(False -> (~i = (~Scan .pos ~st);
+            ~opt = (~Scan .peek ~st);
+            ((\(Some ~c) -> (\(True -> Some ~i | \False -> (~loop (~Scan .set_pos ~st (~i + 1)))) (~c == ~ch))) | \(None -> None)) ~opt))) ((~Scan .eof ~st)));
+    ~loop ~sc);
+  # Find substring in string
+  ~find ~s ~pat = (~n = (~Str .len ~s);
+    ~m = (~Str .len ~pat);
+    ~lim = (~n - ~m);
+    ~loop ~i = (\(True -> None | \False -> ((\(True -> Some ~i | \False -> (~loop (~i + 1))) (((~Str .slice ~s ~i ~m) == ~pat))))) (~i > ~lim));
+    (\(True -> Some 0 | \False -> (~loop 0)) (~m == 0)));
+  # Split string by character
+  ~split_char ~s ~ch = (~sc = (~Scan .new ~s);
+    ~loop ~st ~start ~acc = ((\(True -> (~end = (~Scan .pos ~st);
+            ~seg = (~Scan .slice_span ~st ~start ~end);
+            (~reverse (~cons ~seg ~acc)))) | \(False -> (~i = (~Scan .pos ~st);
+            ((\(Some ~c) -> ((\(True -> (~seg = (~Scan .slice_span ~st ~start ~i);
+                        ~loop (~Scan .set_pos ~st (~i + 1)) (~i + 1) (~cons ~seg ~acc)) | \False -> (~loop (~Scan .set_pos ~st (~i + 1)) ~start ~acc)) (~c == ~ch)))) | \(None -> (~end = (~Scan .pos ~st);
+                  ~seg = (~Scan .slice_span ~st ~start ~end);
+                  (~reverse (~cons ~seg ~acc))))) ((~Scan .peek ~st))))) ((~Scan .eof ~st)));
+    ~loop ~sc 0 []);
+  # Join list of strings with separator
+  ~join ~sep ~xs = (~step = (\~acc ~s -> (\(True -> ~s | \False -> (~Str .concat ~acc (~Str .concat ~sep ~s))) (~acc == "")));
+    ~foldl ~step "" ~xs);
+  # String conversion helpers
+  ~int_to_str ~n = (~to_str ~n);
+  ~str_to_int ~s = (~len = (~Str .len ~s);
+    (\(True -> None | \False -> (~neg = (((~Str .slice ~s 0 1) == "-"));
+          ~start = (\(True -> 1 | \False -> 0) ~neg);
+          (\(True -> None | \False -> (~loop ~i ~acc = (\(True -> (True,~acc) | \False -> (((\(Some ~c) -> (\(True -> (~d = (((~Unicode .to_int ~c) - (~Unicode .to_int'0')));
+                                ~loop (~i + 1) (((~acc * 10) + ~d))) | \False -> (False,~acc)) ((~Char .is_digit ~c)))) | \(None -> (False,~acc))) ((~Str .char_at ~s ~i)))) (~i >= ~len));
+                ~res = (~loop ~start 0);
+                (((\((~ok,~v)) -> (\(True -> Some (\(True -> (0 - ~v) | \False -> ~v) ~neg) | \False -> None) ~ok)))) ~res)) (~start >= ~len)))) (~len == 0)));
+  # Character predicates (via Char builtin)
+  ~char_is_alpha ~c = (~Char .is_alpha ~c);
+  ~char_is_digit ~c = (~Char .is_digit ~c);
+  ~char_is_alnum ~c = (~Char .is_alnum ~c);
+  ~char_is_space ~c = (~Char .is_space ~c);
+  {len : ~len,concat : ~concat,slice : ~slice,char_at : ~char_at,is_empty : ~is_empty,starts_with : ~starts_with,ends_with : ~ends_with,find_char : ~find_char,find : ~find,split_char : ~split_char,join : ~join,int_to_str : ~int_to_str,str_to_int : ~str_to_int,char_is_alpha : ~char_is_alpha,char_is_digit : ~char_is_digit,char_is_alnum : ~char_is_alnum,char_is_space : ~char_is_space}

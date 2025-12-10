@@ -172,9 +172,9 @@ impl Env {
                 f: |env, args| {
                     let res = v_equal(env, &args[0], &args[1]);
                     Ok(if res {
-                        Value::Ctor { name: ".True".into(), args: vec![] }
+                        Value::Ctor { name: "True".into(), args: vec![] }
                     } else {
-                        Value::Ctor { name: ".False".into(), args: vec![] }
+                        Value::Ctor { name: "False".into(), args: vec![] }
                     })
                 },
             },
@@ -406,19 +406,17 @@ impl Env {
                     (Value::Str(s), Value::Int(idx)) => {
                         let s_utf = match std::str::from_utf8(s.as_bytes()) {
                             Ok(v) => v,
-                            Err(_) => {
-                                return Ok(Value::Ctor { name: ".None".into(), args: vec![] })
-                            }
+                            Err(_) => return Ok(Value::Ctor { name: "None".into(), args: vec![] }),
                         };
                         for (i, ch) in s_utf.chars().enumerate() {
                             if (i as i64) == *idx {
                                 return Ok(Value::Ctor {
-                                    name: ".Some".into(),
+                                    name: "Some".into(),
                                     args: vec![Value::Char(ch as i32)],
                                 });
                             }
                         }
-                        Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                        Ok(Value::Ctor { name: "None".into(), args: vec![] })
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -605,10 +603,10 @@ impl Env {
                         let ch = utf.chars().nth(i);
                         match ch {
                             Some(c) => Ok(Value::Ctor {
-                                name: ".Some".into(),
+                                name: "Some".into(),
                                 args: vec![Value::Char(c as i32)],
                             }),
-                            None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
+                            None => Ok(Value::Ctor { name: "None".into(), args: vec![] }),
                         }
                     }
                     _ => Err(EvalError::TypeError),
@@ -630,12 +628,12 @@ impl Env {
                             Some(ch) => {
                                 let ns = make_scan(s.clone(), i + 1);
                                 let pair = Value::Ctor {
-                                    name: ".,".into(),
+                                    name: ",".into(),
                                     args: vec![Value::Char(ch as i32), ns],
                                 };
-                                Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
+                                Ok(Value::Ctor { name: "Some".into(), args: vec![pair] })
                             }
-                            None => Ok(Value::Ctor { name: ".None".into(), args: vec![] }),
+                            None => Ok(Value::Ctor { name: "None".into(), args: vec![] }),
                         }
                     }
                     _ => Err(EvalError::TypeError),
@@ -656,13 +654,13 @@ impl Env {
                             if as_bool(env, &res)? {
                                 let ns = make_scan(s.clone(), i + 1);
                                 let pair = Value::Ctor {
-                                    name: ".,".into(),
+                                    name: ",".into(),
                                     args: vec![Value::Char(ch as i32), ns],
                                 };
-                                return Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] });
+                                return Ok(Value::Ctor { name: "Some".into(), args: vec![pair] });
                             }
                         }
-                        Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                        Ok(Value::Ctor { name: "None".into(), args: vec![] })
                     }
                     _ => Err(EvalError::TypeError),
                 },
@@ -692,7 +690,7 @@ impl Env {
                         }
                         let ns = make_scan(s.clone(), i);
                         let pair = Value::Ctor {
-                            name: ".,".into(),
+                            name: ",".into(),
                             args: vec![Value::Str(env.intern_string(out)), ns],
                         };
                         Ok(pair)
@@ -725,14 +723,14 @@ impl Env {
                             }
                         }
                         if out.is_empty() {
-                            Ok(Value::Ctor { name: ".None".into(), args: vec![] })
+                            Ok(Value::Ctor { name: "None".into(), args: vec![] })
                         } else {
                             let ns = make_scan(s.clone(), i);
                             let pair = Value::Ctor {
-                                name: ".,".into(),
+                                name: ",".into(),
                                 args: vec![Value::Str(env.intern_string(out)), ns],
                             };
-                            Ok(Value::Ctor { name: ".Some".into(), args: vec![pair] })
+                            Ok(Value::Ctor { name: "Some".into(), args: vec![pair] })
                         }
                     }
                     _ => Err(EvalError::TypeError),
@@ -1060,7 +1058,7 @@ mod tests {
         let env = Env::with_builtins();
         let v = eval(&env, &whole).unwrap();
         match v {
-            Value::Ctor { name, .. } if name == ".True" => {}
+            Value::Ctor { name, .. } if name == "True" => {}
             _ => panic!("expected Bool true"),
         }
 
@@ -1081,8 +1079,52 @@ mod tests {
         let env2 = Env::with_builtins();
         let v = eval(&env2, &whole).unwrap();
         match v {
-            Value::Ctor { name, .. } if name == ".False" => {}
+            Value::Ctor { name, .. } if name == "False" => {}
             _ => panic!("expected Bool false"),
+        }
+    }
+
+    #[test]
+    fn bare_constructor_application_succeeds() {
+        // Foo 1 2 => Ctor("Foo", [1, 2])
+        let foo = sym_expr("Foo");
+        let foo1 = Expr::new(
+            ExprKind::Apply { func: Box::new(foo), arg: Box::new(int_expr(1)) },
+            Span::new(0, 0),
+        );
+        let foo12 = Expr::new(
+            ExprKind::Apply { func: Box::new(foo1), arg: Box::new(int_expr(2)) },
+            Span::new(0, 0),
+        );
+        let env = Env::with_builtins();
+        let v = eval(&env, &foo12).expect("constructor application should succeed");
+        match v {
+            Value::Ctor { name, args } => {
+                assert_eq!(name, "Foo");
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!("expected constructor value, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn symbol_application_errors() {
+        // (.println 1) should be rejected because symbols are not functions
+        let sym = Expr::new(ExprKind::Symbol(".println".into()), Span::new(0, 0));
+        let appl = Expr::new(
+            ExprKind::Apply { func: Box::new(sym), arg: Box::new(int_expr(1)) },
+            Span::new(0, 0),
+        );
+        let env = Env::with_builtins();
+        let err = eval(&env, &appl).expect_err("symbol application must fail");
+        match err {
+            EvalError::Traced { kind, .. } => match *kind {
+                EvalError::NotApplicable(msg) => {
+                    assert!(msg.contains("symbol"), "unexpected message: {}", msg)
+                }
+                other => panic!("expected NotApplicable, got {:?}", other),
+            },
+            other => panic!("expected traced error, got {:?}", other),
         }
     }
 
@@ -1175,10 +1217,10 @@ mod tests {
 
     #[test]
     fn eval_lambda_pattern_ctor_match() {
-        // ((\(.Foo x y) -> ~x) (.Foo 1 2)) == 1
+        // ((\(Foo x y) -> ~x) (Foo 1 2)) == 1
         let pat = Pattern {
             kind: PatternKind::Ctor {
-                name: ".Foo".into(),
+                name: "Foo".into(),
                 args: vec![
                     Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) },
                     Pattern { kind: PatternKind::Var("y".into()), span: Span::new(0, 0) },
@@ -1188,8 +1230,8 @@ mod tests {
         };
         let body = Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0));
         let lam = Expr::new(ExprKind::Lambda { param: pat, body: Box::new(body) }, Span::new(0, 0));
-        // .Foo 1 2
-        let foo = Expr::new(ExprKind::Symbol(".Foo".into()), Span::new(0, 0));
+        // Foo 1 2
+        let foo = Expr::new(ExprKind::Symbol("Foo".into()), Span::new(0, 0));
         let a1 = Expr::new(
             ExprKind::Apply { func: Box::new(foo), arg: Box::new(int_expr(1)) },
             Span::new(0, 0),
@@ -1211,17 +1253,17 @@ mod tests {
 
     #[test]
     fn eval_lambda_pattern_mismatch_raises() {
-        // ((\(.Foo x) -> ~x) (.Bar 1)) => ^(.Bar(1))
+        // ((\(Foo x) -> ~x) (Bar 1)) => ^(Bar(1))
         let pat = Pattern {
             kind: PatternKind::Ctor {
-                name: ".Foo".into(),
+                name: "Foo".into(),
                 args: vec![Pattern { kind: PatternKind::Var("x".into()), span: Span::new(0, 0) }],
             },
             span: Span::new(0, 0),
         };
         let body = Expr::new(ExprKind::Ref("x".into()), Span::new(0, 0));
         let lam = Expr::new(ExprKind::Lambda { param: pat, body: Box::new(body) }, Span::new(0, 0));
-        let bar = Expr::new(ExprKind::Symbol(".Bar".into()), Span::new(0, 0));
+        let bar = Expr::new(ExprKind::Symbol("Bar".into()), Span::new(0, 0));
         let bar1 = Expr::new(
             ExprKind::Apply { func: Box::new(bar), arg: Box::new(int_expr(1)) },
             Span::new(0, 0),
@@ -1234,7 +1276,7 @@ mod tests {
         match v {
             Value::Raised(b) => match *b {
                 Value::Ctor { name, args } => {
-                    assert_eq!(name, ".Bar");
+                    assert_eq!(name, "Bar");
                     assert_eq!(args.len(), 1);
                 }
                 other => panic!("unexpected payload: {:?}", other),

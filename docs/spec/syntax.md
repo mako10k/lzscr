@@ -10,8 +10,13 @@
 - **Str**: `"hello"` (supports escape sequences: `\n`, `\t`, `\\`, `\"`, `\xHH`, `\u{HHHH}`)
 - **Char**: `'a'`, `'\n'`, `'\x41'`, `'\u{3042}'`
 - **Ref**: `~name` (variable reference, e.g., `~add`, `~x`)
-- **Symbol**: `.name` (bare symbol value, e.g., `.println`, `.True`, `.Some`)
-  - Constructors are always `.Member` form (e.g., `.True`, `.False`, `.Some`, `.None`)
+- **Named ctor**: bare identifier such as `Foo`, `Some`, `Tree`
+  - They represent value-level tags whose arity is enforced only by how many arguments you apply: `Some 1`, `Tree left right`.
+  - The name never captures a type; it is only a tag compared at runtime.
+  - Zero arity uses just the bare name (`None`). Built-in ctors such as `Int`, `Bool`, or `Unit` are plain zero-arity Named ctors; a literal like `6` still has type `.Int`, while the expression `Int` refers to the ctor value itself.
+- **Symbol**: `.name` (atomic symbol, e.g., `.println`, `.tag`)
+  - Symbols are interned runtime atoms. They are never constructors and cannot be applied.
+- **Type ctor literal**: `%{TypeExpr}` produces a first-class type value (see “Constructors vs Symbols and Types”). Type expressions use dotted tags for built-in primitives and structural heads (e.g., `.Int`, `.Bool`, `.List`, `.Tuple`), while user-defined constructors stay bare (`Foo`, `Some T`, `Tree Left Right`). Tuples spell their head as `.Tuple T1 ... Tn`, while record types stay braced such as `{ name: .Str, age: .Int }`. Bracket sugar `[T]` is accepted as `.List T`, and `(T1, T2, ..., Tn)` is sugar for `.Tuple T1 T2 ... Tn`.
 - **Lambda**: `\x -> expr` or `\~x -> expr` (parameter patterns supported)
 - **Block**: `{ expr }` (groups expression)
 - **Apply**: `(f x)` (left-associative function application)
@@ -23,9 +28,9 @@
 ### Sugar and special forms
 
 - **Effects**: `!println` → `(~effects .println)`
-- **Type annotation**: `%{Int} expr` (annotate expression with type)
-- **Type value**: `%{Int -> Bool}` (first-class type value)
-- **Type declaration**: `%TypeName = %{ .Ctor1 T1 | .Ctor2 T2 }` (sum type definition)
+- **Type annotation**: `%{Ty} expr` (unifies the inferred type of `expr` with `Ty`; failure is a type error just like an ordinary annotation)
+- **Type value / Type ctor**: `%{Ty}` (first-class type literal; `%{.Type}` is the canonical “type of types” and every `%{...}` lives in that universe)
+- **Type declaration**: `%TypeName = %{ Ctor1 T1 | Ctor2 T2 }` (sum type definition)
 - **Pattern type binding**: `%{'a, ?x} pat` (bind type variables in pattern scope)
 
 ### do-notation and sequencing
@@ -46,9 +51,9 @@
 - **Tuple**: `(~a, ~b)` (matches tuple, binds components)
 - **List**: `[~a, ~b]` or `[]` (matches exact list structure)
 - **Cons**: `~h : ~t` (matches head and tail of list)
-- **Constructor**: `.Some ~x` or `.None` (matches constructor with args)
+- **Constructor**: `Some ~x` or `None` (matches Named ctors with their payloads; ctor names are bare identifiers only)
 - **Record**: `{a: ~x, b: ~y}` (matches record with specific fields)
-- **Literals**: `42`, `"hello"`, `'a'`, `.True` (match exact values)
+- **Literals**: `42`, `"hello"`, `'a'`, `True` (match exact values)
 - **Type binding**: `%{'a} ~x` (bind type variable in pattern scope)
 
 ### Let-groups and bindings
@@ -60,10 +65,19 @@
 
 ### Booleans and constructors
 
-- **Booleans**: `.True`, `.False` constructors (no `~true` / `~false` aliases)
-- **Constructor values**: `.Foo 1 2` creates `Ctor(".Foo", [1, 2])`
-- **Option**: `.Some x`, `.None`
-- **Result**: `.Ok x`, `.Err e`
+- **Booleans**: `True`, `False` constructors (no `~true` / `~false` aliases)
+- **Constructor values**: `Foo 1 2` creates `Ctor("Foo", [1, 2])`
+- **Option**: `Some x`, `None`
+- **Result**: `Ok x`, `Err e`
+
+### Constructors, type ctors, and symbols
+
+- **Named ctors** are **always** bare identifiers. They never borrow the `.` syntax, and applying one just uses normal function application. Curried application keeps the ctor partially applied until its arity is satisfied. Tuple syntax `(a, b, c, ...)` is sugar for dedicated Named ctors (`.,`, `.,,`, …) rather than symbols.
+- **Type ctors** are every `%{TypeExpr}` form. `%{Ty} expr` simply unifies the inferred type of `expr` with `Ty`, and `%{Ty}` yields a first-class type value whose own type is `%{.Type}`. Type expressions keep the dot prefix for primitives and structural heads (`.Int`, `.Bool`, `.List`, `.Tuple`) so they never conflict with value-level Named ctors, while user-defined constructor names remain bare (e.g., `Foo`, `Some %a`).
+- `%{.Type}` is the canonical “type of types.” Future work may admit richer `%{Expr}` type lifting, but today every `%{...}` lives in `%{.Type}` and annotations fail if unification with `%{.Type}`-inhabiting expressions cannot succeed.
+- **Symbols (`.foo`)** are atomic interned values. Applying a symbol is a runtime error and symbols are never implicitly converted into either class of ctor.
+- The type of the Named ctor literal `Foo` is `%{(Foo .. | ...)}` (the literal `..` marks unspecified arity; `...` indicates the remaining ctors in the sum type). `%{Foo ..}` expands to `%{(Foo | %a -> Foo %a | %a -> %b -> Foo %a %b | ...)}`, and `%{Foo T1 T2 ..}` fixes the first payload positions before continuing the curry.
+- Notation reminder: `..` is a concrete lexical token that actually appears in type expressions (e.g., `%{Foo ..}`), whereas `...` is merely prose ellipsis for “and the other alternatives.” Do not interchange the two when writing code.
 
 ### Infix operators (left-assoc; Pratt precedence)
 
@@ -90,7 +104,7 @@ Desugaring (to function application):
   - `a .< b` → `(~flt a) b`, `a .<= b` → `(~fle a) b`, `a .> b` → `(~fgt a) b`, `a .>= b` → `(~fge a) b`
   - `a == b` → `(~eq a) b`, `a != b` → `(~ne a) b`
 
-Return value is a Bool (`.True` | `.False`).
+Return value is a Bool (`True` | `False`).
 
 ### Reserved tokens and symbols
 
@@ -101,6 +115,10 @@ Return value is a Bool (`.True` | `.False`).
 - **Separators**: `,`, `;`
 - **Operators**: `->`, `<-`, `|`, `||`, `^|`, `^(`, `:`, `@`
 - **Lambda**: `\`
+- **Assignment**: `=`
+- **Arithmetic**: `+`, `-`, `*`, `/`, `.+`, `.-`, `.*`, `./`
+- **Continuation**: `..` (for partial ctor application / last sum ctor marker as unknown rest)
+
 
 ### Examples
 
@@ -110,12 +128,12 @@ Return value is a Bool (`.True` | `.False`).
 1.5 .+ 2.0 .* 2.0    # => 5.5
 8 / 2                # => 4
 8.0 ./ 2.0           # => 4.0
-1 < 2                # => .True
-1.5 .<= 2.0          # => .True
+1 < 2                # => True
+1.5 .<= 2.0          # => True
 
 # Constructors and pattern matching
-(.Some 42) == (.Some 42)  # => .True
-(\(.Some ~x) -> ~x | \.None -> 0) (.Some 10)  # => 10
+(Some 42) == (Some 42)  # => True
+(\(Some ~x) -> ~x | \_ -> 0) (Some 10)  # => 10
 
 # Lists and records
 [1, 2, 3]            # list literal
@@ -137,6 +155,6 @@ Return value is a Bool (`.True` | `.False`).
 (\~x ~y -> ~x + ~y) 1 2  # => 3
 
 # Type annotations
-%{Int -> Int} (\~x -> ~x + 1)  # annotated lambda
-%{[Int]} [1, 2, 3]             # annotated list
+%{.Int -> .Int} (\~x -> ~x + 1)   # annotated lambda
+%{.List .Int} [1, 2, 3]             # annotated list
 ```

@@ -14,6 +14,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
+type TypeDeclsAndExprs = (Vec<TypeDecl>, Vec<(Pattern, Expr)>);
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum StdlibMode {
     Pure,
@@ -605,7 +607,8 @@ fn handle_format_mode(
     indent: usize,
     max_width: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let fmt_opts = lzscr_format::FormatOptions { indent, max_width };
+    let fmt_opts =
+        lzscr_format::FormatOptions { indent, max_width, treat_file_as_closure: from_file };
     let out = if from_file {
         lzscr_format::format_file_source_with_options(code, fmt_opts)
     } else {
@@ -779,6 +782,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("no input; try -e '...' or --file path");
         return Ok(());
     };
+    let user_code_wrapped = code.clone();
 
     // Preload stdlib (M1): prepend prelude as a let-group unless disabled or in formatting mode
     let stdlib_enabled = !opt.no_stdlib && !opt.format_code;
@@ -816,7 +820,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t_req_start = Instant::now();
     let module_search_paths =
         build_module_search_paths(&resolved_stdlib_dir, opt.module_path.as_deref());
-    let ast0 = match lzscr_parser::parse_expr(&code) {
+    let mut ast0 = match lzscr_parser::parse_expr(&code) {
         Ok(x) => x,
         Err(e) => {
             use lzscr_parser::ParseError;
@@ -856,7 +860,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     // Build source registry and expand requires while rebasing spans for modules
     // Build SourceRegistry with precise segment mapping back to prelude and original user file
-    let (prelude_seg, user_seg) = {
+    let (prelude_seg, user_seg, user_wrapped_segment_start) = {
         // Compute prelude segment if present
         let prelude_seg = prelude_for_diag.as_ref().map(|(pre_src, pre_name)| {
             // Combined buffer layout when prelude is enabled:
@@ -864,24 +868,96 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let prelude_start = 1usize; // after leading '('
             (pre_name.clone(), pre_src.clone(), prelude_start)
         });
-        // Compute user segment start in the combined buffer
-        let user_start = if let Some((pre_src, _)) = prelude_for_diag.as_ref() {
-            let mut s = 1 + pre_src.len() + 1; // '(' + prelude + '\n'
+        // Compute user segment starts (wrapped vs raw) in the combined buffer
+        let (wrapped_start, raw_start) = if let Some((pre_src, _)) = prelude_for_diag.as_ref() {
+            let wrapped = 1 + pre_src.len() + 1; // '(' + prelude + '\n'
+            let mut raw = wrapped;
             if user_wrapped_parens {
-                s += 1; // the extra '('
+                raw += 1; // skip synthetic '('
             }
-            s
+            (wrapped, raw)
         } else {
-            // No prelude; we may still have wrapped parens for file input
-            if user_wrapped_parens {
-                1
-            } else {
-                0
+            let start = if user_wrapped_parens { 1 } else { 0 };
+            (start, start)
+        };
+        let user_seg = Some((input_name.clone(), user_raw.clone(), raw_start));
+        (prelude_seg, user_seg, wrapped_start)
+    };
+    if let Some((pre_src, pre_name)) = &prelude_for_diag {
+        let prelude_wrapped = format!("({})", pre_src);
+        let prelude_expr = match lzscr_parser::parse_expr(&prelude_wrapped) {
+            Ok(expr) => expr,
+            Err(err) => {
+                use lzscr_parser::ParseError;
+                match err {
+                    ParseError::WithSpan { msg, span_offset, span_len } => {
+                        let adj = span_offset.saturating_sub(1);
+                        let block = format_span_caret(pre_src, pre_name, adj, span_len);
+                        eprintln!("parse error in stdlib prelude: {}\n{}", msg, block);
+                    }
+                    ParseError::WithSpan2 {
+                        msg,
+                        span1_offset,
+                        span1_len,
+                        span2_offset,
+                        span2_len,
+                    } => {
+                        let adj1 = span1_offset.saturating_sub(1);
+                        let adj2 = span2_offset.saturating_sub(1);
+                        let block1 = format_span_caret(pre_src, pre_name, adj1, span1_len);
+                        let block2 = format_span_caret(pre_src, pre_name, adj2, span2_len);
+                        eprintln!("parse error in stdlib prelude: {}\n{}\n{}", msg, block1, block2);
+                    }
+                    other => {
+                        eprintln!("parse error in stdlib prelude: {}", other);
+                    }
+                }
+                std::process::exit(2);
             }
         };
-        let user_seg = Some((input_name.clone(), user_raw.clone(), user_start));
-        (prelude_seg, user_seg)
-    };
+        let prelude_rebased = rebase_expr_spans_with_minus(&prelude_expr, 1, 1);
+        let (type_decls, bindings) = match flatten_prelude_bindings(prelude_rebased) {
+            Ok(res) => res,
+            Err(kind) => {
+                eprintln!("stdlib prelude must consist of top-level let bindings; found {}", kind);
+                std::process::exit(2);
+            }
+        };
+        let user_expr_raw = match lzscr_parser::parse_expr(&user_code_wrapped) {
+            Ok(expr) => expr,
+            Err(e) => {
+                eprintln!(
+                    "internal error: failed to reparse user program for stdlib prelude: {}",
+                    e
+                );
+                std::process::exit(2);
+            }
+        };
+        let user_rebased =
+            rebase_expr_spans_with_minus(&user_expr_raw, user_wrapped_segment_start, 0);
+        let binding_has_name = |pat: &Pattern, needle: &str| -> bool {
+            match &pat.kind {
+                PatternKind::Var(name) | PatternKind::Symbol(name) => name == needle,
+                _ => false,
+            }
+        };
+        let has_inspect_record = bindings.iter().any(|(pat, _)| binding_has_name(pat, "Inspect"));
+        let has_inspect_result =
+            bindings.iter().any(|(pat, _)| binding_has_name(pat, "inspect_result"));
+        if !has_inspect_record || !has_inspect_result {
+            eprintln!(
+                "stdlib prelude is missing required Inspect helpers (inspect_result, Inspect record)."
+            );
+            eprintln!(
+                "please ensure --stdlib-dir points to a matching stdlib that defines these bindings"
+            );
+            std::process::exit(2);
+        }
+        ast0 = Expr {
+            span: lzscr_ast::span::Span::new(0, code.len()),
+            kind: ExprKind::LetGroup { type_decls, bindings, body: Box::new(user_rebased) },
+        };
+    }
     let mut src_reg =
         SourceRegistry::with_segments(input_name.clone(), code.clone(), prelude_seg, user_seg);
     let ast = match expand_requires_in_expr(
@@ -911,6 +987,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Block(inner) => 1 + count(inner),
                 List(xs) => 1 + xs.iter().map(count).sum::<usize>(),
                 Record(fs) => 1 + fs.iter().map(|f| count(&f.value)).sum::<usize>(),
+                ModeMap(fs) => 1 + fs.iter().map(|f| count(&f.value)).sum::<usize>(),
                 LetGroup { bindings, body, .. } => {
                     1 + count(body) + bindings.iter().map(|(_, ex)| count(ex)).sum::<usize>()
                 }
@@ -1683,6 +1760,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )
                 } else if args.is_empty() {
                     name.clone()
+                } else if args.len() == 1 {
+                    format!("{} {}", name, val_to_string(env, &args[0]))
                 } else {
                     format!(
                         "{}({})",
@@ -1702,7 +1781,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Value::Record(map) => {
                 let inner = map
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, val_to_string(env, v)))
+                    .map(|(k, v)| {
+                        let rendered = val_to_string(env, v);
+                        let needs_wrap = rendered.chars().any(|ch| ch.is_whitespace())
+                            || rendered.contains(',')
+                            || rendered.contains('{')
+                            || rendered.contains('[');
+                        let wrapped = if needs_wrap { format!("({})", rendered) } else { rendered };
+                        format!("{}: {}", k, wrapped)
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("{{{}}}", inner)
@@ -1879,6 +1966,23 @@ fn expand_requires_in_expr(
                 })
                 .collect::<Result<Vec<_>, String>>()?,
         ),
+        ModeMap(fs) => ModeMap(
+            fs.iter()
+                .map(|f| {
+                    Ok(ExprRecordField::new(
+                        f.name.clone(),
+                        f.name_span,
+                        expand_requires_in_expr(
+                            &f.value,
+                            search_paths,
+                            stack,
+                            src_reg,
+                            stdlib_mode,
+                        )?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()?,
+        ),
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
@@ -1991,6 +2095,13 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
             }
             Record(new)
         }
+        ModeMap(fields) => {
+            let mut new = Vec::with_capacity(fields.len());
+            for f in fields.iter() {
+                new.push(ExprRecordField::new(f.name.clone(), f.name_span, map_expr(&f.value)));
+            }
+            ModeMap(new)
+        }
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
@@ -2012,6 +2123,26 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
         len: e.span.len,
     };
     Expr { kind, span: new_span }
+}
+
+fn flatten_prelude_bindings(mut expr: Expr) -> Result<TypeDeclsAndExprs, String> {
+    let mut type_decls = Vec::new();
+    let mut bindings = Vec::new();
+    loop {
+        match expr.kind {
+            ExprKind::LetGroup { type_decls: decls, bindings: mut group_bindings, body } => {
+                type_decls.extend(decls);
+                bindings.append(&mut group_bindings);
+                expr = *body;
+            }
+            ExprKind::Block(inner) => {
+                expr = *inner;
+            }
+            ExprKind::Unit => break,
+            other => return Err(node_kind_name(&other).to_string()),
+        }
+    }
+    Ok((type_decls, bindings))
 }
 
 fn rebase_pattern_with_minus(p: &Pattern, add: usize, minus: usize) -> Pattern {
@@ -2167,6 +2298,7 @@ fn node_kind_name(k: &ExprKind) -> &'static str {
         ExprKind::Block(_) => "Block",
         ExprKind::List(_) => "List",
         ExprKind::Record(_) => "Record",
+        ExprKind::ModeMap(_) => "ModeMap",
         ExprKind::LetGroup { .. } => "LetGroup",
         ExprKind::Raise(_) => "Raise",
         ExprKind::AltLambda { .. } => "AltLambda",

@@ -236,14 +236,8 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
             if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
                 Ok(Value::Ctor { name, args: vec![aval] })
             } else {
-                if let Some(&k) =
-                    env.ctor_arity.get(&name).or_else(|| env.ctor_arity.get(&format!(".{name}")))
-                {
-                    if k == 0 {
-                        return Err(EvalError::TypeError);
-                    }
-                }
-                Ok(Value::Ctor { name, args: vec![aval] })
+                // Symbols have arity 0 and cannot be applied
+                Err(EvalError::NotApplicable(format!("symbol '{}' (symbols have arity 0)", name)))
             }
         }
         Value::Ctor { name, mut args } => {
@@ -256,7 +250,12 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
                     env.ctor_arity.get(&name).or_else(|| env.ctor_arity.get(&format!(".{name}")))
                 {
                     if args.len() > k {
-                        return Err(EvalError::TypeError);
+                        return Err(EvalError::NotApplicable(format!(
+                            "constructor '{}' (expected {} args, got {})",
+                            name,
+                            k,
+                            args.len()
+                        )));
                     }
                 }
                 Ok(Value::Ctor { name, args })
@@ -287,19 +286,36 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
                 Ok(Value::Raised(Box::new(aval)))
             }
         }
-        _ => Err(EvalError::NotFunc),
+        v => {
+            let type_desc = match v {
+                Value::Unit => "unit value ()",
+                Value::Int(_) => "integer",
+                Value::Float(_) => "float",
+                Value::Str(_) => "string",
+                Value::Char(_) => "character",
+                Value::List(_) => "list",
+                Value::Raised(_) => "raised exception",
+                _ => "non-function value",
+            };
+            Err(EvalError::NotApplicable(type_desc.to_string()))
+        }
     }
 }
 
 pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
     fn print_type_expr(t: &TypeExpr) -> String {
+        fn dotted(name: &str) -> String {
+            let mut s = String::from(".");
+            s.push_str(name);
+            s
+        }
         match t {
-            TypeExpr::Unit => "Unit".into(),
-            TypeExpr::Int => "Int".into(),
-            TypeExpr::Float => "Float".into(),
-            TypeExpr::Bool => "Bool".into(),
-            TypeExpr::Str => "Str".into(),
-            TypeExpr::Char => "Char".into(),
+            TypeExpr::Unit => dotted("Unit"),
+            TypeExpr::Int => dotted("Int"),
+            TypeExpr::Float => dotted("Float"),
+            TypeExpr::Bool => dotted("Bool"),
+            TypeExpr::Str => dotted("Str"),
+            TypeExpr::Char => dotted("Char"),
             TypeExpr::Var(a) => format!("%{}", a),
             TypeExpr::Hole(Some(a)) => format!("?{}", a),
             TypeExpr::Hole(opt) => {
@@ -324,12 +340,13 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             }
             TypeExpr::Fun(a, b) => format!("{} -> {}", print_type_expr(a), print_type_expr(b)),
             TypeExpr::Ctor { tag, args } => {
+                let head = dotted(tag);
                 if args.is_empty() {
-                    tag.clone()
+                    head
                 } else {
                     format!(
                         "{} {}",
-                        tag,
+                        head,
                         args.iter().map(print_type_expr).collect::<Vec<_>>().join(" ")
                     )
                 }
@@ -449,7 +466,16 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             let val = env.vars.get(n).cloned().ok_or_else(|| EvalError::Unbound(n.clone()))?;
             force_value(env, &val)
         }
-        ExprKind::Symbol(s) => Ok(Value::Symbol(env.intern_symbol(s))),
+        ExprKind::Symbol(s) => {
+            fn is_tuple_tag(name: &str) -> bool {
+                name.starts_with('.') && name.chars().skip(1).all(|c| c == ',')
+            }
+            if s.starts_with('.') && !is_tuple_tag(s) {
+                Ok(Value::Symbol(env.intern_symbol(s)))
+            } else {
+                Ok(Value::Ctor { name: s.clone(), args: vec![] })
+            }
+        }
         ExprKind::Lambda { param, body } => {
             Ok(Value::Closure { param: param.clone(), body: *body.clone(), env: env.clone() })
         }
@@ -545,23 +571,22 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         Err(EvalError::TypeError)
                     }
                 }
-                // Constructor variable: build constructor value accumulating payload args
+                // Symbol: has arity 0, cannot be applied (except tuple constructors)
                 Value::Symbol(id) => {
                     let name = env.symbol_name(id);
-                    // At the first application we cannot check max arity yet; if declared arity is 0, error
-                    if let Some(&k) = env
-                        .ctor_arity
-                        .get(&name)
-                        .or_else(|| env.ctor_arity.get(&format!(".{name}")))
-                    {
-                        if k == 0 {
-                            return Err(EvalError::Traced {
-                                kind: Box::new(EvalError::TypeError),
-                                spans: vec![e.span],
-                            });
-                        }
+                    // Special internal tuple pack constructor '.,', '.,,', ... accepts any arity
+                    if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
+                        Ok(Value::Ctor { name, args: vec![a] })
+                    } else {
+                        // Symbols have arity 0 and cannot be applied
+                        Err(EvalError::Traced {
+                            kind: Box::new(EvalError::NotApplicable(format!(
+                                "symbol '{}' (symbols have arity 0)",
+                                name
+                            ))),
+                            spans: vec![e.span],
+                        })
                     }
-                    Ok(Value::Ctor { name, args: vec![a] })
                 }
                 Value::Ctor { name, mut args } => {
                     args.push(a);
@@ -571,7 +596,15 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         .or_else(|| env.ctor_arity.get(&format!(".{name}")))
                     {
                         if args.len() > k {
-                            return Err(EvalError::TypeError);
+                            return Err(EvalError::Traced {
+                                kind: Box::new(EvalError::NotApplicable(format!(
+                                    "constructor '{}' (expected {} args, got {})",
+                                    name,
+                                    k,
+                                    args.len()
+                                ))),
+                                spans: vec![e.span],
+                            });
                         }
                         // If just satisfied, return as value; if insufficient, keep a partial value
                     }
@@ -651,7 +684,24 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                                         Value::Raised(Box::new(v))
                                     }
                                 }
-                                _ => return Err(EvalError::NotFunc),
+                                v => {
+                                    let type_desc = match v {
+                                        Value::Unit => "unit value ()",
+                                        Value::Int(_) => "integer",
+                                        Value::Float(_) => "float",
+                                        Value::Str(_) => "string",
+                                        Value::Char(_) => "character",
+                                        Value::List(_) => "list",
+                                        Value::Raised(_) => "raised exception",
+                                        _ => "non-function value",
+                                    };
+                                    return Err(EvalError::Traced {
+                                        kind: Box::new(EvalError::NotApplicable(
+                                            type_desc.to_string(),
+                                        )),
+                                        spans: vec![e.span],
+                                    });
+                                }
                             };
                         }
                         Ok(res)
@@ -679,10 +729,39 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                         Ok(Value::Raised(Box::new(a)))
                     }
                 }
-                _ => Err(EvalError::NotFunc),
+                v => {
+                    let type_desc = match v {
+                        Value::Unit => "unit value ()",
+                        Value::Int(_) => "integer",
+                        Value::Float(_) => "float",
+                        Value::Str(_) => "string",
+                        Value::Char(_) => "character",
+                        Value::List(_) => "list",
+                        Value::Raised(_) => "raised exception",
+                        _ => "non-function value",
+                    };
+                    Err(EvalError::Traced {
+                        kind: Box::new(EvalError::NotApplicable(type_desc.to_string())),
+                        spans: vec![e.span],
+                    })
+                }
             }
         }
         ExprKind::Block(inner) => eval(env, inner),
+        ExprKind::ModeMap(fields) => {
+            // Evaluate each field expression and collect into a record-like structure
+            // Store as Value::Record for consistency with record evaluation
+            let mut result_fields: std::collections::BTreeMap<String, Value> =
+                std::collections::BTreeMap::new();
+            for f in fields {
+                let v = eval(env, &f.value)?;
+                if let Value::Raised(_) = v {
+                    return Ok(v);
+                }
+                result_fields.insert(f.name.clone(), v);
+            }
+            Ok(Value::Record(result_fields))
+        }
         ExprKind::AltLambda { left, right } => {
             // Desugar to closure: \x -> (~alt left right x)
             let param =

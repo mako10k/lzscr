@@ -1,0 +1,24 @@
+ # Test for stdlib/pure/functional/iter.lzscr (finite-only)
+  # Inline iter definitions (finite)
+  ~enumFromTo = \~start ~end -> (\(True -> [] | \False -> (~start : (~enumFromTo (~start + 1) ~end))) (~start > ~end));
+  ~scanl = \~f ~acc ~xs -> (~acc : ((\[] -> [] | \(~h : ~t) -> (~scanl ~f (~f ~acc ~h) ~t)) ~xs));
+  # Helper
+  ~and = \~a ~b -> (\(True -> ~b | \False -> False) ~a);
+  ~length = \~xs -> ((\[] -> 0 | \(~_ : ~t) -> (1 + (~length ~t))) ~xs);
+  ~head = \~xs -> ((\(~h : ~_) -> ~h) ~xs);
+  # Test enumFromTo
+  ~test_enumFromTo = (~result = (~enumFromTo 1 5);
+    ~t1 = (~length ~result) == 5;
+    ~t2 = (~head ~result) == 1;
+    (~and ~t1 ~t2));
+  # Test scanl (finite list)
+  ~test_scanl = (~result = (~scanl (\~a ~b -> (~a + ~b)) 0 [1,2,3]);
+    ~len = (~length ~result);
+    ~t1 = ~len == 4;
+    ~t2 = (~head ~result) == 0;
+    (~and ~t1 ~t2));
+  # Run all tests
+  ~all_tests = (~r1 = ~test_enumFromTo;
+    ~r2 = ~test_scanl;
+    (~and ~r1 ~r2));
+  ~all_tests

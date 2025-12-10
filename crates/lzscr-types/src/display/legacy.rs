@@ -31,23 +31,25 @@ pub(crate) fn pp_type_legacy(t: &Type) -> String {
         }
         Type::Fun(a, b) => format!("{} -> {}", pp_atom_legacy(a), pp_type_legacy(b)),
         Type::Ctor { tag, payload } => {
+            let head = tag.clone();
             if payload.is_empty() {
-                tag.clone()
+                head
             } else {
                 format!(
                     "{} {}",
-                    tag,
+                    head,
                     payload.iter().map(pp_atom_legacy).collect::<Vec<_>>().join(" ")
                 )
             }
         }
         Type::Named { name, args } => {
+            let head = name.clone();
             if args.is_empty() {
-                name.clone()
+                head
             } else {
                 format!(
                     "{} {}",
-                    name,
+                    head,
                     args.iter().map(pp_atom_legacy).collect::<Vec<_>>().join(" ")
                 )
             }

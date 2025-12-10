@@ -94,15 +94,15 @@ pub(crate) fn infer_pattern(
         PatternKind::Record(fields) => {
             let mut want = BTreeMap::new();
             for f in fields {
-                want.insert(f.name.clone(), ctx.fresh_tv());
+                want.insert(f.name.clone(), (ctx.fresh_tv(), Some(f.name_span)));
             }
-            let want_spanned =
-                Type::Record(want.iter().map(|(k, v)| (k.clone(), (v.clone(), None))).collect());
+            let want_spanned = Type::Record(want.clone());
             let s0 = ctx_unify(ctx, scrutinee, &want_spanned)?;
             let mut s = s0;
             let mut binds = vec![];
             for f in fields {
-                let tfield = want.get(&f.name).unwrap().apply(&s);
+                let (field_ty, _) = want.get(&f.name).unwrap();
+                let tfield = field_ty.apply(&s);
                 let pi = infer_pattern(ctx, &f.pattern, &tfield)?;
                 s = pi.subst.compose(s);
                 binds.extend(pi.bindings);

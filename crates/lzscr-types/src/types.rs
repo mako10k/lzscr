@@ -71,7 +71,7 @@ pub enum Type {
     Record(BTreeMap<String, (Type, Option<Span>)>),
     /// Constructor type: `.Tag payload1 payload2 ...`
     ///
-    /// Represents tagged values like `.Some x` or `.Ok value`.
+    /// Represents tagged values like `Some x` or `Ok value`.
     /// Payload is a vector to support multi-argument constructors.
     Ctor { tag: String, payload: Vec<Type> },
     /// Named type: syntactic sugar for type aliases

@@ -54,7 +54,7 @@ Then install the VSIX in VS Code via `Extensions` > `â€¦` > `Install from VSIXâ€
 - Add syntax highlighting for Float comparison operators (`.<`, `.<=`, `.>`, `.>=`)
 - Add syntax highlighting for `%` type symbol
 - Add syntax highlighting for `<-` bind operator
-- Distinguish constructors (`.True`, `.False`, `.Some`) from methods
+- Distinguish constructors (`True`, `False`, `Some`) from methods
 - Improved TextMate grammar alignment with current language spec
 
 ### 0.0.3 (2025-12-03)

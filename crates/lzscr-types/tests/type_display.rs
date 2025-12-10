@@ -15,8 +15,8 @@ fn list_int_type() {
 
 #[test]
 fn ctor_application_type() {
-    let t = infer_program(".Foo 1").unwrap();
-    assert_eq!(t, ".Foo Int");
+    let t = infer_program("Foo 1").unwrap();
+    assert_eq!(t, "Foo Int");
 }
 
 #[test]
@@ -59,13 +59,13 @@ fn pretty_vs_legacy_variable_names() {
 
 #[test]
 fn sumctor_pretty_and_legacy_display() {
-    let src = "\\(.A ~x) -> ~x | \\(.B ~y ~z) -> ~z"; // (.A %t0 | .B(%t1, %t2)) -> %t2 (shape)
+    let src = "\\(A ~x) -> ~x | \\(B ~y ~z) -> ~z"; // (A %t0 | B(%t1, %t2)) -> %t2 (shape)
     let ast = parse_expr(src).unwrap();
     let legacy = infer_ast_with_opts(&ast, InferOptions { pretty: false }).unwrap();
     let pretty = infer_ast_with_opts(&ast, InferOptions { pretty: true }).unwrap();
-    assert!(legacy.contains(".A") && legacy.contains(".B"));
+    assert!(legacy.contains("A") && legacy.contains("B"));
     assert!(legacy.starts_with("(")); // union form wrapped in parens at top-level arg domain
-    assert!(pretty.contains(".A") && pretty.contains(".B"));
+    assert!(pretty.contains("A") && pretty.contains("B"));
     assert!(pretty.starts_with("%{"));
 }
 

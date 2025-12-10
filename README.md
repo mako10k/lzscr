@@ -32,8 +32,8 @@ cargo run -p lzscr-cli -- -e '(1, 2, 3)'
 cargo run -p lzscr-cli -- -e '{a: 1, b: 2}'
 # => equivalent to {"a": 1, "b": 2} (rendering order may vary)
 
-# Booleans use constructor form: .True() / .False()
-cargo run -p lzscr-cli -- -e 'if .True() 10 20'
+# Booleans use constructor form: True / False
+cargo run -p lzscr-cli -- -e 'if True 10 20'
 # => 10
 
 ## File extension / MIME / running from file (--file)
@@ -55,6 +55,16 @@ Shebang example (when the binary is installed as `lzscr`):
 #!/usr/bin/env lzscr
 ~add 1 2;
 ```
+
+## Installing the CLI binary
+
+To install the formatter/runtime CLI into your local Cargo bin directory:
+
+```bash
+cargo install --path crates/lzscr-cli
+```
+
+The command builds an optimized binary and places `lzscr-cli` under `~/.cargo/bin` (make sure that directory is on your `PATH`). Re-run the same command with `--force` whenever you need to reinstall after local changes. Verify the install via `lzscr-cli --help` or `lzscr-cli --version`.
 
 ## ゴールデンテスト (tokenizer)
 

@@ -1,0 +1,29 @@
+ # stdlib/core/option.lzscr
+  # Option type for representing optional values
+  # Constructors: Some x | None
+  # Type definition (for documentation)
+  %Option ~a = %{Some ~a | None};
+  # Predicates
+  ~is_some = \(Some _) -> True | \_ -> False;
+  ~is_none = \(Some _) -> False | \_ -> True;
+  # map : (a -> b) -> Option a -> Option b
+  ~map ~f = \(Some ~x) -> Some (~f ~x) | \_ -> None;
+  # and_then / flat_map : (a -> Option b) -> Option a -> Option b
+  ~and_then ~f = \(Some ~x) -> (~f ~x) | \_ -> None;
+  # or_else : Option a -> (() -> Option a) -> Option a (lazy alternative)
+  ~or_else ~opt ~th = (\(Some ~x) -> Some ~x | \_ -> (~th ())) ~opt;
+  # unwrap_or : Option a -> a -> a (eager default)
+  ~unwrap_or ~opt ~def = (\(Some ~x) -> ~x | \_ -> ~def) ~opt;
+  # unwrap_or_else : Option a -> (() -> a) -> a (lazy default)
+  ~unwrap_or_else ~opt ~th = (\(Some ~x) -> ~x | \_ -> (~th ())) ~opt;
+  # to_list : Option a -> List a
+  ~to_list ~opt = (\(Some ~x) -> [~x] | \_ -> []) ~opt;
+  # from_bool : Bool -> a -> Option a (true => Some a)
+  ~from_bool ~b ~x = \(True -> Some ~x | \False -> None) ~b;
+  # maybe : b -> (a -> b) -> Option a -> b
+  ~maybe ~def ~f ~opt = (\(Some ~x) -> (~f ~x) | \_ -> ~def) ~opt;
+  # contains : a -> Option a -> Bool (requires equality)
+  ~contains ~needle ~opt = (\(Some ~x) -> (~x == ~needle) | \_ -> False) ~opt;
+  # filter : (a -> Bool) -> Option a -> Option a
+  ~filter ~p ~opt = (\(Some ~x) -> ((\(True -> Some ~x) | \False -> None) (~p ~x)) | \_ -> None) ~opt;
+  {is_some : ~is_some,is_none : ~is_none,map : ~map,and_then : ~and_then,or_else : ~or_else,unwrap_or : ~unwrap_or,unwrap_or_else : ~unwrap_or_else,to_list : ~to_list,from_bool : ~from_bool,maybe : ~maybe,contains : ~contains,filter : ~filter}

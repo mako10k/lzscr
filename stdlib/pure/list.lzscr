@@ -1,10 +1,10 @@
 # stdlib: List extra utilities built atop core prelude (~cons, ~foldl, etc.)
 
 # any : (a -> Bool) -> [a] -> Bool
-~any ~p ~xs = (\[] -> .False | \( ~h : ~t ) -> (~if (~p ~h) .True (~any ~p ~t))) ~xs;
+~any ~p ~xs = (\[] -> False | \( ~h : ~t ) -> (~if (~p ~h) True (~any ~p ~t))) ~xs;
 
 # all : (a -> Bool) -> [a] -> Bool
-~all ~p ~xs = (\[] -> .True | \( ~h : ~t ) -> (~if (~p ~h) (~all ~p ~t) .False)) ~xs;
+~all ~p ~xs = (\[] -> True | \( ~h : ~t ) -> (~if (~p ~h) (~all ~p ~t) False)) ~xs;
 
 # sum : [Int] -> Int
 ~sum ~xs = (~foldl (\~acc ~x -> (~acc + ~x)) 0 ~xs);
@@ -13,10 +13,10 @@
 ~product ~xs = (~foldl (\~acc ~x -> (~acc * ~x)) 1 ~xs);
 
 # head : [a] -> Option a
-~head ~xs = (\[] -> .None | \( ~h : ~_ ) -> .Some ~h) ~xs;
+~head ~xs = (\[] -> None | \( ~h : ~_ ) -> Some ~h) ~xs;
 
 # tail : [a] -> Option [a]
-~tail ~xs = (\[] -> .None | \( _ : ~t ) -> .Some ~t) ~xs;
+~tail ~xs = (\[] -> None | \( _ : ~t ) -> Some ~t) ~xs;
 
 # take_while : (a -> Bool) -> [a] -> [a]
 ~take_while ~p ~xs = (\[] -> [] | \( ~h : ~t ) -> (~if (~p ~h) (~cons ~h (~take_while ~p ~t)) [])) ~xs;

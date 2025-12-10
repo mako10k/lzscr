@@ -100,6 +100,10 @@ pub enum Tok {
     #[token(".>")]
     DotGreater,
 
+    // Bare dot (used for mode-map syntax .{ ... })
+    #[token(".")]
+    Dot,
+
     #[token("~")]
     Tilde,
 

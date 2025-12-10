@@ -1,202 +1,95 @@
-# lzscr stdlib prelude (M1 minimal)
-
-# Namespaces (delegate to runtime Builtins)
-~Str = ~Builtins .string;
-~Math = ~Builtins .math;
-~Char = ~Builtins .char;
-~Scan = ~Builtins .scan;
-~Unicode = ~Builtins .unicode;
-
-# Core helpers
-%Bool = %{ .True | .False };
-
-~id ~x = ~x;
-~compose ~f ~g ~x = ~f (~g ~x);
-
-
-# ---------------------------------------------------------------------------
-# Modular stdlib (deduplicated): load extended helpers from separate modules.
-# We keep backward-compatible aliases for existing prelude function names.
-# Future: introduce type declarations (e.g. %Option, %Result) here or in a
-# dedicated types file once the syntax is stabilized.
-
-# Load modules (records) via ~require expansion
-~Option = (~require .pure .option);
-~Result = (~require .pure .result);
-~ListExtra = (~require .pure .list);
-
-# (Optional future) Re-export selected list extras if desired:
-# e.g. ~list_any = (~ListExtra .any);
-
-# List primitives (lambda-alt on the structural arg)
-~length ~xs = (\[] -> 0 | \( _ : ~tail ) -> 1 + (~length ~tail)) ~xs;
-
-~append ~xs ~ys = (\[] -> ~ys | \( ~h : ~t ) -> (~cons ~h (~append ~t ~ys))) ~xs;
-
-~reverse ~xs = (~foldl (\~acc ~x -> (~cons ~x ~acc)) [] ~xs);
-
-~foldl ~f ~acc ~xs = (\[] -> ~acc | \( ~h : ~t ) -> ~foldl ~f (~f ~acc ~h) ~t) ~xs;
-
-~foldr ~f ~acc ~xs = (\[] -> ~acc | \( ~h : ~t ) -> ~f ~h (~foldr ~f ~acc ~t)) ~xs;
-
-~map ~f ~xs = (\[] -> [] | \( ~h : ~t ) -> (~cons (~f ~h) (~map ~f ~t))) ~xs;
-
-~filter ~p ~xs = (\[] -> [] | \( ~h : ~t ) -> (~if (~p ~h) (~cons ~h (~filter ~p ~t)) (~filter ~p ~t))) ~xs;
-
-~take ~n ~xs = (~if (~n <= 0) [] ((\[] -> [] | \( ~h : ~t ) -> (~cons ~h (~take (~n - 1) ~t))) ~xs));
-
-~drop ~n ~xs = (~if (~n <= 0) ~xs ((\[] -> [] | \( _ : ~t ) -> (~drop (~n - 1) ~t)) ~xs));
-
-# String wrappers
-~str_len ~s = (~Str .len ~s);
-~str_concat ~a ~b = (~Str .concat ~a ~b);
-~str_slice ~s ~start ~len = (~Str .slice ~s ~start ~len);
-~str_char_at ~s ~i = (~Str .char_at ~s ~i);
-
-# String: starts_with/ends_with
-~starts_with ~s ~pre = (
-  ~n = (~Str .len ~pre);
-  ~m = (~Str .len ~s);
-  ~if (~m >= ~n) (((~Str .slice ~s 0 ~n) == ~pre)) .False
-);
-
-~ends_with ~s ~suf = (
-  ~n = (~Str .len ~suf);
-  ~m = (~Str .len ~s);
-  ~if (~m >= ~n) (
-    ~st = ~m - ~n;
-    ((~Str .slice ~s ~st ~n) == ~suf)
-  ) .False
-);
-
-# String find: index of first occurrence of a character, else .None
-~find_char ~s ~ch = (
-  ~sc = (~Scan .new ~s);
-  ~loop ~st = (
-    ((\.True -> .None)
-     | (\.False -> (
-        ~i = (~Scan .pos ~st);
+ # lzscr stdlib prelude (M1 minimal)
+  # Namespaces (delegate to runtime Builtins)
+  ~Str = ~Builtins .string;
+  ~Math = ~Builtins .math;
+  ~Char = ~Builtins .char;
+  ~Scan = ~Builtins .scan;
+  ~Unicode = ~Builtins .unicode;
+  # Core helpers
+  %Bool = %{True | False};
+  ~id ~x = ~x;
+  ~compose ~f ~g ~x = ~f (~g ~x);
+  # ---------------------------------------------------------------------------
+  # Modular stdlib (deduplicated): load extended helpers from separate modules.
+  # We keep backward-compatible aliases for existing prelude function names.
+  # Future: introduce type declarations (e.g. %Option, %Result) here or in a
+  # dedicated types file once the syntax is stabilized.
+  # Load modules (records) via ~require expansion
+  ~Option = (~require .pure .option);
+  ~Result = (~require .pure .result);
+  ~ListExtra = (~require .pure .list);
+  # (Optional future) Re-export selected list extras if desired:
+  # e.g. ~list_any = (~ListExtra .any);
+  # List primitives (lambda-alt on the structural arg)
+  ~length ~xs = (\[] -> 0 | \(_ : ~tail) -> 1 + (~length ~tail)) ~xs;
+  ~append ~xs ~ys = (\[] -> ~ys | \(~h : ~t) -> (~cons ~h (~append ~t ~ys))) ~xs;
+  ~reverse ~xs = (~foldl (\~acc ~x -> (~cons ~x ~acc)) [] ~xs);
+  ~foldl ~f ~acc ~xs = (\[] -> ~acc | \(~h : ~t) -> ~foldl ~f (~f ~acc ~h) ~t) ~xs;
+  ~foldr ~f ~acc ~xs = (\[] -> ~acc | \(~h : ~t) -> ~f ~h (~foldr ~f ~acc ~t)) ~xs;
+  ~map ~f ~xs = (\[] -> [] | \(~h : ~t) -> (~cons (~f ~h) (~map ~f ~t))) ~xs;
+  ~filter ~p ~xs = (\[] -> [] | \(~h : ~t) -> (~if (~p ~h) (~cons ~h (~filter ~p ~t)) (~filter ~p ~t))) ~xs;
+  ~take ~n ~xs = (~if (~n <= 0) [] ((\[] -> [] | \(~h : ~t) -> (~cons ~h (~take (~n - 1) ~t))) ~xs));
+  ~drop ~n ~xs = (~if (~n <= 0) ~xs ((\[] -> [] | \(_ : ~t) -> (~drop (~n - 1) ~t)) ~xs));
+  # String wrappers
+  ~str_len ~s = (~Str .len ~s);
+  ~str_concat ~a ~b = (~Str .concat ~a ~b);
+  ~str_slice ~s ~start ~len = (~Str .slice ~s ~start ~len);
+  ~str_char_at ~s ~i = (~Str .char_at ~s ~i);
+  # String: starts_with/ends_with
+  ~starts_with ~s ~pre = (~n = (~Str .len ~pre);
+    ~m = (~Str .len ~s);
+    ~if (~m >= ~n) (((~Str .slice ~s 0 ~n) == ~pre)) False);
+  ~ends_with ~s ~suf = (~n = (~Str .len ~suf);
+    ~m = (~Str .len ~s);
+    ~if (~m >= ~n) (~st = ~m - ~n;
+      ((~Str .slice ~s ~st ~n) == ~suf)) False);
+  # String find: index of first occurrence of a character, else None
+  ~find_char ~s ~ch = (~sc = (~Scan .new ~s);
+    ~loop ~st = (~if ((~Scan .eof ~st)) None (~i = (~Scan .pos ~st);
         ~opt = (~Scan .peek ~st);
-  ((\(.Some ~c) -> (~if (~c == ~ch) (.Some ~i) (~loop (~Scan .set_pos ~st (~i + 1)))))
-         | (\.None -> .None))
-        ~opt
-      )))
-    ((~Scan .eof ~st))
-  );
-  ~loop ~sc
-);
-
-# Simple join: join sep xs (xs: [Str], sep: Str)
-~join ~sep ~xs = (
-  ~step = (\~acc ~s -> (~if (~acc == "") ~s (~Str .concat ~acc (~Str .concat ~sep ~s))));
-  ~foldl ~step "" ~xs
-);
-
-# Range: inclusive ascending [a..b]; [] if a>b
-~range ~a ~b = (~if (~a > ~b) [] (~cons ~a (~range (~a + 1) ~b)));
-
-# Find substring: .Some index | .None
-~find ~s ~pat = (
-  ~n = (~Str .len ~s);
-  ~m = (~Str .len ~pat);
-  ~lim = ~n - ~m;
-  ~loop ~i = (~if (~i > ~lim) .None (
-    ~if (((~Str .slice ~s ~i ~m) == ~pat)) (.Some ~i) (~loop (~i + 1))
-  ));
-  (~if (~m == 0) (.Some 0) (~loop 0))
-);
-
-# Split by single character separator into [Str]
-~split_char ~s ~ch = (
-  ~sc = (~Scan .new ~s);
-  ~loop ~st ~start ~acc = (
-    ((\.True -> (
-        ~end = (~Scan .pos ~st);
+        ((\(Some ~c) -> (~if (~c == ~ch) (Some ~i) (~loop (~Scan .set_pos ~st (~i + 1))))) | \_ -> None) ~opt));
+    ~loop ~sc);
+  # Simple join: join sep xs (xs: [Str], sep: Str)
+  ~join ~sep ~xs = (~step = (\~acc ~s -> (~if (~acc == "") ~s (~Str .concat ~acc (~Str .concat ~sep ~s))));
+    ~foldl ~step "" ~xs);
+  # Range: inclusive ascending [a..b]; [] if a>b
+  ~range ~a ~b = (~if (~a > ~b) [] (~cons ~a (~range (~a + 1) ~b)));
+  # Find substring: Some index | None
+  ~find ~s ~pat = (~n = (~Str .len ~s);
+    ~m = (~Str .len ~pat);
+    ~lim = ~n - ~m;
+    ~loop ~i = (~if (~i > ~lim) None (~if (((~Str .slice ~s ~i ~m) == ~pat)) (Some ~i) (~loop (~i + 1))));
+    (~if (~m == 0) (Some 0) (~loop 0)));
+  # Split by single character separator into [Str]
+  ~split_char ~s ~ch = (~sc = (~Scan .new ~s);
+    ~loop ~st ~start ~acc = (~if ((~Scan .eof ~st)) (~end = (~Scan .pos ~st);
         ~seg = (~Scan .slice_span ~st ~start ~end);
-        (~reverse (~cons ~seg ~acc))
-      ))
-     | (\.False -> (
-        ~i = (~Scan .pos ~st);
-        ((\(.Some ~c) -> (
-            ~if ((~c == ~ch)) (
-              ~seg = (~Scan .slice_span ~st ~start ~i);
-              ~loop (~Scan .set_pos ~st (~i + 1)) (~i + 1) (~cons ~seg ~acc)
-            ) (
-              ~loop (~Scan .set_pos ~st (~i + 1)) ~start ~acc
-            )
-          ))
-         | (\.None -> (
-            ~end = (~Scan .pos ~st);
+        (~reverse (~cons ~seg ~acc))) (~i = (~Scan .pos ~st);
+        ((\(Some ~c) -> (~if ((~c == ~ch)) (~seg = (~Scan .slice_span ~st ~start ~i);
+                ~loop (~Scan .set_pos ~st (~i + 1)) (~i + 1) (~cons ~seg ~acc)) (~loop (~Scan .set_pos ~st (~i + 1)) ~start ~acc))) | \_ -> (~end = (~Scan .pos ~st);
             ~seg = (~Scan .slice_span ~st ~start ~end);
-            (~reverse (~cons ~seg ~acc))
-          )))
-        ((~Scan .peek ~st))
-      )))
-    ((~Scan .eof ~st))
-  );
-  ~loop ~sc 0 []
-);
-
-# String <-> Int conversions (simple)
-~int_to_str ~n = (~to_str ~n);
-~str_to_int ~s = (
-  ~len = (~Str .len ~s);
-  ~if (~len == 0) .None (
-    ~neg = ((~Str .slice ~s 0 1) == "-");
-    ~start = (~if (~neg) 1 0);
-    ~if (~start >= ~len) .None (
-  ~loop ~i ~acc = (~if (~i >= ~len) (.True, ~acc) (
-        ((\(.Some ~c) -> (~if ((~Char .is_digit ~c)) (
-            ~d = ((~Unicode .to_int ~c) - (~Unicode .to_int '0'));
-            ~loop (~i + 1) ((~acc * 10) + ~d)
-          ) ( .False , ~acc )))
-         | (\.None -> ( .False , ~acc )))
-        ((~Str .char_at ~s ~i))
-      ));
-      ~res = (~loop ~start 0);
-      (((\( (~ok , ~v) ) -> (~if (~ok) (.Some (~if (~neg) (0 - ~v) ~v)) .None)))) ~res
-    )
-  )
-);
-
-# Inspect/render helpers ---------------------------------------------------
-~inspect_int ~n = (~to_str ~n);
-
-~inspect_bool ~b = (
-  ((\.True -> ".True")
-   | (\.False -> ".False"))
-  ~b
-);
-
-~inspect_str ~s = (~Str .concat "\"" (~Str .concat ~s "\""));
-
-~inspect_list ~elem_inspect ~xs = (
-  ~parts = (~map ~elem_inspect ~xs);
-  ~body = (~join ", " ~parts);
-  (~Str .concat "[" (~Str .concat ~body "]"))
-);
-
-~inspect_option ~elem_inspect ~opt = (
-  (((\.None -> ".None")
-    | (\(.Some ~v) -> (~Str .concat ".Some " (~elem_inspect ~v))))
-   ~opt)
-);
-
-~inspect_result ~ok_inspect ~err_inspect ~res = (
-  (((\(.Ok ~v) -> (~Str .concat ".Ok " (~ok_inspect ~v)))
-    | (\(.Err ~e) -> (~Str .concat ".Err " (~err_inspect ~e))))
-   ~res)
-);
-
-~Inspect = {
-  int: ~inspect_int,
-  bool: ~inspect_bool,
-  str: ~inspect_str,
-  list: ~inspect_list,
-  option: ~inspect_option,
-  result: ~inspect_result
-};
-
+            (~reverse (~cons ~seg ~acc)))) ((~Scan .peek ~st))));
+    ~loop ~sc 0 []);
+  # String <-> Int conversions (simple)
+  ~int_to_str ~n = (~to_str ~n);
+  ~str_to_int ~s = (~len = (~Str .len ~s);
+    ~if (~len == 0) None (~neg = ((~Str .slice ~s 0 1) == "-");
+      ~start = (~if (~neg) 1 0);
+      ~if (~start >= ~len) None (~loop ~i ~acc = (~if (~i >= ~len) (True,~acc) (((\(Some ~c) -> (~if ((~Char .is_digit ~c)) (~d = ((~Unicode .to_int ~c) - (~Unicode .to_int'0'));
+                    ~loop (~i + 1) ((~acc * 10) + ~d)) (False,~acc))) | \_ -> (False,~acc)) ((~Str .char_at ~s ~i))));
+        ~res = (~loop ~start 0);
+        (((\((~ok,~v)) -> (~if (~ok) (Some (~if (~neg) (0 - ~v) ~v)) None)))) ~res)));
+  # Inspect/render helpers ---------------------------------------------------
+  ~inspect_int ~n = (~to_str ~n);
+  ~inspect_bool ~b = (~if ~b "True" "False");
+  ~inspect_str ~s = (~Str .concat "\"" (~Str .concat ~s "\""));
+  ~inspect_list ~elem_inspect ~xs = (~parts = (~map ~elem_inspect ~xs);
+    ~body = (~join ", " ~parts);
+    (~Str .concat "[" (~Str .concat ~body "]")));
+  ~inspect_result ~ok_inspect ~err_inspect ~res = ((((\(Ok ~v) -> (~Str .concat "Ok " (~ok_inspect ~v))) | (\(Err ~e) -> (~Str .concat "Err " (~err_inspect ~e)))) ~res));
+  ~Inspect = {int : ~inspect_int,bool : ~inspect_bool,str : ~inspect_str,list : ~inspect_list,option : ~inspect_option_impl,result : ~inspect_result};
+  ~inspect_option_impl ~elem_inspect ~opt = (((\(Some ~v) -> (~Str .concat "Some " (~elem_inspect ~v))) | \_ -> "None") ~opt));
+~inspect_option = ~inspect_option_impl;
 # Codepoint (Int) helpers via Char/Unicode
 ~cp_is_alpha ~c = (~Char .is_alpha (~Unicode .of_int ~c));
 ~cp_is_digit ~c = (~Char .is_digit (~Unicode .of_int ~c));

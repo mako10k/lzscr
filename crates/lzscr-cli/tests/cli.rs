@@ -129,7 +129,7 @@ fn effect_modules_allowed_with_flag() {
 
 #[test]
 fn compat_module_warns_with_flag() {
-    let program = "(~Compat = (~require .compat .prelude_aliases); (~Compat .is_some (.Some 1), (~Compat .map_option (\\~x -> (~x + 1)) (.Some 2))))";
+    let program = "(~Compat = (~require .compat .prelude_aliases); (~Compat .is_some (Some 1), (~Compat .map_option (\\~x -> (~x + 1)) (Some 2))))";
     let mut cmd = cli_cmd();
     cmd.args([
         "-e",
@@ -144,7 +144,7 @@ fn compat_module_warns_with_flag() {
         contains("[WARN] stdlib.compat")
             .and(contains("~is_some is deprecated"))
             .and(contains("~map_option is deprecated"))
-            .and(contains(".True, .Some(3))")),
+            .and(contains("(True, Some 3)")),
     );
 }
 
@@ -164,12 +164,10 @@ fn effect_fs_module_blocked_in_pure_mode() {
 #[test]
 fn effect_fs_read_text_allowed_with_flag() {
     let mut tmp = NamedTempFile::new().unwrap();
-    writeln!(tmp, "hello-fs").unwrap();
+    write!(tmp, "hello-fs").unwrap();
     let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
-    let program = format!(
-        "(~Fs = (~require .effect .fs); (~Fs .read_text_or {} \"fallback\"))",
-        path_literal
-    );
+    let program =
+        format!("(~Fs = (~require .effect .fs); (~Fs .read_text_result {}))", path_literal);
 
     let mut cmd = cli_cmd();
     cmd.args([
@@ -180,8 +178,7 @@ fn effect_fs_read_text_allowed_with_flag() {
         "--stdlib-mode",
         "allow-effects",
     ]);
-
-    cmd.assert().success().stdout(contains("hello-fs\n"));
+    cmd.assert().success().stdout(contains("Ok hello-fs"));
 }
 
 #[test]
@@ -189,7 +186,7 @@ fn effect_fs_write_text_allowed_with_flag() {
     let tmp = NamedTempFile::new().unwrap();
     let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
     let program = format!(
-        "(~Fs = (~require .effect .fs); (~chain (~Fs .write_text_or {} \"payload\" ()) (~Fs .read_text_or {} \"fallback\")))",
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .write_text_result {} \"payload\") (~Fs .read_text_result {})))",
         path_literal, path_literal
     );
 
@@ -202,8 +199,7 @@ fn effect_fs_write_text_allowed_with_flag() {
         "--stdlib-mode",
         "allow-effects",
     ]);
-
-    cmd.assert().success().stdout(contains("payload\n"));
+    cmd.assert().success().stdout(contains("Ok payload"));
 }
 
 #[test]
@@ -213,7 +209,7 @@ fn effect_fs_append_text_allowed_with_flag() {
     tmp.flush().unwrap();
     let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
     let program = format!(
-        "(~Fs = (~require .effect .fs); (~chain (~Fs .append_text_or {} \"-tail\" ()) (~Fs .read_text_or {} \"fallback\")))",
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .append_text_result {} \"-tail\") (~Fs .read_text_result {})))",
         path_literal, path_literal
     );
 
@@ -226,8 +222,7 @@ fn effect_fs_append_text_allowed_with_flag() {
         "--stdlib-mode",
         "allow-effects",
     ]);
-
-    cmd.assert().success().stdout(contains("seed-tail\n"));
+    cmd.assert().success().stdout(contains("Ok seed-tail"));
 }
 
 #[test]
@@ -238,7 +233,8 @@ fn effect_fs_list_dir_allowed_with_flag() {
     fs::write(&file_a, "a").unwrap();
     fs::write(&file_b, "b").unwrap();
     let path_literal = format!("{:?}", dir.path().to_str().unwrap());
-    let program = format!("(~Fs = (~require .effect .fs); (~Fs .list_dir_or {} []))", path_literal);
+    let program =
+        format!("(~Fs = (~require .effect .fs); (~Fs .list_dir_result {}))", path_literal);
 
     let mut cmd = cli_cmd();
     cmd.args([
@@ -249,8 +245,7 @@ fn effect_fs_list_dir_allowed_with_flag() {
         "--stdlib-mode",
         "allow-effects",
     ]);
-
-    cmd.assert().success().stdout(contains("a.txt").and(contains("b.log")));
+    cmd.assert().success().stdout(contains("Ok").and(contains("a.txt")).and(contains("b.log")));
 }
 
 #[test]
@@ -259,7 +254,7 @@ fn effect_fs_remove_file_allowed_with_flag() {
     let path = tmp.path().to_path_buf();
     let path_literal = format!("{:?}", path.to_str().unwrap());
     let program = format!(
-        "(~Fs = (~require .effect .fs); (~chain (~Fs .remove_file_or {} ()) (~Fs .read_text_or {} \"fallback\")))",
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .remove_file_result {}) (~Fs .read_text_result {})))",
         path_literal, path_literal
     );
 
@@ -272,8 +267,7 @@ fn effect_fs_remove_file_allowed_with_flag() {
         "--stdlib-mode",
         "allow-effects",
     ]);
-
-    cmd.assert().success().stdout(contains("fallback\n"));
+    cmd.assert().success().stdout(contains("Err"));
 }
 
 #[test]
@@ -283,7 +277,7 @@ fn effect_fs_create_dir_allowed_with_flag() {
     let path_literal = format!("{:?}", new_dir.to_str().unwrap());
     let dir_literal = format!("{:?}", dir.path().to_str().unwrap());
     let program = format!(
-        "(~Fs = (~require .effect .fs); (~chain (~Fs .create_dir_or {} ()) (~Fs .list_dir_or {} [])))",
+        "(~Fs = (~require .effect .fs); (~chain (~Fs .create_dir_result {}) (~Fs .list_dir_result {})))",
         path_literal, dir_literal
     );
 
@@ -296,8 +290,7 @@ fn effect_fs_create_dir_allowed_with_flag() {
         "--stdlib-mode",
         "allow-effects",
     ]);
-
-    cmd.assert().success().stdout(contains("nested"));
+    cmd.assert().success().stdout(contains("Ok").and(contains("nested")));
 }
 
 #[test]
@@ -320,12 +313,12 @@ fn effect_fs_metadata_allowed_with_flag() {
     ]);
 
     cmd.assert().success().stdout(
-        contains(".Ok")
+        contains("Ok")
             .and(contains("size: 5"))
-            .and(contains("is_dir: .False"))
-            .and(contains("is_file: .True"))
-            .and(contains("readonly: .False"))
-            .and(contains("modified_ms: (.Some")),
+            .and(contains("is_dir: False"))
+            .and(contains("is_file: True"))
+            .and(contains("readonly: False"))
+            .and(contains("modified_ms: (Some")),
     );
 }
 
@@ -367,7 +360,7 @@ fn prelude_basic_smoke() {
         "foldr product [1..4] -> 24",
         "split_char 'a,b,c' ',' -> [\"a\", \"b\", \"c\"]",
         "str_len 'abc' -> 3",
-        "str_len == 3 -> .True",
+        "str_len == 3 -> True",
         "prelude_basic: done",
     ];
     for needle in expected_lines {

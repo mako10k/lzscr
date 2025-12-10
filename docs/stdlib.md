@@ -101,10 +101,10 @@ Note: This section outlines potential phases. It is not a commitment. Items may 
   - Re-export of Option/Result helpers
   - Delegation: collect runtime builtins under `~Builtins` record namespaces; user code references via prelude (e.g., `~Str = ~Builtins .string`)
 - option
-  - Constructors: `.Some x`, `.None`
+  - Constructors: `Some x`, `None`
   - `is_some`, `is_none`, `map`, `and_then`, `unwrap_or`
 - result
-  - Constructors: `.Ok x`, `.Err e`
+  - Constructors: `Ok x`, `Err e`
   - `map`, `map_err`, `and_then`, `unwrap_or`
 - list
   - `nil` (`[]`) and `cons` (pair tag `.,`); literal sugar `[a,b,c]`
@@ -143,7 +143,7 @@ cargo run -p lzscr-cli -- --file prog.lzscr --stdlib-dir ./stdlib
 ```
 
 ## Naming and style
-- snake_case for functions/variables; constructors are .Member-only (e.g., `.Some`, `.None`)
+- snake_case for functions/variables; constructors are bare PascalCase (e.g., `Some`, `None`)
 - Keep prelude minimal and unambiguous
 - Use the formatter (`--format-code`) and the VS Code extension when available
 
@@ -200,8 +200,8 @@ Note: This is a working checklist. Non-checked items are exploratory and may be 
 ~compose f g x = f (g x);
 
 # Option
-~is_some o = match o with { .Some _ -> true(); .None -> false() };
-~map_option f o = match o with { .Some x -> .Some (f x); .None -> .None };
+~is_some o = match o with { Some _ -> true(); None -> false() };
+~map_option f o = match o with { Some x -> Some (f x); None -> None };
 
 # List (simple example)
 ~length xs = match xs with {
@@ -210,10 +210,10 @@ Note: This is a working checklist. Non-checked items are exploratory and may be 
 };
 
 # Tiny tokenizer PoC (sketch)
-# - Split by whitespace; if all digits -> .IntLit, else .Ident
+# - Split by whitespace; if all digits -> IntLit, else Ident
 # - Use list/string/codepoint APIs: string.split, str_codepoint_at, cp_is_digit, list.map, etc.
 # - First decide shapes and types:
-#   Token = .IntLit Str | .Ident Str;
+#   Token = IntLit Str | Ident Str;
 #   tokenize : Str -> [Token]
 # - Implement after M0 on stdlib; validate via CLI tests
 ```

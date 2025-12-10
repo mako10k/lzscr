@@ -188,6 +188,14 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
                         go(&f.value, h, sz);
                     }
                 }
+                ModeMap(fs) => {
+                    h.write_u8(20);
+                    h.write_usize(fs.len());
+                    for f in fs {
+                        h.write(f.name.as_bytes());
+                        go(&f.value, h, sz);
+                    }
+                }
             }
         }
         go(e, &mut hasher, size_out);
@@ -217,6 +225,7 @@ pub fn analyze_duplicates(expr: &Expr, opt: AnalyzeOptions) -> Vec<DupFinding> {
             }
             List(xs) => format!("list({})", xs.len()),
             Record(fs) => format!("rec({})", fs.len()),
+            ModeMap(fs) => format!("modemap({})", fs.len()),
         }
     }
 
@@ -598,6 +607,12 @@ pub fn analyze_unbound_refs(expr: &Expr, allowlist: &HashSet<String>) -> Vec<Unb
                 walk(arg, scopes, allow, out);
             }
             ExprKind::Block(inner) => walk(inner, scopes, allow, out),
+            ExprKind::ModeMap(fields) => {
+                // ModeMap fields are expressions; analyze each for unbound references
+                for f in fields {
+                    walk(&f.value, scopes, allow, out);
+                }
+            }
         }
     }
     let mut scopes: Vec<HashSet<String>> = Vec::new();

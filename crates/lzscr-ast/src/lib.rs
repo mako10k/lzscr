@@ -138,6 +138,9 @@ pub mod ast {
         // Record literal: { k1: e1, k2: e2, ... }
         // Phase 5: Now tracks field name spans for better diagnostics
         Record(Vec<ExprRecordField>),
+        // Mode map: .{ Mode: expr, ... } for polymorphic function selection
+        // Maps mode names (Pure, Strict, etc.) to implementations
+        ModeMap(Vec<ExprRecordField>),
         // Type annotation: %{T} e (identity)
         Annot { ty: TypeExpr, expr: Box<Expr> },
         // First-class type value: %{T}
@@ -244,6 +247,14 @@ pub mod pretty {
                     .join(", ");
                 format!("{{ {inner} }}")
             }
+            ExprKind::ModeMap(fields) => {
+                let inner = fields
+                    .iter()
+                    .map(|f| format!("{}: {}", f.name, print_expr(&f.value)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(".{{ {inner} }}")
+            }
             ExprKind::Annot { ty, expr } => {
                 format!("%{{{}}} {}", print_type(ty), print_expr(expr))
             }
@@ -312,10 +323,15 @@ pub mod pretty {
             }
             TypeExpr::Fun(a, b) => format!("{} -> {}", print_type(a), print_type(b)),
             TypeExpr::Ctor { tag, args } => {
+                let head = tag.clone();
                 if args.is_empty() {
-                    tag.clone()
+                    head
                 } else {
-                    format!("{} {}", tag, args.iter().map(print_type).collect::<Vec<_>>().join(" "))
+                    format!(
+                        "{} {}",
+                        head,
+                        args.iter().map(print_type).collect::<Vec<_>>().join(" ")
+                    )
                 }
             }
         }

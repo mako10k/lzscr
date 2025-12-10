@@ -17,15 +17,15 @@ This document records the plan to add user type definitions (% declarations) and
 
 ## Syntax (draft)
 - Top-level type declarations
-  - `%TypeName %a %b = %{ .Tag TYPE | .Tag TYPE | ... }`  // sum
+  - `%TypeName %a %b = %{ Tag TYPE | Tag TYPE | ... }`  // sum
   - Future: `%TypeName %a ... = %record{ field: TYPE, ... }`  // record
 - Examples
-  - `%Option %a = %{ .Some %a | .None }`
-  - `%List %a = %{ .Nil | .Cons %a (%List %a) }`
+  - `%Option %a = %{ Some %a | None }`
+  - `%List %a = %{ Nil | Cons %a (%List %a) }`
 
 Inside type expressions:
 - `%a` are type variables.
-- `.Tag` are constructor labels (may share the label space with value-level).
+- `Tag` are constructor labels (may share the label space with value-level).
 - `%Name %args...` applies a named type.
 
 ## Self-reference -> μ conversion (shape rule)
@@ -38,12 +38,12 @@ Inside type expressions:
   2) Replace all shape-identical self references `%Head %params` in RHS with `%T`.
   3) Represent as `μ %T . Body` (Body may be sum/record/tuple etc.).
 - Example (List):
-  - Input: `%List %a = %{ .Nil | .Cons %a (%List %a) }`
-  - Internal: `μ %T . sum { .Nil | .Cons %a %T }`
+  - Input: `%List %a = %{ Nil | Cons %a (%List %a) }`
+  - Internal: `μ %T . sum { Nil | Cons %a %T }`
 
 Option doesn’t need μ:
-- Input: `%Option %a = %{ .Some %a | .None }`
-- Internal: `sum { .Some %a | .None }`
+- Input: `%Option %a = %{ Some %a | None }`
+- Internal: `sum { Some %a | None }`
 
 ## Scope
 - LHS args (`%a`, etc.): only valid within that declaration’s RHS.
@@ -95,17 +95,17 @@ Option doesn’t need μ:
 ## Open items (to agree)
 These are discussion topics. Do not implement without explicit agreement.
 - How to group (file/blank-lines/block)
-- Label space (.Tag) sharing policy (likely fine as-is)
+- Label space (Tag) sharing policy (likely fine as-is)
 - Equality for Named: operate on structural equality after full expansion (no nominal equality)
 - Strictness of positivity check (start by forbidding negative positions in function types only)
 
 ## Reference snippets
 - Option:
-  - Source: `%Option %a = %{ .Some %a | .None }`
-  - Internal: `sum { .Some %a | .None }`
+  - Source: `%Option %a = %{ Some %a | None }`
+  - Internal: `sum { Some %a | None }`
 - List:
-  - Source: `%List %a = %{ .Nil | .Cons %a (%List %a) }`
-  - Internal: `μ %T . sum { .Nil | .Cons %a %T }`
+  - Source: `%List %a = %{ Nil | Cons %a (%List %a) }`
+  - Internal: `μ %T . sum { Nil | Cons %a %T }`
 
 ---
 If we proceed with this spec, first add the parser and typedef environment (phases 1-2). After implementation, verify annotations and unification using representative functions like `~map` and `~length`.
@@ -131,7 +131,7 @@ If we proceed with this spec, first add the parser and typedef environment (phas
   Example (mutual reference inside let):
   ```
   let
-    %List %a = %{ .Nil | .Cons %a (%List %a) }
+    %List %a = %{ Nil | Cons %a (%List %a) }
     ~length = \(~xs) ->
       \[] -> 0
     | \[ ~_ : ~t ] -> 1 + (~length ~t)

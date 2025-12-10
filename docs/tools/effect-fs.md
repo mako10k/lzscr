@@ -1,7 +1,7 @@
 # effect/fs Module Specification
 
 ## Overview
-The `stdlib/effect/fs.lzscr` module wraps the runtime filesystem effects (`!fs.*`) so callers work with ergonomic `Result` types. Each operation returns `(.Ok value | .Err msg)` and provides convenience helpers for error handling.
+The `stdlib/effect/fs.lzscr` module wraps the runtime filesystem effects (`!fs.*`) so callers work with ergonomic `Result` types. Each operation returns `(Ok value | Err msg)` and provides convenience helpers for error handling.
 
 ## Module Path
 - **Namespace**: `.effect .fs`
@@ -9,13 +9,22 @@ The `stdlib/effect/fs.lzscr` module wraps the runtime filesystem effects (`!fs.*
 
 ## Exported API
 
+Every helper returns a `Result` so callers decide how to handle failures. Compose your own defaults with pattern matching, e.g.
+
+```lzscr
+(~Fs = (~require .effect .fs);
+	((\(Ok ~contents) -> ~contents)
+	 | (\(Err ~msg) -> (~panic (~Str .concat "fs error: " ~msg))))
+	(~Fs .read_text_result "/tmp/input"))
+```
+
 ### File Reading
 
 #### `~read_text_result`
 ```lzscr
-~read_text_result : Str -> Effect (.Ok Str | .Err Str)
+~read_text_result : Str -> Effect (Ok Str | Err Str)
 ```
-Reads entire file as a string, returning `(.Ok contents)` on success or `(.Err msg)` on failure.
+Reads entire file as a string, returning `(Ok contents)` on success or `(Err msg)` on failure.
 
 **Example**:
 ```lzscr
@@ -24,40 +33,14 @@ Reads entire file as a string, returning `(.Ok contents)` on success or `(.Err m
 
 ---
 
-#### `~read_text_or`
-```lzscr
-~read_text_or : Str -> Str -> Effect Str
-```
-Returns file contents on success; falls back to the provided default string on error.
-
-**Example**:
-```lzscr
-(~Fs = (~require .effect .fs); (~Fs .read_text_or "/tmp/file.txt" "default"))
-```
-
----
-
-#### `~read_text_or_else`
-```lzscr
-~read_text_or_else : Str -> (Str -> Str) -> Effect Str
-```
-Returns file contents on success; calls the error handler with the error message on failure.
-
-**Example**:
-```lzscr
-(~Fs = (~require .effect .fs); 
- (~Fs .read_text_or_else "/tmp/file.txt" (\~err -> "fallback")))
-```
-
----
 
 ### File Writing
 
 #### `~write_text_result`
 ```lzscr
-~write_text_result : Str -> Str -> Effect (.Ok Unit | .Err Str)
+~write_text_result : Str -> Str -> Effect (Ok Unit | Err Str)
 ```
-Writes text to file (creating or truncating), returning `(.Ok ())` or `(.Err msg)`.
+Writes text to file (creating or truncating), returning `(Ok ())` or `(Err msg)`.
 
 **Example**:
 ```lzscr
@@ -66,29 +49,14 @@ Writes text to file (creating or truncating), returning `(.Ok ())` or `(.Err msg
 
 ---
 
-#### `~write_text_or`
-```lzscr
-~write_text_or : Str -> Str -> Unit -> Effect Unit
-```
-Writes text to file; returns `()` on success or the provided fallback value on error.
-
----
-
-#### `~write_text_or_else`
-```lzscr
-~write_text_or_else : Str -> Str -> (Str -> Unit) -> Effect Unit
-```
-Writes text to file; calls error handler with the error message on failure.
-
----
 
 ### File Appending
 
 #### `~append_text_result`
 ```lzscr
-~append_text_result : Str -> Str -> Effect (.Ok Unit | .Err Str)
+~append_text_result : Str -> Str -> Effect (Ok Unit | Err Str)
 ```
-Appends text to file (creating if needed), returning `(.Ok ())` or `(.Err msg)`.
+Appends text to file (creating if needed), returning `(Ok ())` or `(Err msg)`.
 
 **Example**:
 ```lzscr
@@ -97,29 +65,14 @@ Appends text to file (creating if needed), returning `(.Ok ())` or `(.Err msg)`.
 
 ---
 
-#### `~append_text_or`
-```lzscr
-~append_text_or : Str -> Str -> Unit -> Effect Unit
-```
-Appends text; returns `()` on success or the provided fallback on error.
-
----
-
-#### `~append_text_or_else`
-```lzscr
-~append_text_or_else : Str -> Str -> (Str -> Unit) -> Effect Unit
-```
-Appends text; calls error handler with the error message on failure.
-
----
 
 ### Directory Listing
 
 #### `~list_dir_result`
 ```lzscr
-~list_dir_result : Str -> Effect (.Ok [Str] | .Err Str)
+~list_dir_result : Str -> Effect (Ok [Str] | Err Str)
 ```
-Lists directory entries (filenames only), returning `(.Ok entries)` or `(.Err msg)`.
+Lists directory entries (filenames only), returning `(Ok entries)` or `(Err msg)`.
 
 **Example**:
 ```lzscr
@@ -128,29 +81,14 @@ Lists directory entries (filenames only), returning `(.Ok entries)` or `(.Err ms
 
 ---
 
-#### `~list_dir_or`
-```lzscr
-~list_dir_or : Str -> [Str] -> Effect [Str]
-```
-Returns directory entries on success; falls back to the provided list on error.
-
----
-
-#### `~list_dir_or_else`
-```lzscr
-~list_dir_or_else : Str -> (Str -> [Str]) -> Effect [Str]
-```
-Returns directory entries on success; calls error handler on failure.
-
----
 
 ### File Deletion
 
 #### `~remove_file_result`
 ```lzscr
-~remove_file_result : Str -> Effect (.Ok Unit | .Err Str)
+~remove_file_result : Str -> Effect (Ok Unit | Err Str)
 ```
-Deletes file, returning `(.Ok ())` or `(.Err msg)`.
+Deletes file, returning `(Ok ())` or `(Err msg)`.
 
 **Example**:
 ```lzscr
@@ -159,29 +97,14 @@ Deletes file, returning `(.Ok ())` or `(.Err msg)`.
 
 ---
 
-#### `~remove_file_or`
-```lzscr
-~remove_file_or : Str -> Unit -> Effect Unit
-```
-Deletes file; returns `()` on success or the provided fallback on error.
-
----
-
-#### `~remove_file_or_else`
-```lzscr
-~remove_file_or_else : Str -> (Str -> Unit) -> Effect Unit
-```
-Deletes file; calls error handler on failure.
-
----
 
 ### Directory Creation
 
 #### `~create_dir_result`
 ```lzscr
-~create_dir_result : Str -> Effect (.Ok Unit | .Err Str)
+~create_dir_result : Str -> Effect (Ok Unit | Err Str)
 ```
-Creates directory (including parent directories), returning `(.Ok ())` or `(.Err msg)`.
+Creates directory (including parent directories), returning `(Ok ())` or `(Err msg)`.
 
 **Example**:
 ```lzscr
@@ -190,34 +113,19 @@ Creates directory (including parent directories), returning `(.Ok ())` or `(.Err
 
 ---
 
-#### `~create_dir_or`
-```lzscr
-~create_dir_or : Str -> Unit -> Effect Unit
-```
-Creates directory; returns `()` on success or the provided fallback on error.
-
----
-
-#### `~create_dir_or_else`
-```lzscr
-~create_dir_or_else : Str -> (Str -> Unit) -> Effect Unit
-```
-Creates directory; calls error handler on failure.
-
----
 
 ### File Metadata
 
 #### `~metadata_result`
 ```lzscr
-~metadata_result : Str -> Effect (.Ok { size: Int, is_dir: Bool, is_file: Bool, readonly: Bool, modified_ms: (.Some Int | .None) } | .Err Str)
+~metadata_result : Str -> Effect (Ok { size: Int, is_dir: Bool, is_file: Bool, readonly: Bool, modified_ms: (Some Int | None) } | Err Str)
 ```
 Fetches file metadata record:
 - `size`: File size in bytes (clamped to `i64::MAX`)
 - `is_dir`: True if directory
 - `is_file`: True if regular file
 - `readonly`: True if read-only
-- `modified_ms`: Last modified time as epoch milliseconds wrapped in `(.Some Int | .None)` (None when platform doesn't support timestamps)
+- `modified_ms`: Last modified time as epoch milliseconds wrapped in `(Some Int | None)` (None when platform doesn't support timestamps)
 
 **Example**:
 ```lzscr
@@ -226,21 +134,6 @@ Fetches file metadata record:
 
 ---
 
-#### `~metadata_or`
-```lzscr
-~metadata_or : Str -> { ... } -> Effect { ... }
-```
-Returns metadata record on success; falls back to the provided record on error.
-
----
-
-#### `~metadata_or_else`
-```lzscr
-~metadata_or_else : Str -> (Str -> { ... }) -> Effect { ... }
-```
-Returns metadata record on success; calls error handler on failure.
-
----
 
 ## Implementation Notes
 - All operations return `Effect` and must be sequenced with `~chain`.

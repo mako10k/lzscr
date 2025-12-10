@@ -69,12 +69,13 @@ fn pp_type_with_renaming(
             pp_type_with_renaming(b, rename_map, counter)
         ),
         Type::Ctor { tag, payload } => {
+            let head = tag.clone();
             if payload.is_empty() {
-                tag.clone()
+                head
             } else {
                 format!(
                     "{} {}",
-                    tag,
+                    head,
                     payload
                         .iter()
                         .map(|x| pp_atom_with_renaming(x, rename_map, counter))
@@ -84,12 +85,13 @@ fn pp_type_with_renaming(
             }
         }
         Type::Named { name, args } => {
+            let head = name.clone();
             if args.is_empty() {
-                name.clone()
+                head
             } else {
                 format!(
                     "{} {}",
-                    name,
+                    head,
                     args.iter()
                         .map(|x| pp_atom_with_renaming(x, rename_map, counter))
                         .collect::<Vec<_>>()
