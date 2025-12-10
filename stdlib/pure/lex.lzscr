@@ -7,87 +7,90 @@
 # - Plain sequencing like (e1; e2) is NOT part of the grammar. Write (~seq e1 e2)
 #   (or a dedicated block sugar in future) instead.
 
-~B = ~Builtins;
-~Char = ~B .char;
-~Scan = ~B .scan;
-~Str  = ~B .string;
+~B                                                                                         = ~Builtins;
+~Char                                                                                      = ~B .char;
+~Scan                                                                                      = ~B .scan;
+~Str                                                                                       = ~B .string;
 
 # predicate combinators
-~is_lower ~c = ~Char .between ~c ('a') ('z');   # 'a'..'z'
-~is_upper ~c = ~Char .between ~c ('A') ('Z');    # 'A'..'Z'
-~is_letter ~c = ~Char .is_alpha ~c;            # unicode aware
-~is_digit ~c = ~Char .is_digit ~c;             # ASCII digit
-~is_alnum ~c = ~Char .is_alnum ~c;
-~is_space ~c = ~Char .is_space ~c;
+~is_lower ~c                                                                               = ~Char .between ~c ('a') ('z');
+# 'a'..'z'
+~is_upper ~c                                                                               = ~Char .between ~c ('A') ('Z');
+# 'A'..'Z'
+~is_letter ~c                                                                              = ~Char .is_alpha ~c;
+# unicode aware
+~is_digit ~c                                                                               = ~Char .is_digit ~c;
+# ASCII digit
+~is_alnum ~c                                                                               = ~Char .is_alnum ~c;
+~is_space ~c                                                                               = ~Char .is_space ~c;
 
 # scanning primitives re-export
-~new = ~Scan .new;
-~eof = ~Scan .eof;
-~pos = ~Scan .pos;
-~set_pos = ~Scan .set_pos;
-~peek = ~Scan .peek;
-~next = ~Scan .next;
-~take_if = ~Scan .take_if;
-~take_while = ~Scan .take_while;
-~take_while1 = ~Scan .take_while1;
+~new                                                                                       = ~Scan .new;
+~eof                                                                                       = ~Scan .eof;
+~pos                                                                                       = ~Scan .pos;
+~set_pos                                                                                   = ~Scan .set_pos;
+~peek                                                                                      = ~Scan .peek;
+~next                                                                                      = ~Scan .next;
+~take_if                                                                                   = ~Scan .take_if;
+~take_while                                                                                = ~Scan .take_while;
+~take_while1                                                                               = ~Scan .take_while1;
 
 # identifier: [A-Za-z_][A-Za-z0-9_]* (ASCII subset for bootstrap)
 # use boolean or (||), not alt-lambda (|), inside predicates
-~is_ident_start ~c = (~is_letter ~c) || (~Char .between ~c ('_') ('_')); # '_'
-~is_ident_rest  ~c = (~is_alnum  ~c) || (~Char .between ~c ('_') ('_'));
+~is_ident_start ~c                                                                         = (~is_letter ~c) || (~Char .between ~c ('_') ('_'));
+# '_'
+~is_ident_rest ~c                                                                          = (~is_alnum ~c) || (~Char .between ~c ('_') ('_'));
 
-~take_ident ~sc = (
-  (\(Some (_, ~sc1)) ->
-     (
-  (\(~rest, ~sc2) ->
-          Some ((~Scan .slice_span ~sc (~Scan .pos ~sc) (~Scan .pos ~sc2), ~sc2))
-       ) (~Scan .take_while ~is_ident_rest ~sc1)
-     )
-  ) | (\ None -> None)
-) (~Scan .take_if ~is_ident_start ~sc);
+~take_ident ~sc                                                                            = ((\(Some (_,
+        ~sc1
+      )) -> ((\(~rest,
+          ~sc2
+        ) -> Some ((~Scan .slice_span ~sc (~Scan .pos ~sc) (~Scan .pos ~sc2),
+            ~sc2
+          ))) (~Scan .take_while ~is_ident_rest ~sc1))) | (\None -> None)) (~Scan .take_if ~
+  is_ident_start ~sc
+);
 # number: [0-9]+
-~take_number ~sc = ~take_while1 ~is_digit ~sc;
+~take_number ~sc                                                                           = ~take_while1 ~is_digit ~sc;
 
 # skip spaces
-~skip_spaces ~sc = ~take_while ~is_space ~sc;
-~skip_spaces1 ~sc = ~take_while1 ~is_space ~sc;
+~skip_spaces ~sc                                                                           = ~take_while ~is_space ~sc;
+~skip_spaces1 ~sc                                                                          = ~take_while1 ~is_space ~sc;
 
 # ---------------- Tokenizer (self-hosted) ----------------
 
 # Span helpers
-~span ~off ~len = { off: ~off, len: ~len };
-~span_between ~s1 ~s2 = ~span (~Scan .pos ~s1) ((~Scan .pos ~s2) - (~Scan .pos ~s1));
+~span ~off ~len                                                                            = {
+  off: ~off,
+  len: ~len
+};
+~span_between ~s1 ~s2                                                                      = ~span (~Scan .pos ~s1) ((~Scan .pos ~s2) - (~Scan .pos ~s1));
 
 # Token record: { kind: Ctor, span: {off,len}, text: Str }
-~Tok ~kind ~sp ~txt = { kind: ~kind, span: ~sp, text: ~txt };
+~Tok ~kind ~sp ~txt                                                                        = {
+  kind: ~kind,
+  span: ~sp,
+  text: ~txt
+};
 
 # String helpers
-~str_eq ~a ~b = (
-  ~if (((~Str .len ~a) == (~Str .len ~b))) (
-    ~go ~i = (
-      (~if (~i >= (~Str .len ~a)) True (
-        ((\(Some ~x) (Some ~y) -> (~if (~x == ~y) (~go (~i + 1)) False))
-         | \(None _ -> False)
-         | (\_ None -> False)
-        ) ((~Str .char_at ~a ~i)) ((~Str .char_at ~b ~i))
-      ))
-    );
+~str_eq ~a ~b                                                                              = (~if (((~Str .len ~a) == (~Str .len ~b))) (~go ~i = ((~if (~i >= (~Str .len ~a))
+        True (((\(Some ~x) (Some ~y) -> (~if (~x == ~y) (~go (~i + 1)) False)) | \(None _ -> False)
+            | (\_ None -> False)
+          ) ((~Str .char_at ~a ~i)) ((~Str .char_at ~b ~i)))
+      ));
     (~go 0)
-  ) False
-);
+  ) False);
 
 # Try match a fixed string at current position; if matched, advance
-~match_str ~lit ~sc = (
-  ~n = (~Str .len ~lit);
-  ~loop ~i ~cur = (
-    (~if (~i == ~n) (Some ~cur) (
-  ((\(Some ~c) -> (
-        ((\(Some ~d) -> (~if (~c == ~d) (~loop (~i + 1) ((\(Some (~_, ~nxt)) -> ~nxt) (~Scan .next ~cur))) (None))
-            | (\(None) -> None)
-          ) (~Str .char_at ~lit ~i)
-  )) | (\(None) -> None)) (~Scan .peek ~cur)
-    )))
-  );
+~match_str ~lit ~sc                                                                        = (~n = (~Str .len ~lit);
+  ~loop ~i ~cur                                                                            = ((~if (~i == ~n) (Some ~cur) (((\(Some ~c) -> (((\(Some ~d) -> (~if (~c == ~d) (~
+                      loop (~i + 1) ((\(Some (~_,
+                              ~nxt
+                            )) -> ~nxt) (~Scan .next ~cur))
+                    ) (None)) | (\(None) -> None)) (~Str .char_at ~lit ~i))) | (\(None) -> None)) (
+            ~Scan .peek ~cur
+          )))));
   (~loop 0 ~sc)
 );
 
@@ -97,285 +100,252 @@
 #   scan_block_comment   : '{-' から対応する '-}' まで（ネスト可）
 #   step                 : 空白をスキップし、行/ブロックコメント 1 個を処理し進んだら Some 新 Scan、進まなければ None
 #   loop                 : step が成功する限り再帰
-~skip_ws_and_comments ~sc0 = (
-  ~loop = (\ ~self -> \ ~sc ->
-    # 先頭空白を飛ばす
-    (\(~_, ~sc1) -> (
-      # 行コメント試行
-      (\(Some ~sc_hash) -> (
-        ~next_after_hash = (\(~_, ~s3) -> ~s3) (~Scan .take_while (\ ~c -> (~if (~c == ('\n')) False True)) ~sc_hash);
-        ((~self ~self) ~next_after_hash)
-      )
-       | \(None -> (
-          # ブロックコメント試行
-          (\(Some ~sc_block_start) -> (
-            (# ローカル再帰 LetGroup
-              (
-                ~blk = (\ ~blk_self -> \ ~depth -> \ ~s2 ->
-                  ~if (~depth == (0)) ~s2 (
-                    (\(Some ~_peek) -> (
-                      ((\(Some ~s_open) -> ((~blk ~blk_self) (~depth + 1) ~s_open))
-                       | \(None -> (
-                          ((\(Some ~s_close) -> ((~blk ~blk_self) (~depth - 1) ~s_close))
-                           | \(None -> ((~blk ~blk_self) ~depth ((\(~_, ~n) -> ~n) (~Scan .next ~s2))))
-                          ) (~match_str "-}" ~s2)
-                       )) (~match_str "{-" ~s2)
-                    )) | \(None -> ~s2)) (~Scan .peek ~s2)
-                ));
-                ~after = ((~blk ~blk) 1 ~sc_block_start);
-                ((~self ~self) ~after)
-              )
-            ) )
-          )
-           | \(None -> ~sc1)) (~match_str "{-" ~sc1)
-       )) (~match_str "#" ~sc1)
-    )) (~skip_spaces ~sc)
+~skip_ws_and_comments ~sc0                                                                 = (~loop = (\~self -> \~sc -> # 先頭空白を飛ばす
+    (\(~_,
+        ~sc1
+      ) -> ( # 行コメント試行
+        (\(Some ~sc_hash) -> (~next_after_hash                                             = (\(~_,
+                ~s3
+              ) -> ~s3) (~Scan .take_while (\~c -> (~if (~c == ('\n')) False True)) ~sc_hash);
+            ((~self ~self) ~next_after_hash)
+          ) | \(None -> ( # ブロックコメント試行
+              (\(Some ~sc_block_start) -> (( # ローカル再帰 LetGroup
+                    (~blk                                                                  = (\~blk_self -> \~depth -> \~s2 -> ~if (~depth == (0)) ~s2 ((\(Some ~
+                              _peek
+                            ) -> (((\(Some ~s_open) -> ((~blk ~blk_self) (~depth + 1) ~s_open)) | \
+                                (None -> (((\(Some ~s_close) -> ((~blk ~blk_self) (~depth - 1) ~
+                                          s_close
+                                        )) | \(None -> ((~blk ~blk_self) ~depth ((\(~_,
+                                                ~n
+                                              ) -> ~n) (~Scan .next ~s2))))) (~match_str "-}" ~s2)))
+                                (~match_str "{-" ~s2)
+                              )) | \(None -> ~s2)) (~Scan .peek ~s2)));
+                      ~after                                                               = ((~blk ~blk) 1 ~sc_block_start);
+                      ((~self ~self) ~after)
+                    )
+                  ))) | \(None -> ~sc1)
+            ) (~match_str "{-" ~sc1))) (~match_str "#" ~sc1)
+      )) (~skip_spaces ~sc)
   );
   ((~loop ~loop) ~sc0)
 );
 
 # Single/multi character token matchers (maximal munch)
-~emit ~kind ~s0 ~s1 = ~Tok ~kind (~span_between ~s0 ~s1) (~Scan .slice_span ~s0 (~Scan .pos ~s0) (~Scan .pos ~s1));
+~emit ~kind ~s0 ~s1                                                                        = ~Tok ~kind (~span_between ~s0 ~s1) (~Scan .slice_span ~s0 (~Scan .pos ~s0) (~
+    Scan .pos ~s1
+  ));
 
-~one_char ~ch ~kind ~sc =
-  ((\ Some ~c -> (~if (~c == ~ch) (Some (~emit ~kind ~sc (((\(Some (~_, ~n)) -> ~n) (~Scan .next ~sc))))) (None)) | \(None -> None)) (~Scan .peek ~sc));
+~one_char ~ch ~kind ~sc                                                                    = ((\Some ~c -> (~if (~c == ~ch) (Some (~emit ~kind ~sc (((\(Some (~_,
+                    ~n
+                  )) -> ~n) (~Scan .next ~sc))))) (None)) | \(None -> None)) (~Scan .peek ~sc));
 
-~keyword ~lit ~kind ~sc = ((\ Some ~s1 -> Some (~emit ~kind ~sc ~s1)) | \(None -> None)) (~match_str ~lit ~sc);
+~keyword ~lit ~kind ~sc                                                                    = ((\Some ~s1 -> Some (~emit ~kind ~sc ~s1)) | \(None -> None)) (~match_str
+  ~lit ~sc
+);
 
 # Ident, Member, TyVar, TypeOpen
-~take_ident_token ~sc = ((\ Some (~txt, ~s1) -> Some (~Tok (Ident) (~span_between ~sc ~s1) ~txt)) | \(None -> None)) (~take_ident ~sc);
+~take_ident_token ~sc                                                                      = ((\Some (~txt,
+      ~s1
+    ) -> Some (~Tok (Ident) (~span_between ~sc ~s1) ~txt)) | \(None -> None)) (~take_ident ~sc);
 
-~is_dot ~c = (~c == ('.'));
-~is_comma ~c = (~c == (','));
-~take_member ~sc = (
-  # After a dot, either tuple operator with commas or a member name
-  ((\ Some ~s1 ->
-    ((\ Some ~c ->
-      (~if (~c == (44)) (
-        # tuple member operator ".,,," — eat commas greedily
-        ~more ~s = (
-          ((\ Some ~d -> (~if (~d == (',')) (~more (((\(Some (~_, ~n)) -> ~n) (~Scan .next ~s))) (~s)) | (~s))) | \(None -> ~s)) (~Scan .peek ~s)
-        );
-        ~s2 = (~more ~s1);
-        Some (~Tok (Member) (~span_between ~sc ~s2) (~Scan .slice_span ~sc (~Scan .pos ~sc) (~Scan .pos ~s2)))
-      ) (
-        # member name: use ~take_ident after '.'
-        ((\ Some (~txt, ~s2) ->
-            Some (~Tok (Member) (~span_between ~sc ~s2) (~Scan .slice_span ~sc (~Scan .pos ~sc) (~Scan .pos ~s2)))
-         ) | \(None -> None)) (~take_ident ~s1)
-      ))
-    ) | \(None -> None)) (~Scan .peek ~s1)
-  ) | \(None -> None)) (~match_str "." ~sc)
+~is_dot ~c                                                                                 = (~c == ('.'));
+~is_comma ~c                                                                               = (~c == (','));
+~take_member ~sc                                                                           = ( # After a dot, either tuple operator with commas or a member name
+  ((\Some ~s1 -> ((\Some ~c -> (~if (~c == (44)) (
+              # tuple member operator ".,,," — eat commas greedily
+              ~more ~s                                                                     = (((\Some ~d -> (~if (~d == (',')) (~more (((\(Some (~_,
+                                  ~n
+                                )) -> ~n) (~Scan .next ~s))) (~s)) | (~s))) | \(None -> ~s)) (~Scan
+                  .peek ~s
+                ));
+              ~s2                                                                          = (~more ~s1);
+              Some (~Tok (Member) (~span_between ~sc ~s2) (~Scan .slice_span ~sc (~Scan .pos ~sc) (
+                    ~Scan .pos ~s2
+                  )))
+            ) ( # member name: use ~take_ident after '.'
+              ((\Some (~txt,
+                    ~s2
+                  ) -> Some (~Tok (Member) (~span_between ~sc ~s2) (~Scan .slice_span ~sc (~Scan
+                        .pos ~sc
+                      ) (~Scan .pos ~s2)))) | \(None -> None)) (~take_ident ~s1)
+            ))) | \(None -> None)) (~Scan .peek ~s1)) | \(None -> None)) (~match_str "." ~sc)
 );
 
-~take_tyvar_or_typeopen ~sc = (
-  ((\ Some ~s1 -> Some (~emit (TypeOpen) ~sc ~s1)) | \(None ->
-    ((\ Some ~s1 -> (
-      ((\ Some (~txt, ~s2) -> Some (~Tok (TyVar) (~span_between ~sc ~s2) ~txt)) | \(None -> None)) (~take_ident ~s1)
-    )) | \(None -> None)) (~match_str "%" ~sc)
-  )) (~match_str "%{" ~sc)
-);
+~take_tyvar_or_typeopen ~sc                                                                = (((\Some ~s1 -> Some (~emit (TypeOpen) ~sc ~s1)) | \(None -> ((\Some ~
+          s1 -> (((\Some (~txt,
+                  ~s2
+                ) -> Some (~Tok (TyVar) (~span_between ~sc ~s2) ~txt)) | \(None -> None)) (~
+              take_ident ~s1
+            ))
+        ) | \(None -> None)) (~match_str "%" ~sc))) (~match_str "%{" ~sc));
 
 # Numbers (simple but practical): decimal int; float if '.' digits or exponent; TODO: radix 0x/0o/0b
-~take_digits ~sc = ~take_while1 ~is_digit ~sc;
-~is_e ~s = ((~str_eq ~s "e") || (~str_eq ~s "E"));
+~take_digits ~sc                                                                           = ~take_while1 ~is_digit ~sc;
+~is_e ~s                                                                                   = ((~str_eq ~s "e") || (~str_eq ~s "E"));
 # (duplicate ~take_member removed)
 
-~take_number_token ~sc = (
-  ~advance ~s = ((\(Some (~_, ~n)) -> ~n) (~Scan .next ~s));
-  ~emit_int ~s_end = Some (~emit (Int) ~sc ~s_end);
-  ~emit_float ~s_end = Some (~emit (Float) ~sc ~s_end);
-
-  ~with_prefix ~lit ~pred = (
-    ((\ Some ~s_after ->
-        ((\ Some (~_, ~s_digits) -> (~emit_int ~s_digits)) | \(None -> None))
-          (~Scan .take_while1 ~pred ~s_after)
-      ) | \(None -> None)) (~match_str ~lit ~sc)
-  );
-
-  ((~with_prefix "0x" (\ ~c -> (~Char .between ~c ('0') ('9')) || (~Char .between ~c ('a') ('f')) || (~Char .between ~c ('A') ('F'))))
-   | (~with_prefix "0o" (\ ~c -> (~Char .between ~c ('0') ('7'))))
-   | (~with_prefix "0b" (\ ~c -> ((~c == ('0')) || (~c == ('1')))))
-   | (
-      ((\ Some (~_, ~s_digits) -> (
-          ~after_digits = ~s_digits;
-
-          ~consume_exponent = (\ ~s_base -> (
-            ~peek_e = (~Scan .peek ~s_base);
-            (~if (((~peek_e == (Some ('e'))) || (~peek_e == (Some ('E'))))
-              (
-                ~s_after_e = (~advance ~s_base);
-                ~sign_info = (~Scan .peek ~s_after_e);
-                ~s_exp_start = (
-                  ((\(Some ~sign_ch) ->
-                    (~if (((~sign_ch == ('+')) || (~sign_ch == ('-'))))
-                      (~advance ~s_after_e)
-                      ~s_after_e
-                    )) | \(None -> ~s_after_e)) ~sign_info
-                );
-                ~digits_opt = (~Scan .take_while1 ~is_digit ~s_exp_start);
-                ((\ Some (~_, ~s_exp_end) -> (~emit_float ~s_exp_end)) | \(None -> (~emit_float ~s_base))) ~digits_opt
-              )
-              (~emit_float ~s_base)
-            ))
-          ));
-
-          ~fraction_attempt = (
-            (~if ((~Scan .peek ~after_digits) == (Some ('.')))
-              (
-                ~s_after_dot = (~advance ~after_digits);
-                ((\(Some ~next_ch) ->
-                  (~if (~is_digit ~next_ch)
-                    (
-                      ((\ Some (~_, ~s_frac) -> (~consume_exponent ~s_frac)) | \(None -> None)) (~Scan .take_while1 ~is_digit ~s_after_dot)
-                    )
-                    None
-                  )
-                ) | \(None -> None)) (~Scan .peek ~s_after_dot)
-              )
-              None
-            )
-          );
-
-          ((\ Some ~tok -> Some ~tok) | \(None ->
-            (~if (((~Scan .peek ~after_digits) == (Some ('e'))) || ((~Scan .peek ~after_digits) == (Some ('E'))))
-              (
-                ~s_after_e = (~advance ~after_digits);
-                ~sign_info = (~Scan .peek ~s_after_e);
-                ~s_exp_start = (
-                  ((\(Some ~sign_ch) ->
-                    (~if (((~sign_ch == ('+')) || (~sign_ch == ('-'))))
-                      (~advance ~s_after_e)
-                      ~s_after_e
-                    )) | \(None -> ~s_after_e)) ~sign_info
-                );
-                ~digits_opt = (~Scan .take_while1 ~is_digit ~s_exp_start);
-                ((\ Some (~_, ~s_exp_end) -> (~emit_float ~s_exp_end)) | \(None -> (~emit_int ~after_digits))) ~digits_opt
-              )
-              (~emit_int ~after_digits)
-            )
-          )) ~fraction_attempt
-        )) | \(None -> None)) (~take_digits ~sc)
-    )
-  )
+~take_number_token ~sc                                                                     = (~advance ~s = ((\(Some (~_,
+          ~n
+        )) -> ~n) (~Scan .next ~s));
+  ~emit_int ~s_end                                                                         = Some (~emit (Int) ~sc ~s_end);
+  ~emit_float ~s_end                                                                       = Some (~emit (Float) ~sc ~s_end);
+  
+  ~with_prefix ~lit ~pred                                                                  = (((\Some ~s_after -> ((\Some (~_,
+              ~s_digits
+            ) -> (~emit_int ~s_digits)) | \(None -> None)) (~Scan .take_while1 ~pred ~s_after)) | \
+      (None -> None)
+    ) (~match_str ~lit ~sc));
+  
+  ((~with_prefix "0x" (\~c -> (~Char .between ~c ('0') ('9')) || (~Char .between ~c ('a') ('f')) || 
+        (~Char .between ~c ('A') ('F'))
+      )) | (~with_prefix "0o" (\~c -> (~Char .between ~c ('0') ('7')))) | (~with_prefix "0b" (\~c -> 
+        ((~c == ('0')) || (~c == ('1')))
+      )) | (((\Some (~_,
+            ~s_digits
+          ) -> (~after_digits                                                              = ~s_digits;
+            
+            ~consume_exponent                                                              = (\~s_base -> (~peek_e = (~Scan .peek ~s_base);
+                (~if (((~peek_e == (Some ('e'))) || (~peek_e == (Some ('E')))) (~s_after_e = (~
+                        advance ~s_base
+                      );
+                      ~sign_info                                                           = (~Scan .peek ~s_after_e);
+                      ~s_exp_start                                                         = (((\(Some ~sign_ch) -> (~if (((~sign_ch == ('+')) || (~sign_ch
+                                    == ('-')
+                                  ))) (~advance ~s_after_e) ~s_after_e)) | \(None -> ~s_after_e)) ~
+                        sign_info
+                      );
+                      ~digits_opt                                                          = (~Scan .take_while1 ~is_digit ~s_exp_start);
+                      ((\Some (~_,
+                            ~s_exp_end
+                          ) -> (~emit_float ~s_exp_end)) | \(None -> (~emit_float ~s_base))) ~
+                      digits_opt
+                    ) (~emit_float ~s_base)))
+              ));
+            
+            ~fraction_attempt                                                              = ((~if ((~Scan .peek ~after_digits) == (Some ('.'))) (~s_after_dot = 
+                  (~advance ~after_digits);
+                  ((\(Some ~next_ch) -> (~if (~is_digit ~next_ch) (((\Some (~_,
+                                ~s_frac
+                              ) -> (~consume_exponent ~s_frac)) | \(None -> None)) (~Scan
+                            .take_while1 ~is_digit ~s_after_dot
+                          )) None)) | \(None -> None)) (~Scan .peek ~s_after_dot)
+                ) None));
+            
+            ((\Some ~tok -> Some ~tok) | \(None -> (~if (((~Scan .peek ~after_digits) == (Some ('e')))
+                    || ((~Scan .peek ~after_digits) == (Some ('E')))
+                  ) (~s_after_e                                                            = (~advance ~after_digits);
+                    ~sign_info                                                             = (~Scan .peek ~s_after_e);
+                    ~s_exp_start                                                           = (((\(Some ~sign_ch) -> (~if (((~sign_ch == ('+')) || (~sign_ch == 
+                                  ('-')
+                                ))) (~advance ~s_after_e) ~s_after_e)) | \(None -> ~s_after_e)) ~
+                      sign_info
+                    );
+                    ~digits_opt                                                            = (~Scan .take_while1 ~is_digit ~s_exp_start);
+                    ((\Some (~_,
+                          ~s_exp_end
+                        ) -> (~emit_float ~s_exp_end)) | \(None -> (~emit_int ~after_digits))) ~
+                    digits_opt
+                  ) (~emit_int ~after_digits)))) ~fraction_attempt
+          )) | \(None -> None)) (~take_digits ~sc)))
 );
 
 # Strings and Chars (returns raw slice text)
-~take_string ~sc =
-  ((\ Some ~s1 -> (
-    # DRAFT: minimal string scanner — handles closing quote and basic escapes; TODO: refine unicode and error cases
-  ~next1 ~s = (((\(Some (~_, ~n)) -> ~n) (~Scan .next ~s)));
-    ~loop ~s = (
-      ((\ Some ~c -> (
-        (~if (~c == ('"'))
-          (Some (~emit (Str) ~sc (~next1 ~s)))
-          (~if (~c == ('\\'))
-            (
-              ~s2 = (~next1 ~s);  # after '\'
-              ((\ Some ~d -> (
-                (~if (~d == ('u')) (
-                  # \u{...} — skip until next '}'
-                  ~s3 = (~next1 ~s2);
-                  (~if ((~Scan .peek ~s3) == (Some ('{'))) (
-                      ~u ~t = (
-                        ((\ Some ~ch -> (~if (~ch == ('}')) ~t (~u (~next1 ~t)))) | \(None -> ~t)) (~Scan .peek ~t)
-                      );
-                      (~loop (~u (~next1 ~s3)))
-                    )
-                    (~loop ~s3)
-                  )
-                ) (~loop ~s2))
-              )) | \(None -> (~loop ~s2))) (~Scan .peek ~s2)
-            )
-            (~loop (~next1 ~s))
-          )
-        )
-      )) | \(None -> (Some (~emit (Str) ~sc ~s)))) (~Scan .peek ~s)
-    );
-    (~loop ~s1)
-  )) | \(None -> None)) (~match_str "\"" ~sc);
+~take_string ~sc                                                                           = ((\Some ~s1 -> (
+      # DRAFT: minimal string scanner — handles closing quote and basic escapes; TODO: refine unicode and error cases
+      ~next1 ~s                                                                            = (((\(Some (~_,
+                ~n
+              )) -> ~n) (~Scan .next ~s)));
+      ~loop ~s                                                                             = (((\Some ~c -> ((~if (~c == ('"')) (Some (~emit (Str) ~sc (~next1 ~s))) (~if (~c == 
+                    ('\\')
+                  ) (~s2                                                                   = (~next1 ~s);
+                    # after '\'
+                    ((\Some ~d -> ((~if (~d == ('u')) ( # \u{...} — skip until next '}'
+                              ~s3                                                          = (~next1 ~s2);
+                              (~if ((~Scan .peek ~s3) == (Some ('{'))) (~u ~t = (((\Some ~ch -> (~
+                                          if (~ch == ('}')) ~t (~u (~next1 ~t))
+                                        )) | \(None -> ~t)) (~Scan .peek ~t));
+                                  (~loop (~u (~next1 ~s3)))
+                                ) (~loop ~s3))
+                            ) (~loop ~s2)))) | \(None -> (~loop ~s2))) (~Scan .peek ~s2)
+                  ) (~loop (~next1 ~s)))))) | \(None -> (Some (~emit (Str) ~sc ~s)))) (~Scan .peek ~
+          s
+        ));
+      (~loop ~s1)
+    )) | \(None -> None)) (~match_str "\"" ~sc);
 
-~take_char_lit ~sc =
-  ((\ Some ~s1 -> (
-    ~adv ~s = (
-  ((\ Some ~c -> (~if (~c == ('\\')) (~adv (((\(Some (~_, ~n)) -> ~n) (~Scan .next ~s)))) (((\(Some (~_, ~n)) -> ~n) (~Scan .next ~s))))) | \(None -> ~s)) (~Scan .peek ~s)
-    );
-    ~s2 = (~adv ~s1);
-  (~if (((~Scan .peek ~s2) == (Some ('\'')))) (Some (~emit (Char) ~sc (((\(Some (~_, ~n)) -> ~n) (~Scan .next ~s2))))) (None))
-  )) | \(None -> None)) (~match_str "'" ~sc);
+~take_char_lit ~sc                                                                         = ((\Some ~s1 -> (~adv ~s = (((\Some ~c -> (~if (~c == ('\\')) (~adv (((\(Some (
+                          ~_,
+                          ~n
+                        )) -> ~n) (~Scan .next ~s)))) (((\(Some (~_,
+                        ~n
+                      )) -> ~n) (~Scan .next ~s))))) | \(None -> ~s)) (~Scan .peek ~s));
+      ~s2                                                                                  = (~adv ~s1);
+      (~if (((~Scan .peek ~s2) == (Some ('\'')))) (Some (~emit (Char) ~sc (((\(Some (~_,
+                      ~n
+                    )) -> ~n) (~Scan .next ~s2))))) (None))
+    )) | \(None -> None)) (~match_str "'" ~sc);
 
 # next_token: returns Some((Token, Scan)) or None at EOF
-~next_token ~sc0 = (
-  ~sc = (~skip_ws_and_comments ~sc0);
-  (~if (~Scan .eof ~sc) (None) (
-    ~start = ~sc;
-    # multi-char operators first
-    ((~keyword "||" (PipePipe) ~sc)
-     | (~keyword "->" (Arrow) ~sc)
-     | (~keyword "==" (EqEq) ~sc)
-     | (~keyword "!=" (BangEq) ~sc)
-     | (~keyword "<=" (LessEq) ~sc)
-     | (~keyword "<-" (LeftArrow) ~sc)
-     | (~keyword ">=" (GreaterEq) ~sc)
-     | (~keyword ".<=" (DotLessEq) ~sc)
-     | (~keyword ".<" (DotLess) ~sc)
-     | (~keyword ".>=" (DotGreaterEq) ~sc)
-     | (~keyword ".>" (DotGreater) ~sc)
-     | (~keyword ".+" (DotPlus) ~sc)
-     | (~keyword ".-" (DotMinus) ~sc)
-     | (~keyword ".*" (DotStar) ~sc)
-     | (~keyword "./" (DotSlash) ~sc)
-     | (~take_tyvar_or_typeopen ~sc)
-     | (~take_member ~sc)
-     | (~take_ident_token ~sc)
-     | (~take_number_token ~sc)
-     | (~take_string ~sc)
-     | (~take_char_lit ~sc)
-    | (~one_char ('{') (LBrace) ~sc)    # {
-    | (~one_char ('}') (RBrace) ~sc)    # }
-    | (~one_char ('(')  (LParen) ~sc)    # (
-    | (~one_char (')')  (RParen) ~sc)    # )
-    | (~one_char ('[')  (LBracket) ~sc)  # [
-    | (~one_char (']')  (RBracket) ~sc)  # ]
-    | (~one_char (',')  (Comma) ~sc)     # ,
-    | (~one_char (';')  (Semicolon) ~sc) # ;
-    | (~one_char ('^')  (Caret) ~sc)     # ^
-    | (~one_char ('|') (Pipe) ~sc)      # |
-    | (~one_char (':')  (Colon) ~sc)     # :
-    | (~one_char ('=')  (Eq) ~sc)        # =
-  | (~one_char ('>')  (Greater) ~sc)   # >
-  | (~one_char ('<')  (Less) ~sc)      # <
-    | (~one_char ('@')  (At) ~sc)        # @
-    | (~one_char ('!')  (Bang) ~sc)      # !
-    | (~one_char ('\\')  (Backslash) ~sc) # \
-    | (~one_char ('?')  (Question) ~sc)  # ?
-    | (~one_char ('+')  (Plus) ~sc)      # +
-    | (~one_char ('-')  (Minus) ~sc)     # -
-    | (~one_char ('*')  (Star) ~sc)      # *
-    | (~one_char ('/')  (Slash) ~sc)     # /
-    | (~one_char ('~') (Tilde) ~sc)     # ~
-    ) |> (\ Some ~tok -> (
-          ~sp = (~tok .span);
-          ~end = ((~sp .off) + (~sp .len));
-          Some ((~tok), (~Scan .set_pos ~start ~end))
-        ))
-      | \(None -> None)
-  ))
+~next_token ~sc0                                                                           = (~sc = (~skip_ws_and_comments ~sc0);
+  (~if (~Scan .eof ~sc) (None) (~start                                                     = ~sc;
+      # multi-char operators first
+      ((~keyword "||" (PipePipe) ~sc) | (~keyword "->" (Arrow) ~sc) | (~keyword "==" (EqEq) ~sc) | 
+        (~keyword "!=" (BangEq) ~sc) | (~keyword "<=" (LessEq) ~sc) | (~keyword "<-" (LeftArrow) ~
+          sc
+        ) | (~keyword ">=" (GreaterEq) ~sc) | (~keyword ".<=" (DotLessEq) ~sc) | (~keyword ".<" (
+            DotLess
+          ) ~sc) | (~keyword ".>=" (DotGreaterEq) ~sc) | (~keyword ".>" (DotGreater) ~sc) | (~
+          keyword ".+" (DotPlus) ~sc
+        ) | (~keyword ".-" (DotMinus) ~sc) | (~keyword ".*" (DotStar) ~sc) | (~keyword "./" (
+            DotSlash
+          ) ~sc) | (~take_tyvar_or_typeopen ~sc) | (~take_member ~sc) | (~take_ident_token ~sc) | (
+          ~take_number_token ~sc
+        ) | (~take_string ~sc) | (~take_char_lit ~sc) | (~one_char ('{') (LBrace) ~sc) # {
+        | (~one_char ('}') (RBrace) ~sc) # }
+        | (~one_char ('(') (LParen) ~sc) # (
+        | (~one_char (')') (RParen) ~sc) # )
+        | (~one_char ('[') (LBracket) ~sc) # [
+        | (~one_char (']') (RBracket) ~sc) # ]
+        | (~one_char (',') (Comma) ~sc) # ,
+        | (~one_char (';') (Semicolon) ~sc) # ;
+        | (~one_char ('^') (Caret) ~sc) # ^
+        | (~one_char ('|') (Pipe) ~sc) # |
+        | (~one_char (':') (Colon) ~sc) # :
+        | (~one_char ('                                                                    =') (Eq) ~sc) # =
+        | (~one_char ('>') (Greater) ~sc) # >
+        | (~one_char ('<') (Less) ~sc) # <
+        | (~one_char ('@') (At) ~sc) # @
+        | (~one_char ('!') (Bang) ~sc) # !
+        | (~one_char ('\\') (Backslash) ~sc) # \
+        | (~one_char ('?') (Question) ~sc) # ?
+        | (~one_char ('+') (Plus) ~sc) # +
+        | (~one_char ('-') (Minus) ~sc) # -
+        | (~one_char ('*') (Star) ~sc) # *
+        | (~one_char ('/') (Slash) ~sc) # /
+        | (~one_char ('~') (Tilde) ~sc) # ~
+        ) | > (\Some ~tok -> (~sp                                                          = (~tok .span);
+          ~end                                                                             = ((~sp .off) + (~sp .len));
+          Some ((~tok),
+            (~Scan .set_pos ~start ~end)
+          )
+        )) | \(None -> None)
+    ))
 );
 
 # tokenize all
-~tokenize ~s = (
-  ~sc0 = (~Scan .new ~s);
-  ~rev_go ~xs ~acc = ((\[] -> ~acc | \(~h : ~t) -> (~rev_go ~t (~cons ~h ~acc))) ~xs);
-  ~reverse ~xs = (~rev_go ~xs []);
-  ~loop ~sc ~acc = (
-    ((\ Some (~tok, ~s1) -> (~loop ~s1 (~cons ~tok ~acc))) | \(None -> (~reverse ~acc))) (~next_token ~sc)
-  );
+~tokenize ~s                                                                               = (~sc0 = (~Scan .new ~s);
+  ~rev_go ~xs ~acc                                                                         = ((\[] -> ~acc | \(~h: ~t) -> (~rev_go ~t (~cons ~h ~acc))) ~xs);
+  ~reverse ~xs                                                                             = (~rev_go ~xs []);
+  ~loop ~sc ~acc                                                                           = (((\Some (~tok,
+          ~s1
+        ) -> (~loop ~s1 (~cons ~tok ~acc))) | \(None -> (~reverse ~acc))) (~next_token ~sc));
   (~loop ~sc0 [])
 );
 
 {
-  token: { tokenize: ~tokenize },
+  token   : {
+    tokenize: ~tokenize
+  },
   is_alpha: ~is_letter,
   is_digit: ~is_digit,
   is_alnum: ~is_alnum,
