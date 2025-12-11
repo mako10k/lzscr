@@ -829,6 +829,14 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             j: &mut usize,
             toks: &'b [lzscr_lexer::Lexed<'b>],
         ) -> Result<TypeExpr, ParseError> {
+            // Try sum-of-ctors before consuming a token: if the position starts a sum,
+            // parse into TypeExpr::Sum and return early.
+            let save_j = *j;
+            if let Some(sum_alts) = try_parse_sum_alts(j, toks)? {
+                return Ok(TypeExpr::Sum(sum_alts));
+            }
+            *j = save_j;
+
             let t = bump(j, toks).ok_or_else(|| ParseError::Generic("expected type".into()))?;
             Ok(match &t.tok {
                 Tok::Member(name) => {
@@ -852,6 +860,56 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             return Ok(TypeExpr::Tuple(vec![]));
                         }
                     }
+                    // Attempt to parse a parenthesized sum-of-ctors: Tag Ty* ( '|' Tag Ty* )* )
+                    let save_inner = *j;
+                    if let Some(firsttok) = toks.get(*j) {
+                        if matches!(firsttok.tok, Tok::Ident) || matches!(firsttok.tok, Tok::Member(_)) {
+                            let mut alts: Vec<(String, Vec<TypeExpr>)> = Vec::new();
+                            loop {
+                                let tagtok = bump(j, toks).ok_or_else(|| ParseError::Generic("expected tag in sum type".into()))?;
+                                let tag = match &tagtok.tok {
+                                    Tok::Ident => tagtok.text.to_string(),
+                                    Tok::Member(name) => name.strip_prefix('.').unwrap_or(name).to_string(),
+                                    _ => { *j = save_inner; break; }
+                                };
+                                // parse zero-or-more type args for this alt
+                                let mut args: Vec<TypeExpr> = Vec::new();
+                                loop {
+                                    if let Some(nxt2) = toks.get(*j) {
+                                        if matches!(nxt2.tok, Tok::Pipe) || matches!(nxt2.tok, Tok::RParen) {
+                                            break;
+                                        }
+                                    } else {
+                                        *j = save_inner;
+                                        return Err(ParseError::Generic("expected ) to close sum type".into()));
+                                    }
+                                    if !is_type_atom_start(&toks.get(*j).unwrap().tok) {
+                                        break;
+                                    }
+                                    let te = parse_type_expr_bp(j, toks, 6)?;
+                                    args.push(te);
+                                }
+                                alts.push((tag, args));
+                                // check separator
+                                if let Some(nxt3) = toks.get(*j) {
+                                    if matches!(nxt3.tok, Tok::Pipe) {
+                                        let _ = bump(j, toks);
+                                        continue;
+                                    } else if matches!(nxt3.tok, Tok::RParen) {
+                                        let _ = bump(j, toks);
+                                        return Ok(TypeExpr::Sum(alts));
+                                    } else {
+                                        *j = save_inner;
+                                        break;
+                                    }
+                                } else {
+                                    *j = save_inner;
+                                    return Err(ParseError::Generic("expected ) to close sum type".into()));
+                                }
+                            }
+                        }
+                    }
+                    // Fallback: normal tuple/group parsing
                     let first = parse_type_expr(j, toks)?;
                     let mut items = vec![first];
                     loop {
@@ -877,7 +935,6 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             }
                         }
                     }
-                    // If there's exactly one element, treat `(T)` as grouping and return the inner type
                     if items.len() == 1 {
                         return Ok(items.into_iter().next().unwrap());
                     }
@@ -967,6 +1024,99 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             Ok(lhs)
         }
         parse_type_expr_bp(j, toks, 0)
+    }
+
+    // Shared helper to parse a sum-of-ctors form: .Tag Ty* ( '|' .Tag Ty* )*
+    // Returns Some(alts) and leaves `j` at the closing `}` (does NOT consume it).
+    fn try_parse_sum_alts<'b>(j: &mut usize, toks: &'b [lzscr_lexer::Lexed<'b>]) -> Result<Option<Vec<(String, Vec<TypeExpr>)>>, ParseError> {
+        let save = *j;
+        // Need at least one tag token
+        let first = match toks.get(*j) {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        let tag = match &first.tok {
+            Tok::Ident => first.text.to_string(),
+            Tok::Member(name) => name.strip_prefix('.').unwrap_or(name).to_string(),
+            _ => return Ok(None),
+        };
+        // consume first tag
+        *j += 1;
+        // parse zero-or-more type args for the first alt
+        let mut args: Vec<TypeExpr> = Vec::new();
+        loop {
+            if let Some(nxt) = toks.get(*j) {
+                if matches!(nxt.tok, Tok::Pipe) || matches!(nxt.tok, Tok::RBrace) {
+                    break;
+                }
+            } else {
+                *j = save;
+                return Ok(None);
+            }
+            let te = parse_type_expr(j, toks)?;
+            args.push(te);
+        }
+        // If next token is not a Pipe, this is not a sum (single ctor-like), roll back.
+        if let Some(nxt) = toks.get(*j) {
+            if !matches!(nxt.tok, Tok::Pipe) {
+                *j = save;
+                return Ok(None);
+            }
+        } else {
+            *j = save;
+            return Ok(None);
+        }
+
+        // It's a sum: collect alternatives until RBrace (leave `j` at RBrace)
+        let mut alts: Vec<(String, Vec<TypeExpr>)> = Vec::new();
+        alts.push((tag, args));
+        loop {
+            // consume the '|'
+            if let Some(p) = toks.get(*j) {
+                if matches!(p.tok, Tok::Pipe) {
+                    *j += 1;
+                } else {
+                    // expected '|' or '}'
+                    break;
+                }
+            } else {
+                return Err(ParseError::Generic("expected alternative after '|' in sum type".into()));
+            }
+            // next must be tag
+            let tagtok = toks.get(*j).ok_or_else(|| ParseError::Generic("expected tag in sum type".into()))?;
+            let tag = match &tagtok.tok {
+                Tok::Ident => tagtok.text.to_string(),
+                Tok::Member(name) => name.strip_prefix('.').unwrap_or(name).to_string(),
+                _ => return Err(ParseError::Generic("expected tag in sum type".into())),
+            };
+            *j += 1;
+            let mut args: Vec<TypeExpr> = Vec::new();
+            loop {
+                if let Some(nxt) = toks.get(*j) {
+                    if matches!(nxt.tok, Tok::Pipe) || matches!(nxt.tok, Tok::RBrace) {
+                        break;
+                    }
+                } else {
+                    return Err(ParseError::Generic("expected '}' to close sum type".into()));
+                }
+                let te = parse_type_expr(j, toks)?;
+                args.push(te);
+            }
+            alts.push((tag, args));
+            // if next is RBrace, stop (do not consume RBrace here)
+            if let Some(nxt) = toks.get(*j) {
+                if matches!(nxt.tok, Tok::RBrace) {
+                    break;
+                } else {
+                    // otherwise loop continues expecting another '|'
+                    continue;
+                }
+            } else {
+                return Err(ParseError::Generic("expected '}' to close sum type".into()));
+            }
+        }
+        // leave j at RBrace (do not consume)
+        Ok(Some(alts))
     }
 
     // Try to parse a type declaration: %Name %a* = %{ .Tag Ty* ( '|' .Tag Ty* )* '}' ';'?

@@ -351,6 +351,25 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     )
                 }
             }
+            TypeExpr::Sum(alts) => {
+                let parts = alts
+                    .iter()
+                    .map(|(tag, args)| {
+                        let head = dotted(tag);
+                        if args.is_empty() {
+                            head
+                        } else {
+                            format!(
+                                "{} {}",
+                                head,
+                                args.iter().map(print_type_expr).collect::<Vec<_>>().join(" ")
+                            )
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                format!("%{{{}}}", parts)
+            }
         }
     }
     match &e.kind {

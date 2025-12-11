@@ -43,6 +43,8 @@ pub mod ast {
         List(Box<TypeExpr>),
         Tuple(Vec<TypeExpr>),
         Record(Vec<TypeExprRecordField>), // Phase 5: Now tracks field name spans
+        // Sum type literal, e.g. `%{ A T1 | B T2 U }` used as a first-class type value
+        Sum(Vec<(String, Vec<TypeExpr>)>),
         Fun(Box<TypeExpr>, Box<TypeExpr>),
         Ctor { tag: String, args: Vec<TypeExpr> },
         Var(String),          // %a etc. (only within %{...} syntax)
@@ -333,6 +335,24 @@ pub mod pretty {
                         args.iter().map(print_type).collect::<Vec<_>>().join(" ")
                     )
                 }
+            }
+            TypeExpr::Sum(alts) => {
+                let parts = alts
+                    .iter()
+                    .map(|(tag, args)| {
+                        if args.is_empty() {
+                            tag.clone()
+                        } else {
+                            format!(
+                                "{} {}",
+                                tag,
+                                args.iter().map(print_type).collect::<Vec<_>>().join(" ")
+                            )
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                parts
             }
         }
     }

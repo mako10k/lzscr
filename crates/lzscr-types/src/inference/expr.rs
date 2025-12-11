@@ -114,6 +114,14 @@ pub(crate) fn infer_expr(
                     Type::Ctor { tag: tag.clone(), payload: conv_args }
                 }
             }
+            TypeExpr::Sum(alts) => {
+                let mut out = Vec::with_capacity(alts.len());
+                for (tag, args) in alts {
+                    let conv_args = args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect::<Vec<_>>();
+                    out.push((tag.clone(), conv_args));
+                }
+                Type::SumCtor(out)
+            }
             TypeExpr::Var(name) => {
                 if let Some(id) = lookup_tyvar(ctx, name) {
                     Type::Var(id)

@@ -116,6 +116,12 @@ fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> boo
             let self_occ_ok = if tag == target { polarity } else { true };
             self_occ_ok && args.iter().all(|t| check_positive_occurrence(t, target, polarity))
         }
+        TypeExpr::Sum(alts) => {
+            // sum alternatives: each alternative's payload types must be positive
+            alts.iter().all(|(_tag, payloads)| {
+                payloads.iter().all(|t| check_positive_occurrence(t, target, polarity))
+            })
+        }
     }
 }
 
@@ -188,6 +194,17 @@ pub(crate) fn conv_typeexpr_with_subst(
                 Type::Ctor { tag: tag.clone(), payload: conv_args }
             }
         }
+        TypeExpr::Sum(alts) => {
+            let mut out = Vec::with_capacity(alts.len());
+            for (tag, payload_tes) in alts {
+                let mut payload = Vec::with_capacity(payload_tes.len());
+                for te in payload_tes {
+                    payload.push(conv_typeexpr_with_subst(ctx, te, subst)?);
+                }
+                out.push((tag.clone(), payload));
+            }
+            Type::SumCtor(out)
+        }
         TypeExpr::Var(nm) => match subst.get(nm) {
             Some(t) => t.clone(),
             None => {
@@ -232,6 +249,17 @@ pub fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
         TypeExpr::Ctor { tag, args } => {
             let payload = args.iter().map(|t| conv_typeexpr_fresh(tv, t)).collect();
             Type::Ctor { tag: tag.clone(), payload }
+        }
+        TypeExpr::Sum(alts) => {
+            let mut out = Vec::with_capacity(alts.len());
+            for (tag, payload_tes) in alts {
+                let mut payload = Vec::with_capacity(payload_tes.len());
+                for te in payload_tes {
+                    payload.push(conv_typeexpr_fresh(tv, te));
+                }
+                out.push((tag.clone(), payload));
+            }
+            Type::SumCtor(out)
         }
         TypeExpr::Var(_) => tv.fresh(),
         TypeExpr::Hole(_) => tv.fresh(),

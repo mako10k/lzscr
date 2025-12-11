@@ -108,6 +108,25 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                     )
                 }
             }
+            TypeExpr::Sum(alts) => {
+                let parts = alts
+                    .iter()
+                    .map(|(tag, args)| {
+                        let head = dotted(tag);
+                        if args.is_empty() {
+                            head
+                        } else {
+                            format!(
+                                "{} {}",
+                                head,
+                                args.iter().map(print_type_expr).collect::<Vec<_>>().join(" ")
+                            )
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                format!("%{{{}}}", parts)
+            }
         }
     }
     fn print_pattern(p: &Pattern) -> String {
