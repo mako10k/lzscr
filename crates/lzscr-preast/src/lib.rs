@@ -356,17 +356,43 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                                 }
                             }
                         }
-                        // Case B: top-level or not-parenthesized chain — break if line too long
+                        // Case B: top-level or not-parenthesized chain — break onto its own
+                        // indented block. If the chain follows an '=' we want the first
+                        // alternative to appear without a leading '|' and all alternatives
+                        // (including subsequent '|') to be indented one level deeper.
                         if !in_group && !at_line_start {
-                            newline(indent_level, &mut col, &mut out, &mut group_stack);
-                            push_str("|", &mut col, &mut out);
-                            out.push(' ');
-                            col += 1;
-                            prev_is_op = true;
-                            at_line_start = false;
-                            idx += 1;
-                            prev_line = Some(it.line);
-                            continue;
+                            // find previous meaningful token text (skip comments)
+                            let mut prev_tok_txt: Option<&str> = None;
+                            let mut j = idx as isize - 1;
+                            while j >= 0 {
+                                if let PreTokenKind::Token(t) = &pre.items[j as usize].kind {
+                                    prev_tok_txt = Some(t.as_str());
+                                    break;
+                                }
+                                j -= 1;
+                            }
+                            // compute indent one level deeper
+                            let target_indent = indent_level + 1;
+                            if matches!(prev_tok_txt, Some("=")) {
+                                // first alternative: break and DO NOT emit '|'
+                                newline(target_indent, &mut col, &mut out, &mut group_stack);
+                                at_line_start = true;
+                                prev_is_op = true;
+                                idx += 1;
+                                prev_line = Some(it.line);
+                                continue;
+                            } else {
+                                // emit leading '|' on its own indented line
+                                newline(target_indent, &mut col, &mut out, &mut group_stack);
+                                push_str("|", &mut col, &mut out);
+                                out.push(' ');
+                                col += 1;
+                                prev_is_op = true;
+                                at_line_start = false;
+                                idx += 1;
+                                prev_line = Some(it.line);
+                                continue;
+                            }
                         }
                     }
                     if !at_line_start && needs_space_before(&out) {
