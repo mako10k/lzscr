@@ -271,7 +271,8 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                 let is_semi = s == ";";
                 let is_lparen = s == "(";
                 let is_rparen = s == ")";
-                let is_lbrace = s == "{";
+                // treat "%{" as a left-brace for formatting decisions
+                let is_lbrace = s == "{" || s == "%{";
                 let is_rbrace = s == "}";
                 let is_lbracket = s == "[";
                 let is_rbracket = s == "]";
@@ -331,6 +332,43 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                     }
                     prev_is_op = false;
                 } else if is_op {
+                    // Special-case: '|' inside parenthesized alternative lambdas
+                    if s == "|" {
+                        // Case A: inside parenthesized alternative lambdas
+                        if in_group {
+                            if let Some(top) = group_stack.last() {
+                                if top._delim == '(' {
+                                    if !at_line_start && (col + token_len + 1 > opts.max_width || top.broken) {
+                                        newline(indent_level, &mut col, &mut out, &mut group_stack);
+                                    }
+                                    if !at_line_start && needs_space_before(&out) {
+                                        out.push(' ');
+                                        col += 1;
+                                    }
+                                    push_str("|", &mut col, &mut out);
+                                    out.push(' ');
+                                    col += 1;
+                                    prev_is_op = true;
+                                    at_line_start = false;
+                                    idx += 1;
+                                    prev_line = Some(it.line);
+                                    continue;
+                                }
+                            }
+                        }
+                        // Case B: top-level or not-parenthesized chain — break if line too long
+                        if !in_group && !at_line_start {
+                            newline(indent_level, &mut col, &mut out, &mut group_stack);
+                            push_str("|", &mut col, &mut out);
+                            out.push(' ');
+                            col += 1;
+                            prev_is_op = true;
+                            at_line_start = false;
+                            idx += 1;
+                            prev_line = Some(it.line);
+                            continue;
+                        }
+                    }
                     if !at_line_start && needs_space_before(&out) {
                         out.push(' ');
                         col += 1;
@@ -361,17 +399,63 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                 }
 
                 if is_lparen || is_lbrace || is_lbracket {
-                    group_stack
-                        .push(GroupFrame { _delim: s.chars().next().unwrap(), broken: false });
+                    // delim should reflect the actual grouping delimiter; when token is "%{"
+                    // treat the delim as '{' for grouping logic.
+                    let delim = if s.ends_with('{') { '{' } else { s.chars().next().unwrap() };
+                    group_stack.push(GroupFrame { _delim: delim, broken: false });
                     indent_level += 1;
-                    if is_lbrace {
-                        if let Some(next) = next_token {
-                            let is_next_rbrace =
-                                matches!(&next.kind, PreTokenKind::Token(t) if t == "}");
-                            if !is_next_rbrace {
-                                newline(indent_level, &mut col, &mut out, &mut group_stack);
-                                at_line_start = true;
+                    // For braces we already break after '{' if non-empty. For parentheses,
+                    // if the group contains a '|' we want to render each alternative on its own line.
+                    if delim == '{' {
+                        // If this brace is part of a type context like "%{ ... }",
+                        // the previous token will start with '%'. In that case
+                        // avoid forcing an immediate newline (keeps %{Type} compact).
+                        let mut prev_is_percent_type = false;
+                        // If the current token itself starts with '%' (e.g. "%{")
+                        // treat it as a type-context open.
+                        if s.starts_with('%') {
+                            prev_is_percent_type = true;
+                        } else if idx >= 1 {
+                            if let PreTokenKind::Token(prev_txt) = &pre.items[idx - 1].kind {
+                                if prev_txt.starts_with('%') {
+                                    prev_is_percent_type = true;
+                                }
                             }
+                        }
+                        if !prev_is_percent_type {
+                            if let Some(next) = next_token {
+                                let is_next_rbrace = matches!(&next.kind, PreTokenKind::Token(t) if t == "}");
+                                if !is_next_rbrace {
+                                    newline(indent_level, &mut col, &mut out, &mut group_stack);
+                                    at_line_start = true;
+                                }
+                            }
+                        }
+                    } else if delim == '(' {
+                        // look ahead for an un-nested '|' before matching ')'
+                        let mut nest = 0isize;
+                        let mut found_pipe = false;
+                        for j in (idx+1)..pre.items.len() {
+                            match &pre.items[j].kind {
+                                PreTokenKind::Token(t) => {
+                                    if t == "(" {
+                                        nest += 1;
+                                    } else if t == ")" {
+                                        if nest == 0 {
+                                            break;
+                                        }
+                                        nest -= 1;
+                                    } else if t == "|" && nest == 0 {
+                                        found_pipe = true;
+                                        break;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        if found_pipe {
+                            newline(indent_level, &mut col, &mut out, &mut group_stack);
+                            at_line_start = true;
                         }
                     }
                 }
