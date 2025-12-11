@@ -877,6 +877,10 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             }
                         }
                     }
+                    // If there's exactly one element, treat `(T)` as grouping and return the inner type
+                    if items.len() == 1 {
+                        return Ok(items.into_iter().next().unwrap());
+                    }
                     TypeExpr::Tuple(items)
                 }
                 Tok::LBrace => {
