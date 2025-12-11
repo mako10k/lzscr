@@ -351,11 +351,17 @@
       "patterns": [
         {
           "name": "meta.binding.lzscr",
-          "begin": "^\\s*(?:~[A-Za-z_][A-Za-z0-9_]*(?:\\s+~[A-Za-z_][A-Za-z0-9_]*)*)\\s*(?==)",
+          "begin": "^\\s*(?:([A-Za-z_][A-Za-z0-9_]*)|(~[A-Za-z_][A-Za-z0-9_]*))(?:\\s+(?:~[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*))*\\s*(?==)",
           "end": "=",
           "beginCaptures": {
             "0": {
               "name": "keyword.operator.assignment.context.lzscr"
+            },
+            "1": {
+              "name": "variable.other.binding.lzscr"
+            },
+            "2": {
+              "name": "variable.other.binding.tilde.lzscr"
             }
           },
           "endCaptures": {
@@ -367,6 +373,10 @@
             {
               "name": "variable.parameter.tilde.lzscr",
               "match": "~[A-Za-z_][A-Za-z0-9_]*"
+            },
+            {
+              "name": "variable.parameter.lzscr",
+              "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
             }
           ]
         }

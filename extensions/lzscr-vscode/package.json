@@ -48,6 +48,24 @@
         }
       }
     ],
+    "tokenColors": [
+      {
+        "scope": "variable.other.binding.lzscr",
+        "settings": { "foreground": "#1E90FF", "fontStyle": "bold" }
+      },
+      {
+        "scope": "variable.other.binding.tilde.lzscr",
+        "settings": { "foreground": "#1E90FF", "fontStyle": "bold italic" }
+      },
+      {
+        "scope": "variable.parameter.lzscr",
+        "settings": { "foreground": "#808080" }
+      },
+      {
+        "scope": "variable.parameter.tilde.lzscr",
+        "settings": { "foreground": "#808080", "fontStyle": "italic" }
+      }
+    ],
     "snippets": [
       {
         "language": "lzscr",
