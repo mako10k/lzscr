@@ -117,7 +117,8 @@ pub(crate) fn infer_expr(
             TypeExpr::Sum(alts) => {
                 let mut out = Vec::with_capacity(alts.len());
                 for (tag, args) in alts {
-                    let conv_args = args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect::<Vec<_>>();
+                    let conv_args =
+                        args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect::<Vec<_>>();
                     out.push((tag.clone(), conv_args));
                 }
                 Type::SumCtor(out)
