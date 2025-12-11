@@ -36,6 +36,14 @@
         "path": "./syntaxes/lzscr.tmLanguage.json"
       }
     ],
+    "tokenColors": [
+      {
+        "scope": "variable.parameter.tilde.lzscr",
+        "settings": {
+          "foreground": "#808080"
+        }
+      }
+    ],
     "snippets": [
       {
         "language": "lzscr",
