@@ -45,26 +45,33 @@
   value: ~value
 };
 
-~fields_from_pairs ~pairs                = (~go = (\[] -> [] | \(~head: ~tail) -> (~key = (~head .key);
+~fields_from_pairs ~pairs                = (~go = (
+    \[] -> []
+    | \(~head: ~tail) -> (~key           = (~head .key);
       ~value                             = (~head .value);
       (~cons (~field ~key ~value) (~go ~tail))
-    ));
+    )
+  );
   (~go ~pairs)
 );
 
-~append_fields ~xs ~ys                   = ((\[] -> ~ys | \(~head: ~tail) -> (~cons ~head (~append_fields ~tail ~ys)))
-  ~xs
-);
+~append_fields ~xs ~ys                   = ((
+    \[] -> ~ys
+    | \(~head: ~tail) -> (~cons ~head (~append_fields ~tail ~ys))
+  ) ~xs);
 
 ~render_field ~field                     = (~key = (~field .key);
   ~value                                 = (~field .value);
   (~Str .concat ~key (~Str .concat "=" (~to_str ~value)))
 );
 
-~render_fields ~fields                   = (~go = (\[] -> "" | \(~head: ~tail) -> (~current = (~render_field ~head);
+~render_fields ~fields                   = (~go = (
+    \[] -> ""
+    | \(~head: ~tail) -> (~current       = (~render_field ~head);
       ~rest                              = (~go ~tail);
       (~if (~rest == "") ~current (~Str .concat ~current (~Str .concat " " ~rest)))
-    ));
+    )
+  );
   (~go ~fields)
 );
 
@@ -92,12 +99,13 @@
   (~Str .concat ~quoted_key (~Str .concat ": " ~value))
 );
 
-~render_fields_json ~fields              = (~go = (\[] -> "" | \(~head: ~tail) -> (~current = (~
-        render_field_json ~head
-      );
+~render_fields_json ~fields              = (~go = (
+    \[] -> ""
+    | \(~head: ~tail) -> (~current       = (~render_field_json ~head);
       ~rest                              = (~go ~tail);
       (~if (~rest == "") ~current (~Str .concat ~current (~Str .concat ", " ~rest)))
-    ));
+    )
+  );
   ~body                                  = (~go ~fields);
   (~Str .concat "{" (~Str .concat ~body "}"))
 );

@@ -2,34 +2,43 @@
 # Constructors: Ok x | Err e
 
 # map : (a -> b) -> Result a e -> Result b e
-~map ~f            = \(Ok ~x) -> Ok (~f ~x) | \(Err ~e) -> Err ~e;
+~map ~f            = \(Ok ~x) -> Ok (~f ~x)
+| \(Err ~e) -> Err ~e;
 
 # map_err : (e1 -> e2) -> Result a e1 -> Result a e2
-~map_err ~f        = \(Ok ~x) -> Ok ~x | \(Err ~e) -> Err (~f ~e);
+~map_err ~f        = \(Ok ~x) -> Ok ~x
+| \(Err ~e) -> Err (~f ~e);
 
 # and_then : (a -> Result b e) -> Result a e -> Result b e
-~and_then ~f       = \(Ok ~x) -> (~f ~x) | \(Err ~e) -> Err ~e;
+~and_then ~f       = \(Ok ~x) -> (~f ~x)
+| \(Err ~e) -> Err ~e;
 
 # or_else : (e -> Result a f) -> Result a e -> Result a f
-~or_else ~f        = \(Ok ~x) -> Ok ~x | \(Err ~e) -> (~f ~e);
+~or_else ~f        = \(Ok ~x) -> Ok ~x
+| \(Err ~e) -> (~f ~e);
 
 # unwrap_or : a -> Result a e -> a
-~unwrap_or ~def    = \(Ok ~x) -> ~x | \(Err ~_) -> ~def;
+~unwrap_or ~def    = \(Ok ~x) -> ~x
+| \(Err ~_) -> ~def;
 
 # unwrap_or_else : (e -> a) -> Result a e -> a
-~unwrap_or_else ~f = \(Ok ~x) -> ~x | \(Err ~e) -> (~f ~e);
+~unwrap_or_else ~f = \(Ok ~x) -> ~x
+| \(Err ~e) -> (~f ~e);
 
 # is_ok / is_err
-~is_ok             = \(Ok _) -> True | \(Err _) -> False;
-~is_err            = \(Ok _) -> False | \(Err _) -> True;
+~is_ok             = \(Ok _) -> True
+| \(Err _) -> False;
+~is_err            = \(Ok _) -> False
+| \(Err _) -> True;
 
 # to_option : Result a e -> Option a
-~to_option         = \(Ok ~x) -> Some ~x | \(Err _) -> None;
+~to_option         = \(Ok ~x) -> Some ~x
+| \(Err _) -> None;
 
 # transpose_option : Result (Option a) e -> Option (Result a e)
-~transpose_option  = \(Ok (Some ~x)) -> Some (Ok ~x) | \(Ok None) -> None | \(Err ~e) -> Some (Err ~
-  e
-);
+~transpose_option  = \(Ok (Some ~x)) -> Some (Ok ~x)
+| \(Ok None) -> None
+| \(Err ~e) -> Some (Err ~e);
 
 {
   map             : ~map,

@@ -16,7 +16,10 @@
 );
 
 # say_all: print each string in the list, each on its own line
-~say_all ~xs       = ((\[] -> () | \(~head: ~tail) -> (~chain (~println ~head) (~say_all ~tail))) ~xs);
+~say_all ~xs       = ((
+    \[] -> ()
+    | \(~head: ~tail) -> (~chain (~println ~head) (~say_all ~tail))
+  ) ~xs);
 
 {
   print  : ~print,
