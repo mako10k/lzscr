@@ -2,8 +2,11 @@
 # Minimal 2-tuple helpers: constructor and accessors
 
 # Construct a 2-tuple as a record with `fst` and `snd` fields
-~tuple2 ~a ~b = {fst : ~a, snd : ~b};
+~tuple2 ~a ~b = {
+  fst: ~a,
+  snd: ~b
+};
 
 # Accessors
-~fst ~t = (~t .fst);
-~snd ~t = (~t .snd);
+~fst ~t       = (~t .fst);
+~snd ~t       = (~t .snd);
