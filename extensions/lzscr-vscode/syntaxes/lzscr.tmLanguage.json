@@ -179,10 +179,7 @@
               "name": "variable.parameter.lzscr",
               "match": "[A-Za-z_][A-Za-z0-9_]*"
             },
-            {
-              "name": "variable.parameter.tilde.lzscr",
-              "match": "~[A-Za-z_][A-Za-z0-9_]*"
-            },
+            
             {
               "name": "constant.language.wildcard.lzscr",
               "match": "_"
