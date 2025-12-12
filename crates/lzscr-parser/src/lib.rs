@@ -1387,10 +1387,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             }
         }
         let start_off = toks.get(head_start).map(|t| t.span.offset).unwrap_or(0);
-        let end_off = toks
-            .get(*j - 1)
-            .map(|t| t.span.offset + t.span.len)
-            .unwrap_or(start_off);
+        let end_off = toks.get(*j - 1).map(|t| t.span.offset + t.span.len).unwrap_or(start_off);
         let span = Span::new(start_off, end_off - start_off);
         let name = decl_name.unwrap();
         Ok(Some((TypeDecl { name, params, body: TypeDefBody::Sum(alts), span }, *j)))
