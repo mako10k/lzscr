@@ -21,7 +21,13 @@
 - **Block**: `{ expr }` (groups expression)
 - **Apply**: `(f x)` (left-associative function application)
 - **List literal**: `[1, 2, 3]` or `[]`
-- **Record literal**: `{a: 1, b: 2}` or `{}` (keys must be identifiers)
+- **Record literal / ModeMap**: `{a: 1, b: 2}` or `{}` (keys must be identifiers)
+  - ModeMap は Record 構文を用いた「モード選択マップ」です。
+  - 拡張構文: `.{ ModeA: exprA, ModeB: exprB; exprDefault }`
+    - `ModeA`, `ModeB` はドット付き識別子に対応するフィールド（例: `.Int`, `.Str`）。
+    - セミコロン以降の `exprDefault` はデフォルト腕で、指定モードが存在しない場合に選択されます。
+    - デフォルト腕省略時に未定義モードを選ぶと実行時エラーになります。
+  - 構文上は Record と同一ですが、`.select` と糖衣構文により特別な選択動作を持ちます。
 - **Tuple** (via sugar): `(a, b, c)` parsed as tuple pattern/expression
 - **Raise**: `^(expr)` (raises an exception/control flow signal)
 
@@ -75,7 +81,9 @@
 - **Named ctors** are **always** bare identifiers. They never borrow the `.` syntax, and applying one just uses normal function application. Curried application keeps the ctor partially applied until its arity is satisfied. Tuple syntax `(a, b, c, ...)` is sugar for dedicated Named ctors (`.,`, `.,,`, …) rather than symbols.
 - **Type ctors** are every `%{TypeExpr}` form. `%{Ty} expr` simply unifies the inferred type of `expr` with `Ty`, and `%{Ty}` yields a first-class type value whose own type is `%{.Type}`. Type expressions keep the dot prefix for primitives and structural heads (`.Int`, `.Bool`, `.List`, `.Tuple`) so they never conflict with value-level Named ctors, while user-defined constructor names remain bare (e.g., `Foo`, `Some %a`).
 - `%{.Type}` is the canonical “type of types.” Future work may admit richer `%{Expr}` type lifting, but today every `%{...}` lives in `%{.Type}` and annotations fail if unification with `%{.Type}`-inhabiting expressions cannot succeed.
-- **Symbols (`.foo`)** are atomic interned values. Applying a symbol is a runtime error and symbols are never implicitly converted into either class of ctor.
+- **Symbols (`.foo`)** are atomic interned values. Applying a symbolは原則としてランタイムエラーですが、ModeMap に対しては特別扱いされます（下記糖衣構文）。
+  - 糖衣構文: `.Ident ModedValue` は `.select .Ident ModedValue` と等価に解釈されます。
+  - `ModedValue` は上記 ModeMap 構文で書かれた値、または同等の選択可能値です。
 - The type of the Named ctor literal `Foo` is `%{(Foo .. | ...)}` (the literal `..` marks unspecified arity; `...` indicates the remaining ctors in the sum type). `%{Foo ..}` expands to `%{(Foo | %a -> Foo %a | %a -> %b -> Foo %a %b | ...)}`, and `%{Foo T1 T2 ..}` fixes the first payload positions before continuing the curry.
 - Notation reminder: `..` is a concrete lexical token that actually appears in type expressions (e.g., `%{Foo ..}`), whereas `...` is merely prose ellipsis for “and the other alternatives.” Do not interchange the two when writing code.
 

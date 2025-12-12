@@ -51,11 +51,14 @@ The implementation uses a procedural parser with a PRE-AST front (chumsky as a h
   - Literals: Unit `()`, Int, Float, Str, Char
   - Reference: `~ident` (statically bound name)
   - Symbol value: `.name` (tag/namespace key)
+    - ModeMap に対する適用の糖衣構文あり（`.Ident ModedValue` は `.select .Ident ModedValue` と等価）。
   - Lambda: `\pat -> expr`
     - Multi-parameter sugar: `\Pat1 Pat2 ... PatN -> Expr` ≡ `\Pat1 -> (\Pat2 -> ... (\PatN -> Expr) ...)`
   - Application: `(f x)` (left-associative; usually prefix-application style without parens)
   - Block: `{ expr }`
   - List/tuple/record (syntactic sugar): implemented (see syntax.md)
+    - Record の拡張として ModeMap（`.{ ModeA: exprA, ModeB: exprB; exprDefault }`）をサポート。
+    - デフォルト腕は省略可能。該当モードが無い場合の選択は失敗（ランタイムエラー）。
   - Let group: a parenthesized group with one or more bindings around a body
     - Concrete source form: `( [Pat = Expr;]* Body [; [Pat = Expr;]*] )`
     - Parse rule: if there is at least one binding in total (leading + trailing ≥ 1), the whole becomes a LetGroup; otherwise it is parsed as a plain grouped expression `(Body)`.
