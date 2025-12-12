@@ -11,13 +11,14 @@ use lzscr_ast::ast::{TypeDecl, TypeDefBody, TypeExpr};
 use std::collections::{BTreeMap, HashMap};
 
 /// Frame mapping constructor tags to their payload type templates (AST TypeExpr).
+/// Only bare tags (library-level constructors) are stored here as strings.
 pub type TypeDefsFrame = HashMap<String, Vec<TypeExpr>>;
 
 /// Named type definition for μ-types (isorecursive unfolding).
 #[derive(Clone)]
 pub struct TypeNameDef {
     pub params: Vec<String>,
-    pub alts: Vec<(String, Vec<TypeExpr>)>,
+    pub alts: Vec<(lzscr_ast::ast::Tag, Vec<TypeExpr>)>,
     pub span_offset: usize,
     pub span_len: usize,
 }
@@ -34,7 +35,14 @@ pub fn build_typedefs_frame(decls: &[TypeDecl]) -> TypeDefsFrame {
         match &d.body {
             TypeDefBody::Sum(alts) => {
                 for (tag, args) in alts {
-                    m.insert(tag.clone(), args.clone());
+                    match tag {
+                        lzscr_ast::ast::Tag::Bare(s) => {
+                            m.insert(s.clone(), args.clone());
+                        }
+                        lzscr_ast::ast::Tag::Builtin(_) => {
+                            // Should not happen: type declarations must use bare tags.
+                        }
+                    }
                 }
             }
         }
@@ -113,7 +121,12 @@ fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> boo
                 && check_positive_occurrence(b, target, polarity)
         }
         TypeExpr::Ctor { tag, args } => {
-            let self_occ_ok = if tag == target { polarity } else { true };
+            let self_occ_ok = match tag {
+                lzscr_ast::ast::Tag::Bare(s) => {
+                    if s == target { polarity } else { true }
+                }
+                lzscr_ast::ast::Tag::Builtin(_) => true,
+            };
             self_occ_ok && args.iter().all(|t| check_positive_occurrence(t, target, polarity))
         }
         TypeExpr::Sum(alts) => {
@@ -188,10 +201,18 @@ pub(crate) fn conv_typeexpr_with_subst(
                 .iter()
                 .map(|t| conv_typeexpr_with_subst(ctx, t, subst))
                 .collect::<Result<Vec<_>, _>>()?;
-            if typedefs_lookup_typename(ctx, tag).is_some() {
-                Type::Named { name: tag.clone(), args: conv_args }
-            } else {
-                Type::Ctor { tag: tag.clone(), payload: conv_args }
+            match tag {
+                lzscr_ast::ast::Tag::Bare(s) => {
+                    if typedefs_lookup_typename(ctx, s).is_some() {
+                        Type::Named { name: s.clone(), args: conv_args }
+                    } else {
+                        Type::Ctor { tag: s.clone(), payload: conv_args }
+                    }
+                }
+                lzscr_ast::ast::Tag::Builtin(s) => {
+                    // builtin: represent as dot-prefixed tag string in Type::Ctor
+                    Type::Ctor { tag: format!(".{}", s), payload: conv_args }
+                }
             }
         }
         TypeExpr::Sum(alts) => {
@@ -201,7 +222,11 @@ pub(crate) fn conv_typeexpr_with_subst(
                 for te in payload_tes {
                     payload.push(conv_typeexpr_with_subst(ctx, te, subst)?);
                 }
-                out.push((tag.clone(), payload));
+                let tag_str = match tag {
+                    lzscr_ast::ast::Tag::Bare(s) => s.clone(),
+                    lzscr_ast::ast::Tag::Builtin(s) => format!(".{}", s),
+                };
+                out.push((tag_str, payload));
             }
             Type::SumCtor(out)
         }
@@ -248,7 +273,10 @@ pub fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
         TypeExpr::Fun(a, b) => Type::fun(conv_typeexpr_fresh(tv, a), conv_typeexpr_fresh(tv, b)),
         TypeExpr::Ctor { tag, args } => {
             let payload = args.iter().map(|t| conv_typeexpr_fresh(tv, t)).collect();
-            Type::Ctor { tag: tag.clone(), payload }
+            match tag {
+                lzscr_ast::ast::Tag::Bare(s) => Type::Ctor { tag: s.clone(), payload },
+                lzscr_ast::ast::Tag::Builtin(s) => Type::Ctor { tag: format!(".{}", s), payload },
+            }
         }
         TypeExpr::Sum(alts) => {
             let mut out = Vec::with_capacity(alts.len());
@@ -257,7 +285,11 @@ pub fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
                 for te in payload_tes {
                     payload.push(conv_typeexpr_fresh(tv, te));
                 }
-                out.push((tag.clone(), payload));
+                let tag_str = match tag {
+                    lzscr_ast::ast::Tag::Bare(s) => s.clone(),
+                    lzscr_ast::ast::Tag::Builtin(s) => format!(".{}", s),
+                };
+                out.push((tag_str, payload));
             }
             Type::SumCtor(out)
         }
@@ -302,7 +334,11 @@ pub(crate) fn instantiate_named_sum(
         for te in payload_tes {
             payload.push(conv_typeexpr_with_subst(ctx, te, &map)?);
         }
-        out.push((tag.clone(), payload));
+        let tag_str = match tag {
+            lzscr_ast::ast::Tag::Bare(s) => s.clone(),
+            lzscr_ast::ast::Tag::Builtin(s) => format!(".{}", s),
+        };
+        out.push((tag_str, payload));
     }
     Ok(out)
 }

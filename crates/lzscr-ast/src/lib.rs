@@ -44,9 +44,9 @@ pub mod ast {
         Tuple(Vec<TypeExpr>),
         Record(Vec<TypeExprRecordField>), // Phase 5: Now tracks field name spans
         // Sum type literal, e.g. `%{ A T1 | B T2 U }` used as a first-class type value
-        Sum(Vec<(String, Vec<TypeExpr>)>),
+        Sum(Vec<(Tag, Vec<TypeExpr>)>),
         Fun(Box<TypeExpr>, Box<TypeExpr>),
-        Ctor { tag: String, args: Vec<TypeExpr> },
+        Ctor { tag: Tag, args: Vec<TypeExpr> },
         Var(String),          // %a etc. (only within %{...} syntax)
         Hole(Option<String>), // ? or ?a
     }
@@ -54,8 +54,16 @@ pub mod ast {
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum TypeDefBody {
         // Sum type: .Tag T1 T2 | .Tag2 ...
-        Sum(Vec<(String, Vec<TypeExpr>)>),
+        Sum(Vec<(Tag, Vec<TypeExpr>)>),
         // Future: alias/record etc. can be added
+    }
+
+    /// Tag for constructors used in type expressions: either a bare identifier
+    /// (library-level constructor) or a builtin identifier (leading dot).
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+    pub enum Tag {
+        Bare(String),
+        Builtin(String),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -325,7 +333,10 @@ pub mod pretty {
             }
             TypeExpr::Fun(a, b) => format!("{} -> {}", print_type(a), print_type(b)),
             TypeExpr::Ctor { tag, args } => {
-                let head = tag.clone();
+                let head = match tag {
+                    Tag::Bare(s) => s.clone(),
+                    Tag::Builtin(s) => format!(".{}", s),
+                };
                 if args.is_empty() {
                     head
                 } else {
@@ -340,12 +351,16 @@ pub mod pretty {
                 let parts = alts
                     .iter()
                     .map(|(tag, args)| {
+                        let tag_txt = match tag {
+                            Tag::Bare(s) => s.clone(),
+                            Tag::Builtin(s) => format!(".{}", s),
+                        };
                         if args.is_empty() {
-                            tag.clone()
+                            tag_txt
                         } else {
                             format!(
                                 "{} {}",
-                                tag,
+                                tag_txt,
                                 args.iter().map(print_type).collect::<Vec<_>>().join(" ")
                             )
                         }

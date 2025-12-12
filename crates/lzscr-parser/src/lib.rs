@@ -749,79 +749,98 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 args.push(arg);
             }
             let tag = raw;
-            match tag {
-                "Unit" => {
-                    if !args.is_empty() {
-                        return Err(ParseError::WithSpan {
-                            msg: "`Unit` does not take type arguments".into(),
-                            span_offset: span.offset,
-                            span_len: span.len,
-                        });
+            let is_member = tag.starts_with('.');
+            let bare = tag.strip_prefix('.').unwrap_or(tag);
+            if is_member {
+                match bare {
+                    "Unit" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`Unit` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        return Ok(TypeExpr::Unit);
                     }
-                    Ok(TypeExpr::Unit)
-                }
-                "Int" => {
-                    if !args.is_empty() {
-                        return Err(ParseError::WithSpan {
-                            msg: "`Int` does not take type arguments".into(),
-                            span_offset: span.offset,
-                            span_len: span.len,
-                        });
+                    "Int" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`Int` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        return Ok(TypeExpr::Int);
                     }
-                    Ok(TypeExpr::Int)
-                }
-                "Float" => {
-                    if !args.is_empty() {
-                        return Err(ParseError::WithSpan {
-                            msg: "`Float` does not take type arguments".into(),
-                            span_offset: span.offset,
-                            span_len: span.len,
-                        });
+                    "Float" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`Float` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        return Ok(TypeExpr::Float);
                     }
-                    Ok(TypeExpr::Float)
-                }
-                "Bool" => {
-                    if !args.is_empty() {
-                        return Err(ParseError::WithSpan {
-                            msg: "`Bool` does not take type arguments".into(),
-                            span_offset: span.offset,
-                            span_len: span.len,
-                        });
+                    "Bool" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`Bool` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        return Ok(TypeExpr::Bool);
                     }
-                    Ok(TypeExpr::Bool)
-                }
-                "Str" => {
-                    if !args.is_empty() {
-                        return Err(ParseError::WithSpan {
-                            msg: "`Str` does not take type arguments".into(),
-                            span_offset: span.offset,
-                            span_len: span.len,
-                        });
+                    "Str" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`Str` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        return Ok(TypeExpr::Str);
                     }
-                    Ok(TypeExpr::Str)
-                }
-                "Char" => {
-                    if !args.is_empty() {
-                        return Err(ParseError::WithSpan {
-                            msg: "`Char` does not take type arguments".into(),
-                            span_offset: span.offset,
-                            span_len: span.len,
-                        });
+                    "Char" => {
+                        if !args.is_empty() {
+                            return Err(ParseError::WithSpan {
+                                msg: "`Char` does not take type arguments".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        return Ok(TypeExpr::Char);
                     }
-                    Ok(TypeExpr::Char)
-                }
-                "List" => {
-                    if args.len() != 1 {
-                        return Err(ParseError::WithSpan {
-                            msg: "`List` expects exactly one type argument".into(),
-                            span_offset: span.offset,
-                            span_len: span.len,
-                        });
+                    "List" => {
+                        if args.len() != 1 {
+                            return Err(ParseError::WithSpan {
+                                msg: "`List` expects exactly one type argument".into(),
+                                span_offset: span.offset,
+                                span_len: span.len,
+                            });
+                        }
+                        return Ok(TypeExpr::List(Box::new(args.into_iter().next().unwrap())));
                     }
-                    Ok(TypeExpr::List(Box::new(args.into_iter().next().unwrap())))
+                    "Tuple" => return Ok(TypeExpr::Tuple(args)),
+                    _ => {
+                        let tag_enum = if is_member {
+                            lzscr_ast::ast::Tag::Builtin(bare.to_string())
+                        } else {
+                            lzscr_ast::ast::Tag::Bare(bare.to_string())
+                        };
+                        return Ok(TypeExpr::Ctor { tag: tag_enum, args });
+                    }
                 }
+            }
+            // Non-member tags (no leading dot) are treated as user-defined constructors/names.
+            match bare {
                 "Tuple" => Ok(TypeExpr::Tuple(args)),
-                _ => Ok(TypeExpr::Ctor { tag: tag.to_string(), args }),
+                _ => {
+                    let tag_enum = lzscr_ast::ast::Tag::Bare(bare.to_string());
+                    Ok(TypeExpr::Ctor { tag: tag_enum, args })
+                }
             }
         }
 
@@ -840,7 +859,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             let t = bump(j, toks).ok_or_else(|| ParseError::Generic("expected type".into()))?;
             Ok(match &t.tok {
                 Tok::Member(name) => {
-                    ctor_from_name(j, toks, name.strip_prefix('.').unwrap_or(name), t.span)?
+                    ctor_from_name(j, toks, name, t.span)?
                 }
                 Tok::TyVar(name) => TypeExpr::Var(name.clone()),
                 Tok::Ident => ctor_from_name(j, toks, t.text, t.span)?,
@@ -866,15 +885,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         if matches!(firsttok.tok, Tok::Ident)
                             || matches!(firsttok.tok, Tok::Member(_))
                         {
-                            let mut alts: Vec<(String, Vec<TypeExpr>)> = Vec::new();
+                            let mut alts: Vec<(lzscr_ast::ast::Tag, Vec<TypeExpr>)> = Vec::new();
                             loop {
                                 let tagtok = bump(j, toks).ok_or_else(|| {
                                     ParseError::Generic("expected tag in sum type".into())
                                 })?;
                                 let tag = match &tagtok.tok {
-                                    Tok::Ident => tagtok.text.to_string(),
+                                    Tok::Ident => lzscr_ast::ast::Tag::Bare(tagtok.text.to_string()),
                                     Tok::Member(name) => {
-                                        name.strip_prefix('.').unwrap_or(name).to_string()
+                                        let bare = name.strip_prefix('.').unwrap_or(name).to_string();
+                                        lzscr_ast::ast::Tag::Builtin(bare)
                                     }
                                     _ => {
                                         *j = save_inner;
@@ -902,7 +922,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                     let te = parse_type_expr_bp(j, toks, 6)?;
                                     args.push(te);
                                 }
-                                alts.push((tag, args));
+                                    alts.push((tag, args));
                                 // check separator
                                 if let Some(nxt3) = toks.get(*j) {
                                     if matches!(nxt3.tok, Tok::Pipe) {
@@ -1046,7 +1066,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     fn try_parse_sum_alts<'b>(
         j: &mut usize,
         toks: &'b [lzscr_lexer::Lexed<'b>],
-    ) -> Result<Option<Vec<(String, Vec<TypeExpr>)>>, ParseError> {
+    ) -> Result<Option<Vec<(lzscr_ast::ast::Tag, Vec<TypeExpr>)>>, ParseError> {
         let save = *j;
         // Need at least one tag token
         let first = match toks.get(*j) {
@@ -1054,8 +1074,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             None => return Ok(None),
         };
         let tag = match &first.tok {
-            Tok::Ident => first.text.to_string(),
-            Tok::Member(name) => name.strip_prefix('.').unwrap_or(name).to_string(),
+            Tok::Ident => lzscr_ast::ast::Tag::Bare(first.text.to_string()),
+            Tok::Member(name) => lzscr_ast::ast::Tag::Builtin(name.strip_prefix('.').unwrap_or(name).to_string()),
             _ => return Ok(None),
         };
         // consume first tag
@@ -1086,7 +1106,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         }
 
         // It's a sum: collect alternatives until RBrace (leave `j` at RBrace)
-        let mut alts: Vec<(String, Vec<TypeExpr>)> = Vec::new();
+        let mut alts: Vec<(lzscr_ast::ast::Tag, Vec<TypeExpr>)> = Vec::new();
         alts.push((tag, args));
         loop {
             // consume the '|'
@@ -1107,8 +1127,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 .get(*j)
                 .ok_or_else(|| ParseError::Generic("expected tag in sum type".into()))?;
             let tag = match &tagtok.tok {
-                Tok::Ident => tagtok.text.to_string(),
-                Tok::Member(name) => name.strip_prefix('.').unwrap_or(name).to_string(),
+                Tok::Ident => lzscr_ast::ast::Tag::Bare(tagtok.text.to_string()),
+                Tok::Member(name) => lzscr_ast::ast::Tag::Builtin(name.strip_prefix('.').unwrap_or(name).to_string()),
                 _ => return Err(ParseError::Generic("expected tag in sum type".into())),
             };
             *j += 1;
@@ -1187,7 +1207,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             *j = save;
             return Ok(None);
         }
-        let mut alts: Vec<(String, Vec<TypeExpr>)> = Vec::new();
+        let mut alts: Vec<(lzscr_ast::ast::Tag, Vec<TypeExpr>)> = Vec::new();
         loop {
             let tagtok = match toks.get(*j) {
                 Some(t) => t,
@@ -1197,9 +1217,10 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 }
             };
             let tag = match &tagtok.tok {
-                Tok::Ident => tagtok.text.to_string(),
-                Tok::Member(name) => name.strip_prefix('.').unwrap_or(name).to_string(),
+                Tok::Ident => lzscr_ast::ast::Tag::Bare(tagtok.text.to_string()),
                 _ => {
+                    // Member (leading '.') is reserved for builtins; type declarations
+                    // must use bare identifiers. Treat as non-match so caller continues.
                     *j = save;
                     return Ok(None);
                 }
@@ -2545,9 +2566,12 @@ mod tests {
         let expr = parse_expr(src).expect("bare ctor type annotation should parse");
         match expr.kind {
             ExprKind::Annot { ty, .. } => match ty {
-                TypeExpr::Ctor { tag, args } => {
-                    assert_eq!(tag, "Foo");
-                    assert!(args.is_empty());
+                TypeExpr::Ctor { tag, args } => match tag {
+                    lzscr_ast::ast::Tag::Bare(s) => {
+                        assert_eq!(s, "Foo");
+                        assert!(args.is_empty());
+                    }
+                    lzscr_ast::ast::Tag::Builtin(_) => panic!("expected bare tag, got builtin"),
                 }
                 other => panic!("expected ctor type, got {:?}", other),
             },
@@ -2561,9 +2585,12 @@ mod tests {
         let expr = parse_expr(src).expect("dotted ctor type annotation should parse");
         match expr.kind {
             ExprKind::Annot { ty, .. } => match ty {
-                TypeExpr::Ctor { tag, args } => {
-                    assert_eq!(tag, "Foo");
-                    assert!(args.is_empty());
+                TypeExpr::Ctor { tag, args } => match tag {
+                    lzscr_ast::ast::Tag::Bare(s) => {
+                        assert_eq!(s, "Foo");
+                        assert!(args.is_empty());
+                    }
+                    lzscr_ast::ast::Tag::Builtin(_) => panic!("expected bare tag, got builtin"),
                 }
                 other => panic!("expected ctor type, got {:?}", other),
             },

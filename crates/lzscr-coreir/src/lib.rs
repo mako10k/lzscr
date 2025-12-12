@@ -97,7 +97,10 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             }
             TypeExpr::Fun(a, b) => format!("{} -> {}", print_type_expr(a), print_type_expr(b)),
             TypeExpr::Ctor { tag, args } => {
-                let head = dotted(tag);
+                let head = match tag {
+                    lzscr_ast::ast::Tag::Bare(s) => dotted(s),
+                    lzscr_ast::ast::Tag::Builtin(s) => dotted(&format!("{}", s)),
+                };
                 if args.is_empty() {
                     head
                 } else {
@@ -112,7 +115,10 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                 let parts = alts
                     .iter()
                     .map(|(tag, args)| {
-                        let head = dotted(tag);
+                        let head = match tag {
+                            lzscr_ast::ast::Tag::Bare(s) => dotted(s),
+                            lzscr_ast::ast::Tag::Builtin(s) => dotted(&format!("{}", s)),
+                        };
                         if args.is_empty() {
                             head
                         } else {

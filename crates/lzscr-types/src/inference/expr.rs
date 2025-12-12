@@ -108,10 +108,17 @@ pub(crate) fn infer_expr(
             TypeExpr::Ctor { tag, args } => {
                 let conv_args =
                     args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect::<Vec<_>>();
-                if typedefs_lookup_typename(ctx, tag).is_some() {
-                    Type::Named { name: tag.clone(), args: conv_args }
-                } else {
-                    Type::Ctor { tag: tag.clone(), payload: conv_args }
+                match tag {
+                    lzscr_ast::ast::Tag::Bare(s) => {
+                        if typedefs_lookup_typename(ctx, s).is_some() {
+                            Type::Named { name: s.clone(), args: conv_args }
+                        } else {
+                            Type::Ctor { tag: s.clone(), payload: conv_args }
+                        }
+                    }
+                    lzscr_ast::ast::Tag::Builtin(s) => {
+                        Type::Ctor { tag: format!(".{}", s), payload: conv_args }
+                    }
                 }
             }
             TypeExpr::Sum(alts) => {
@@ -119,7 +126,11 @@ pub(crate) fn infer_expr(
                 for (tag, args) in alts {
                     let conv_args =
                         args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect::<Vec<_>>();
-                    out.push((tag.clone(), conv_args));
+                    let tag_str = match tag {
+                        lzscr_ast::ast::Tag::Bare(s) => s.clone(),
+                        lzscr_ast::ast::Tag::Builtin(s) => format!(".{}", s),
+                    };
+                    out.push((tag_str, conv_args));
                 }
                 Type::SumCtor(out)
             }
