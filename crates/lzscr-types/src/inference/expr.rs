@@ -109,15 +109,12 @@ pub(crate) fn infer_expr(
                 let conv_args =
                     args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect::<Vec<_>>();
                 match tag {
-                    lzscr_ast::ast::Tag::Bare(s) => {
+                    lzscr_ast::ast::Tag::Name(s) => {
                         if typedefs_lookup_typename(ctx, s).is_some() {
                             Type::Named { name: s.clone(), args: conv_args }
                         } else {
                             Type::Ctor { tag: s.clone(), payload: conv_args }
                         }
-                    }
-                    lzscr_ast::ast::Tag::Builtin(s) => {
-                        Type::Ctor { tag: format!(".{}", s), payload: conv_args }
                     }
                 }
             }
@@ -127,8 +124,7 @@ pub(crate) fn infer_expr(
                     let conv_args =
                         args.iter().map(|t| conv_typeexpr(ctx, t, holes)).collect::<Vec<_>>();
                     let tag_str = match tag {
-                        lzscr_ast::ast::Tag::Bare(s) => s.clone(),
-                        lzscr_ast::ast::Tag::Builtin(s) => format!(".{}", s),
+                        lzscr_ast::ast::Tag::Name(s) => s.clone(),
                     };
                     out.push((tag_str, conv_args));
                 }

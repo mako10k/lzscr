@@ -35,8 +35,7 @@ pub fn format_source_with_options(src: &str, opts: FormatOptions) -> Result<Stri
 /// LetGroup only within parentheses, we wrap the input to parse. The output will
 /// omit the wrapping parentheses when the top-level is a LetGroup.
 pub fn format_file_source(src: &str) -> Result<String, FormatError> {
-    let mut opts = FormatOptions::default();
-    opts.treat_file_as_closure = true;
+    let opts = FormatOptions { treat_file_as_closure: true, ..FormatOptions::default() };
     format_with_pre_opts(src, opts)
 }
 
@@ -45,8 +44,7 @@ pub fn format_file_source_with_options(
     src: &str,
     opts: FormatOptions,
 ) -> Result<String, FormatError> {
-    let mut opts = opts;
-    opts.treat_file_as_closure = true;
+    let opts = FormatOptions { treat_file_as_closure: true, ..opts };
     format_with_pre_opts(src, opts)
 }
 

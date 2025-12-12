@@ -35,14 +35,8 @@ pub fn build_typedefs_frame(decls: &[TypeDecl]) -> TypeDefsFrame {
         match &d.body {
             TypeDefBody::Sum(alts) => {
                 for (tag, args) in alts {
-                    match tag {
-                        lzscr_ast::ast::Tag::Bare(s) => {
-                            m.insert(s.clone(), args.clone());
-                        }
-                        lzscr_ast::ast::Tag::Builtin(_) => {
-                            // Should not happen: type declarations must use bare tags.
-                        }
-                    }
+                    let lzscr_ast::ast::Tag::Name(s) = tag;
+                    m.insert(s.clone(), args.clone());
                 }
             }
         }
@@ -122,10 +116,9 @@ fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> boo
         }
         TypeExpr::Ctor { tag, args } => {
             let self_occ_ok = match tag {
-                lzscr_ast::ast::Tag::Bare(s) => {
+                lzscr_ast::ast::Tag::Name(s) => {
                     if s == target { polarity } else { true }
                 }
-                lzscr_ast::ast::Tag::Builtin(_) => true,
             };
             self_occ_ok && args.iter().all(|t| check_positive_occurrence(t, target, polarity))
         }
@@ -202,16 +195,12 @@ pub(crate) fn conv_typeexpr_with_subst(
                 .map(|t| conv_typeexpr_with_subst(ctx, t, subst))
                 .collect::<Result<Vec<_>, _>>()?;
             match tag {
-                lzscr_ast::ast::Tag::Bare(s) => {
+                lzscr_ast::ast::Tag::Name(s) => {
                     if typedefs_lookup_typename(ctx, s).is_some() {
                         Type::Named { name: s.clone(), args: conv_args }
                     } else {
                         Type::Ctor { tag: s.clone(), payload: conv_args }
                     }
-                }
-                lzscr_ast::ast::Tag::Builtin(s) => {
-                    // builtin: represent as dot-prefixed tag string in Type::Ctor
-                    Type::Ctor { tag: format!(".{}", s), payload: conv_args }
                 }
             }
         }
@@ -223,8 +212,7 @@ pub(crate) fn conv_typeexpr_with_subst(
                     payload.push(conv_typeexpr_with_subst(ctx, te, subst)?);
                 }
                 let tag_str = match tag {
-                    lzscr_ast::ast::Tag::Bare(s) => s.clone(),
-                    lzscr_ast::ast::Tag::Builtin(s) => format!(".{}", s),
+                    lzscr_ast::ast::Tag::Name(s) => s.clone(),
                 };
                 out.push((tag_str, payload));
             }
@@ -274,8 +262,7 @@ pub fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
         TypeExpr::Ctor { tag, args } => {
             let payload = args.iter().map(|t| conv_typeexpr_fresh(tv, t)).collect();
             match tag {
-                lzscr_ast::ast::Tag::Bare(s) => Type::Ctor { tag: s.clone(), payload },
-                lzscr_ast::ast::Tag::Builtin(s) => Type::Ctor { tag: format!(".{}", s), payload },
+                lzscr_ast::ast::Tag::Name(s) => Type::Ctor { tag: s.clone(), payload },
             }
         }
         TypeExpr::Sum(alts) => {
@@ -286,8 +273,7 @@ pub fn conv_typeexpr_fresh(tv: &mut TvGen, te: &TypeExpr) -> Type {
                     payload.push(conv_typeexpr_fresh(tv, te));
                 }
                 let tag_str = match tag {
-                    lzscr_ast::ast::Tag::Bare(s) => s.clone(),
-                    lzscr_ast::ast::Tag::Builtin(s) => format!(".{}", s),
+                    lzscr_ast::ast::Tag::Name(s) => s.clone(),
                 };
                 out.push((tag_str, payload));
             }
@@ -335,8 +321,7 @@ pub(crate) fn instantiate_named_sum(
             payload.push(conv_typeexpr_with_subst(ctx, te, &map)?);
         }
         let tag_str = match tag {
-            lzscr_ast::ast::Tag::Bare(s) => s.clone(),
-            lzscr_ast::ast::Tag::Builtin(s) => format!(".{}", s),
+            lzscr_ast::ast::Tag::Name(s) => s.clone(),
         };
         out.push((tag_str, payload));
     }

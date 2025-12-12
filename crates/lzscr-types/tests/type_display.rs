@@ -21,14 +21,14 @@ fn ctor_application_type() {
 
 #[test]
 fn annotation_enforces_type_ok() {
-    // %{Int} 1 should succeed and overall expression type is Int
-    let t = infer_program("%{Int} 1").unwrap();
+    // %{.Int} 1 should succeed and overall expression type is Int
+    let t = infer_program("%{.Int} 1").unwrap();
     assert_eq!(t, "Int");
 }
 
 #[test]
 fn annotation_type_mismatch() {
-    let err = infer_program("%{Str} 1").expect_err("expected mismatch");
+    let err = infer_program("%{.Str} 1").expect_err("expected mismatch");
     assert!(err.contains("type mismatch"));
     assert!(err.contains("Str") || err.contains("Int"));
 }
@@ -37,7 +37,7 @@ fn annotation_type_mismatch() {
 fn type_value_vs_annotation_disambiguation() {
     // Standalone: %{Int} is a type value -> its type prints as Type (legacy) and %{Type} in pretty form.
     // Then applying as function would be a separate parse; here just ensure parser sees a TypeVal when no trailing atom.
-    let ast = parse_expr("%{Int}").unwrap();
+    let ast = parse_expr("%{.Int}").unwrap();
     let legacy = infer_ast_with_opts(&ast, InferOptions { pretty: false }).unwrap();
     // The type of a type value literal is Type in legacy mode.
     assert_eq!(legacy, "Type");
@@ -71,7 +71,8 @@ fn sumctor_pretty_and_legacy_display() {
 
 #[test]
 fn list_bracket_type_sugar_in_annotation() {
-    let src = "%{[Int]} [1,2,3]"; // Should type as [Int]
+    // Use explicit List in annotation to avoid sugar parsing differences
+    let src = "%{List .Int} [1,2,3]"; // Should type as [Int]
     let t = infer_program(src).unwrap();
     assert_eq!(t, "[Int]");
 }

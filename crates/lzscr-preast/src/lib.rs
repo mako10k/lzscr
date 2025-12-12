@@ -245,9 +245,8 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                 if s.chars().all(|c| c.is_whitespace()) {
                     // If there are any newlines in this whitespace token, collapse
                     // consecutive blank-line runs to a single blank line.
-                    let has_newline = s.chars().any(|c| c == '\n');
-                    if has_newline {
-                        if !last_was_blank {
+                        let has_newline = s.chars().any(|c| c == '\n');
+                        if has_newline && !last_was_blank {
                             out.push('\n');
                             let indent_spaces = indent_level * opts.indent;
                             if indent_spaces == 0 {
@@ -262,7 +261,6 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                             prev_is_op = false;
                             last_was_blank = true;
                         }
-                    }
                     idx += 1;
                     continue;
                 }
@@ -461,22 +459,19 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                         // look ahead for an un-nested '|' before matching ')'
                         let mut nest = 0isize;
                         let mut found_pipe = false;
-                        for j in (idx+1)..pre.items.len() {
-                            match &pre.items[j].kind {
-                                PreTokenKind::Token(t) => {
-                                    if t == "(" {
-                                        nest += 1;
-                                    } else if t == ")" {
-                                        if nest == 0 {
-                                            break;
-                                        }
-                                        nest -= 1;
-                                    } else if t == "|" && nest == 0 {
-                                        found_pipe = true;
+                        for item in pre.items.iter().skip(idx + 1) {
+                            if let PreTokenKind::Token(t) = &item.kind {
+                                if t == "(" {
+                                    nest += 1;
+                                } else if t == ")" {
+                                    if nest == 0 {
                                         break;
                                     }
+                                    nest -= 1;
+                                } else if t == "|" && nest == 0 {
+                                    found_pipe = true;
+                                    break;
                                 }
-                                _ => {}
                             }
                         }
                         if found_pipe {
@@ -534,7 +529,7 @@ fn align_assignment_and_record_columns(src: String, treat_file_as_closure: bool)
         let mut in_string = false;
         let mut escape = false;
 
-        while let Some((byte_idx, ch)) = iter.next() {
+        for (byte_idx, ch) in iter.by_ref() {
             if in_string {
                 if escape {
                     escape = false;
@@ -612,7 +607,7 @@ fn align_assignment_and_record_columns(src: String, treat_file_as_closure: bool)
         }
     }
 
-    while let Some(ctx) = stack.pop() {
+    for ctx in stack.into_iter().rev() {
         apply_alignment(&mut lines, ctx);
     }
 

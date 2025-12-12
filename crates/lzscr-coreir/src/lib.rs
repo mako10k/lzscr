@@ -98,8 +98,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             TypeExpr::Fun(a, b) => format!("{} -> {}", print_type_expr(a), print_type_expr(b)),
             TypeExpr::Ctor { tag, args } => {
                 let head = match tag {
-                    lzscr_ast::ast::Tag::Bare(s) => dotted(s),
-                    lzscr_ast::ast::Tag::Builtin(s) => dotted(&format!("{}", s)),
+                    lzscr_ast::ast::Tag::Name(s) => dotted(s),
                 };
                 if args.is_empty() {
                     head
@@ -116,8 +115,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                     .iter()
                     .map(|(tag, args)| {
                         let head = match tag {
-                            lzscr_ast::ast::Tag::Bare(s) => dotted(s),
-                            lzscr_ast::ast::Tag::Builtin(s) => dotted(&format!("{}", s)),
+                            lzscr_ast::ast::Tag::Name(s) => dotted(s),
                         };
                         if args.is_empty() {
                             head
@@ -639,8 +637,8 @@ mod tests {
             name: "Option".into(),
             params: vec!["a".into()],
             body: TypeDefBody::Sum(vec![
-                ("None".into(), vec![]),
-                ("Some".into(), vec![TypeExpr::Var("a".into())]),
+                (lzscr_ast::ast::Tag::Name("None".into()), vec![]),
+                (lzscr_ast::ast::Tag::Name("Some".into()), vec![TypeExpr::Var("a".into())]),
             ]),
             span: Span::new(0, 0),
         };

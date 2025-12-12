@@ -62,8 +62,7 @@ pub mod ast {
     /// (library-level constructor) or a builtin identifier (leading dot).
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     pub enum Tag {
-        Bare(String),
-        Builtin(String),
+        Name(String),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -334,8 +333,7 @@ pub mod pretty {
             TypeExpr::Fun(a, b) => format!("{} -> {}", print_type(a), print_type(b)),
             TypeExpr::Ctor { tag, args } => {
                 let head = match tag {
-                    Tag::Bare(s) => s.clone(),
-                    Tag::Builtin(s) => format!(".{}", s),
+                    Tag::Name(s) => s.clone(),
                 };
                 if args.is_empty() {
                     head
@@ -352,8 +350,7 @@ pub mod pretty {
                     .iter()
                     .map(|(tag, args)| {
                         let tag_txt = match tag {
-                            Tag::Bare(s) => s.clone(),
-                            Tag::Builtin(s) => format!(".{}", s),
+                            Tag::Name(s) => s.clone(),
                         };
                         if args.is_empty() {
                             tag_txt

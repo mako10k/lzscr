@@ -341,8 +341,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             TypeExpr::Fun(a, b) => format!("{} -> {}", print_type_expr(a), print_type_expr(b)),
             TypeExpr::Ctor { tag, args } => {
                 let head = match tag {
-                    lzscr_ast::ast::Tag::Bare(s) => dotted(s),
-                    lzscr_ast::ast::Tag::Builtin(s) => dotted(&format!("{}", s)),
+                    lzscr_ast::ast::Tag::Name(s) => dotted(s),
                 };
                 if args.is_empty() {
                     head
@@ -359,8 +358,7 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                     .iter()
                     .map(|(tag, args)| {
                         let head = match tag {
-                            lzscr_ast::ast::Tag::Bare(s) => dotted(s),
-                            lzscr_ast::ast::Tag::Builtin(s) => dotted(&format!("{}", s)),
+                            lzscr_ast::ast::Tag::Name(s) => dotted(s),
                         };
                         if args.is_empty() {
                             head
