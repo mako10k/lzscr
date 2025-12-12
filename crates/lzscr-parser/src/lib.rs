@@ -1229,23 +1229,81 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         toks: &'a [lzscr_lexer::Lexed<'a>],
     ) -> Result<Option<(TypeDecl, usize)>, ParseError> {
         let save = *j;
-        let head = match toks.get(*j) {
-            Some(h) => h,
-            None => return Ok(None),
-        };
-        if !matches!(head.tok, Tok::TyVar(_)) {
+        // Support two head forms:
+        // 1) %Name %a* = ...
+        // 2) %{ .Name %a* } = ...
+        let mut decl_name: Option<String> = None;
+        let mut params: Vec<String> = Vec::new();
+        let head_start = *j;
+        if let Some(h) = toks.get(*j) {
+            match &h.tok {
+                Tok::TyVar(nm) => {
+                    // Assign once; not overwritten later
+                    if decl_name.is_none() {
+                        decl_name = Some(nm.clone());
+                    }
+                    *j += 1;
+                    while let Some(nx) = toks.get(*j) {
+                        if let Tok::TyVar(pn) = &nx.tok {
+                            params.push(pn.clone());
+                            *j += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                Tok::TypeOpen => {
+                    // %{ .Name %a* }
+                    *j += 1; // consume '%{'
+                    let mut dotted = false;
+                    if let Some(dot) = toks.get(*j) {
+                        // Some lexers tokenize '.' as Tok::Dot or Tok::Member(_); accept both
+                        if matches!(dot.tok, Tok::Dot) || matches!(dot.tok, Tok::Member(_)) {
+                            dotted = true;
+                            *j += 1;
+                        }
+                    }
+                    let ident = toks.get(*j).ok_or_else(|| {
+                        ParseError::Generic("expected type name inside %{ }".into())
+                    })?;
+                    let nm = match &ident.tok {
+                        Tok::Ident => ident.text.to_string(),
+                        Tok::TyVar(s) => s.clone(),
+                        _ => {
+                            *j = save;
+                            return Ok(None);
+                        }
+                    };
+                    *j += 1;
+                    while let Some(nx) = toks.get(*j) {
+                        if let Tok::TyVar(pn) = &nx.tok {
+                            params.push(pn.clone());
+                            *j += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    // closing '}'
+                    let rb = toks.get(*j).ok_or_else(|| {
+                        ParseError::Generic("expected '}' to close type head".into())
+                    })?;
+                    if !matches!(rb.tok, Tok::RBrace) {
+                        *j = save;
+                        return Ok(None);
+                    }
+                    *j += 1;
+                    if decl_name.is_none() {
+                        decl_name = Some(if dotted { format!(".{}", nm) } else { nm });
+                    }
+                }
+                _ => {
+                    return Ok(None);
+                }
+            }
+        } else {
             return Ok(None);
         }
-        *j += 1;
-        let mut params: Vec<String> = Vec::new();
-        while let Some(nx) = toks.get(*j) {
-            if let Tok::TyVar(pn) = &nx.tok {
-                params.push(pn.clone());
-                *j += 1;
-            } else {
-                break;
-            }
-        }
+        // Now expect '='
         if let Some(eq) = toks.get(*j) {
             if matches!(eq.tok, Tok::Eq) {
                 *j += 1;
@@ -1328,15 +1386,13 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 *j += 1;
             }
         }
-        let span = Span::new(
-            head.span.offset,
-            toks.get(*j - 1).map(|t| t.span.offset + t.span.len).unwrap_or(head.span.offset)
-                - head.span.offset,
-        );
-        let name = match &head.tok {
-            Tok::TyVar(n) => n.clone(),
-            _ => unreachable!(),
-        };
+        let start_off = toks.get(head_start).map(|t| t.span.offset).unwrap_or(0);
+        let end_off = toks
+            .get(*j - 1)
+            .map(|t| t.span.offset + t.span.len)
+            .unwrap_or(start_off);
+        let span = Span::new(start_off, end_off - start_off);
+        let name = decl_name.unwrap();
         Ok(Some((TypeDecl { name, params, body: TypeDefBody::Sum(alts), span }, *j)))
     }
 
