@@ -949,8 +949,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     // Attempt to parse a parenthesized sum-of-ctors: Tag Ty* ( '|' Tag Ty* )* )
                     let save_inner = *j;
                     if let Some(firsttok) = toks.get(*j) {
-                        if matches!(firsttok.tok, Tok::Ident)
-                        {
+                        if matches!(firsttok.tok, Tok::Ident) {
                             let mut alts: Vec<(lzscr_ast::ast::Tag, Vec<TypeExpr>)> = Vec::new();
                             loop {
                                 let tagtok = bump(j, toks).ok_or_else(|| {

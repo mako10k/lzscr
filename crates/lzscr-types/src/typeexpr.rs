@@ -117,7 +117,11 @@ fn check_positive_occurrence(te: &TypeExpr, target: &str, polarity: bool) -> boo
         TypeExpr::Ctor { tag, args } => {
             let self_occ_ok = match tag {
                 lzscr_ast::ast::Tag::Name(s) => {
-                    if s == target { polarity } else { true }
+                    if s == target {
+                        polarity
+                    } else {
+                        true
+                    }
                 }
             };
             self_occ_ok && args.iter().all(|t| check_positive_occurrence(t, target, polarity))

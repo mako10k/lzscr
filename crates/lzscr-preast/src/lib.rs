@@ -245,22 +245,22 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                 if s.chars().all(|c| c.is_whitespace()) {
                     // If there are any newlines in this whitespace token, collapse
                     // consecutive blank-line runs to a single blank line.
-                        let has_newline = s.chars().any(|c| c == '\n');
-                        if has_newline && !last_was_blank {
-                            out.push('\n');
-                            let indent_spaces = indent_level * opts.indent;
-                            if indent_spaces == 0 {
-                                col = 0;
-                            } else {
-                                for _ in 0..indent_spaces {
-                                    out.push(' ');
-                                }
-                                col = indent_spaces;
+                    let has_newline = s.chars().any(|c| c == '\n');
+                    if has_newline && !last_was_blank {
+                        out.push('\n');
+                        let indent_spaces = indent_level * opts.indent;
+                        if indent_spaces == 0 {
+                            col = 0;
+                        } else {
+                            for _ in 0..indent_spaces {
+                                out.push(' ');
                             }
-                            at_line_start = true;
-                            prev_is_op = false;
-                            last_was_blank = true;
+                            col = indent_spaces;
                         }
+                        at_line_start = true;
+                        prev_is_op = false;
+                        last_was_blank = true;
+                    }
                     idx += 1;
                     continue;
                 }
@@ -336,7 +336,9 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                         if in_group {
                             if let Some(top) = group_stack.last() {
                                 if top._delim == '(' {
-                                    if !at_line_start && (col + token_len + 1 > opts.max_width || top.broken) {
+                                    if !at_line_start
+                                        && (col + token_len + 1 > opts.max_width || top.broken)
+                                    {
                                         newline(indent_level, &mut col, &mut out, &mut group_stack);
                                     }
                                     if !at_line_start && needs_space_before(&out) {
@@ -448,7 +450,8 @@ pub fn preast_to_source_with_opts(pre: &PreAst, opts: &FormatOpts) -> String {
                         }
                         if !prev_is_percent_type {
                             if let Some(next) = next_token {
-                                let is_next_rbrace = matches!(&next.kind, PreTokenKind::Token(t) if t == "}");
+                                let is_next_rbrace =
+                                    matches!(&next.kind, PreTokenKind::Token(t) if t == "}");
                                 if !is_next_rbrace {
                                     newline(indent_level, &mut col, &mut out, &mut group_stack);
                                     at_line_start = true;
