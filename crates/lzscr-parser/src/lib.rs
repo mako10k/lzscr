@@ -858,9 +858,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
 
             let t = bump(j, toks).ok_or_else(|| ParseError::Generic("expected type".into()))?;
             Ok(match &t.tok {
-                Tok::Member(name) => {
-                    ctor_from_name(j, toks, name, t.span)?
-                }
+                Tok::Member(name) => ctor_from_name(j, toks, name, t.span)?,
                 Tok::TyVar(name) => TypeExpr::Var(name.clone()),
                 Tok::Ident => ctor_from_name(j, toks, t.text, t.span)?,
                 Tok::LBracket => {
@@ -891,9 +889,12 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                     ParseError::Generic("expected tag in sum type".into())
                                 })?;
                                 let tag = match &tagtok.tok {
-                                    Tok::Ident => lzscr_ast::ast::Tag::Bare(tagtok.text.to_string()),
+                                    Tok::Ident => {
+                                        lzscr_ast::ast::Tag::Bare(tagtok.text.to_string())
+                                    }
                                     Tok::Member(name) => {
-                                        let bare = name.strip_prefix('.').unwrap_or(name).to_string();
+                                        let bare =
+                                            name.strip_prefix('.').unwrap_or(name).to_string();
                                         lzscr_ast::ast::Tag::Builtin(bare)
                                     }
                                     _ => {
@@ -922,7 +923,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                     let te = parse_type_expr_bp(j, toks, 6)?;
                                     args.push(te);
                                 }
-                                    alts.push((tag, args));
+                                alts.push((tag, args));
                                 // check separator
                                 if let Some(nxt3) = toks.get(*j) {
                                     if matches!(nxt3.tok, Tok::Pipe) {
@@ -1075,7 +1076,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
         };
         let tag = match &first.tok {
             Tok::Ident => lzscr_ast::ast::Tag::Bare(first.text.to_string()),
-            Tok::Member(name) => lzscr_ast::ast::Tag::Builtin(name.strip_prefix('.').unwrap_or(name).to_string()),
+            Tok::Member(name) => {
+                lzscr_ast::ast::Tag::Builtin(name.strip_prefix('.').unwrap_or(name).to_string())
+            }
             _ => return Ok(None),
         };
         // consume first tag
@@ -1128,7 +1131,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 .ok_or_else(|| ParseError::Generic("expected tag in sum type".into()))?;
             let tag = match &tagtok.tok {
                 Tok::Ident => lzscr_ast::ast::Tag::Bare(tagtok.text.to_string()),
-                Tok::Member(name) => lzscr_ast::ast::Tag::Builtin(name.strip_prefix('.').unwrap_or(name).to_string()),
+                Tok::Member(name) => {
+                    lzscr_ast::ast::Tag::Builtin(name.strip_prefix('.').unwrap_or(name).to_string())
+                }
                 _ => return Err(ParseError::Generic("expected tag in sum type".into())),
             };
             *j += 1;
@@ -2572,7 +2577,7 @@ mod tests {
                         assert!(args.is_empty());
                     }
                     lzscr_ast::ast::Tag::Builtin(_) => panic!("expected bare tag, got builtin"),
-                }
+                },
                 other => panic!("expected ctor type, got {:?}", other),
             },
             other => panic!("expected annotation, got {:?}", other),
@@ -2591,7 +2596,7 @@ mod tests {
                         assert!(args.is_empty());
                     }
                     lzscr_ast::ast::Tag::Builtin(_) => panic!("expected bare tag, got builtin"),
-                }
+                },
                 other => panic!("expected ctor type, got {:?}", other),
             },
             other => panic!("expected annotation, got {:?}", other),
