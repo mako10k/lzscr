@@ -17,7 +17,7 @@ use crate::typeexpr::{
     build_typedefs_frame, build_typename_frame, typedefs_lookup_typename,
     validate_typedecls_positive,
 };
-use crate::types::{TvId, Type, ModeKind};
+use crate::types::{ModeKind, TvId, Type};
 use crate::unification::{ctx_unify, unify};
 
 /// Main expression type inference function.
@@ -510,7 +510,10 @@ pub(crate) fn infer_expr(
                             }
                         }
                         let s = sa.compose(sf);
-                        return Ok((Type::Ctor { tag: tag.clone(), payload: new_payload }.apply(&s), s));
+                        return Ok((
+                            Type::Ctor { tag: tag.clone(), payload: new_payload }.apply(&s),
+                            s,
+                        ));
                     }
                     Type::SumCtor(vs) => {
                         let mut new_vs: Vec<(String, Vec<Type>)> = Vec::with_capacity(vs.len());
