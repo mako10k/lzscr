@@ -101,6 +101,9 @@ pub enum TypeError {
     /// Invalid type declaration
     #[error("invalid type declaration: {msg} at ({span_offset},{span_len})")]
     InvalidTypeDecl { msg: String, span_offset: usize, span_len: usize },
+    /// Too many implicit ModeMap applications (counter would overflow)
+    #[error("too many implicit ModeMap applications at ({span_offset},{span_len})")]
+    TooManyImplicitModeApplications { span_offset: usize, span_len: usize },
 }
 
 impl TypeError {
@@ -178,7 +181,8 @@ impl TypeError {
             | TypeError::UnboundRef { span_offset, span_len, .. }
             | TypeError::EffectNotAllowed { span_offset, span_len, .. }
             | TypeError::NegativeOccurrence { span_offset, span_len, .. }
-            | TypeError::InvalidTypeDecl { span_offset, span_len, .. } => {
+            | TypeError::InvalidTypeDecl { span_offset, span_len, .. }
+            | TypeError::TooManyImplicitModeApplications { span_offset, span_len, .. } => {
                 Some(DiagnosticSpan::new(*span_offset, *span_len))
             }
             TypeError::MismatchBoth { actual_span_offset, actual_span_len, .. }

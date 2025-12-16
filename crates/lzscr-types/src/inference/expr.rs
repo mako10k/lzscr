@@ -159,6 +159,30 @@ pub(crate) fn infer_expr(
         }
     }
 
+    // Helper: create or increment an implicit ModeMap wrapper for `ty`.
+    // - If `ty` is a `ModeMap(..., ModeKind::Implicit(n))` then increment to `n+1` or
+    //   return an error if `n == u8::MAX`.
+    // - If `ty` is a `ModeMap(..., ModeKind::Explicit)` then leave it as-is and
+    //   return it (explicit maps are not counted as implicit applications).
+    // - Otherwise create `ModeMap({}, Some(Box::new(ty)), ModeKind::Implicit(1))`.
+    fn ensure_implicit_modemap(ty: Type, span: Option<Span>) -> Result<Type, TypeError> {
+        use crate::types::ModeKind;
+        match ty {
+            Type::ModeMap(map, def, ModeKind::Implicit(n)) => {
+                if n == u8::MAX {
+                    if let Some(sp) = span {
+                        return Err(TypeError::TooManyImplicitModeApplications { span_offset: sp.offset, span_len: sp.len });
+                    } else {
+                        return Err(TypeError::TooManyImplicitModeApplications { span_offset: 0, span_len: 0 });
+                    }
+                }
+                Ok(Type::ModeMap(map, def, ModeKind::Implicit(n.saturating_add(1))))
+            }
+            Type::ModeMap(map, def, ModeKind::Explicit) => Ok(Type::ModeMap(map, def, ModeKind::Explicit)),
+            other => Ok(Type::ModeMap(std::collections::BTreeMap::new(), Some(Box::new(other)), ModeKind::Implicit(1))),
+        }
+    }
+
     let result = match &e.kind {
         ExprKind::Annot { ty, expr } => {
             let (got, s) = infer_expr(ctx, expr, allow_effects)?;
@@ -479,14 +503,9 @@ pub(crate) fn infer_expr(
                                 other => {
                                     // Treat any non-ModeMap value as an implicit ModeMap
                                     // with the value as its default arm and record one
-                                    // implicit application in ModeKind.
+                                    // implicit application in ModeKind (with overflow check).
                                     any_found = true;
-                                    let empty = BTreeMap::new();
-                                    let wrapped = Type::ModeMap(
-                                        empty,
-                                        Some(Box::new(other)),
-                                        ModeKind::Implicit(1),
-                                    );
+                                    let wrapped = ensure_implicit_modemap(other, sp)?;
                                     out_map.insert(k, (wrapped, sp));
                                 }
                             }
@@ -512,12 +531,8 @@ pub(crate) fn infer_expr(
                                 }
                                 other => {
                                     // Non-ModeMap element: wrap as implicit ModeMap(default=element)
-                                    let empty = BTreeMap::new();
-                                    new_payload.push(Type::ModeMap(
-                                        empty,
-                                        Some(Box::new(other)),
-                                        ModeKind::Implicit(1),
-                                    ));
+                                    let wrapped = ensure_implicit_modemap(other, None)?;
+                                    new_payload.push(wrapped);
                                 }
                             }
                         }
@@ -543,12 +558,8 @@ pub(crate) fn infer_expr(
                                         }
                                     }
                                     other => {
-                                        let empty = BTreeMap::new();
-                                        new_ps.push(Type::ModeMap(
-                                            empty,
-                                            Some(Box::new(other)),
-                                            ModeKind::Implicit(1),
-                                        ));
+                                        let wrapped = ensure_implicit_modemap(other, None)?;
+                                        new_ps.push(wrapped);
                                     }
                                 }
                             }
@@ -571,12 +582,8 @@ pub(crate) fn infer_expr(
                                     }
                                 }
                                 other => {
-                                    let empty = BTreeMap::new();
-                                    new_xs.push(Type::ModeMap(
-                                        empty,
-                                        Some(Box::new(other)),
-                                        ModeKind::Implicit(1),
-                                    ));
+                                    let wrapped = ensure_implicit_modemap(other, None)?;
+                                    new_xs.push(wrapped);
                                 }
                             }
                         }
@@ -594,10 +601,7 @@ pub(crate) fn infer_expr(
                                     Type::Unit
                                 }
                             }
-                            other => {
-                                let empty = BTreeMap::new();
-                                Type::ModeMap(empty, Some(Box::new(other)), ModeKind::Implicit(1))
-                            }
+                            other => ensure_implicit_modemap(other, None)?,
                         };
                         let s = sa.compose(sf);
                         return Ok((Type::List(Box::new(selected)).apply(&s), s));

@@ -23,7 +23,7 @@ A ModeMap at value level uses Record syntax; its static type is a mapping from m
   - Type: `ModeMap { M1: T1, M2: T2, ...; Default?: TDef }`
 - Encoding:
   - Syntactically a Record; semantically "ModeMap" marks that member keys are symbolic labels used for selection.
-  - If the default arm is omitted, `Default?` is absent.
+  - If the default arm is omitted in source, the typechecker assigns `Unit` as the default arm.
 
 Well-formedness:
 - All arm expressions `vi` must type-check, yielding `Ti`.
@@ -66,6 +66,35 @@ Sugar:
 - Polymorphism: Mode labels are nominal symbols; there is no implicit subtyping between arm types. Use explicit unions or sum types at the type level if needed.
 - Records vs ModeMap: Ordinary records `{ a: T }` are not ModeMaps. Selection by `.select` applies only to ModeMap-typed values.
 - Errors: When `E` lacks `M` and has no default, typing fails (aligns with runtime error on selection).
+
+## ModeKind and implicit ModeMap views
+
+- Rationale: In code the typechecker treats many values as implicitly viewable as a ModeMap for the purposes
+  of selection. For example a record whose fields are themselves ModeMaps can be "transposed" by selecting
+  the same mode from each field. To track how many implicit view/wrap steps were applied we record a
+  small `ModeKind` annotation on `ModeMap` types.
+
+- Representation: `ModeMap { ...; Default }` carries a `ModeKind` that is either `Explicit` (created from
+  a `.{} ` literal in source) or `Implicit(n)` where `n: u8` counts implicit-view applications (saturated).
+
+- Implicit wrapping rules:
+  - Any non-`ModeMap` value may be treated as an implicit ModeMap with a single default arm equal to the
+    entire value; the typechecker wraps such values into `ModeMap(..., Default = value, ModeKind::Implicit(1))`.
+  - When projecting a field `M` from a `Record` whose fields are ModeMaps, the typechecker forms a result
+    `Record` whose per-field types are the corresponding arm (or default) types; implicit wrappers increment
+    the `Implicit` counter for bookkeeping.
+  - For algebraic constructors and tuples/lists, selection transposes over payload/element positions: selecting
+    `.M` from `Ctor tag p1 p2 ...` yields `Ctor tag p1' p2' ...` where each `pi'` is the projection of `.M`
+    from `pi` (wrapping non-ModeMap `pi` as necessary).
+
+- Semantics of unresolved arms: An unresolved arm (a type variable) is treated as "not matching any explicit
+  keys" and therefore the default arm is used for selection; implicit wrapping ensures a default is always
+  available for selection contexts introduced by view application.
+
+This design guarantees that selection (`.Ident`) always yields a well-formed type (possibly involving fresh
+type variables) and that chains of implicit views are traceable through the `Implicit(n)` counter. It also
+makes it straightforward to present diagnostics about how many implicit projections were used when resolving
+a selection.
 
 ## Future Work (non-normative)
 
