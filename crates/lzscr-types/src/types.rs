@@ -102,7 +102,9 @@ pub enum ModeKind {
     /// ModeMap created by an explicit `. { ... }` literal in source.
     Explicit,
     /// ModeMap implied as a view over another type (implicit/default wrapper).
-    Implicit,
+    /// Carries a small counter of how many implicit-view applications have
+    /// been performed (saturated to 255).
+    Implicit(u8),
 }
 
 impl Type {

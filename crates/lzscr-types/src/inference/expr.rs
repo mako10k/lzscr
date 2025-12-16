@@ -478,9 +478,16 @@ pub(crate) fn infer_expr(
                                 }
                                 other => {
                                     // Treat any non-ModeMap value as an implicit ModeMap
-                                    // with the value as its default arm.
+                                    // with the value as its default arm and record one
+                                    // implicit application in ModeKind.
                                     any_found = true;
-                                    out_map.insert(k, (other, sp));
+                                    let empty = BTreeMap::new();
+                                    let wrapped = Type::ModeMap(
+                                        empty,
+                                        Some(Box::new(other)),
+                                        ModeKind::Implicit(1),
+                                    );
+                                    out_map.insert(k, (wrapped, sp));
                                 }
                             }
                         }
@@ -504,8 +511,13 @@ pub(crate) fn infer_expr(
                                     }
                                 }
                                 other => {
-                                    // Non-ModeMap element: implicit ModeMap with default = element
-                                    new_payload.push(other);
+                                    // Non-ModeMap element: wrap as implicit ModeMap(default=element)
+                                    let empty = BTreeMap::new();
+                                    new_payload.push(Type::ModeMap(
+                                        empty,
+                                        Some(Box::new(other)),
+                                        ModeKind::Implicit(1),
+                                    ));
                                 }
                             }
                         }
@@ -530,7 +542,14 @@ pub(crate) fn infer_expr(
                                             new_ps.push(Type::Unit);
                                         }
                                     }
-                                    other => new_ps.push(other),
+                                    other => {
+                                        let empty = BTreeMap::new();
+                                        new_ps.push(Type::ModeMap(
+                                            empty,
+                                            Some(Box::new(other)),
+                                            ModeKind::Implicit(1),
+                                        ));
+                                    }
                                 }
                             }
                             new_vs.push((tag, new_ps));
@@ -551,7 +570,14 @@ pub(crate) fn infer_expr(
                                         new_xs.push(Type::Unit);
                                     }
                                 }
-                                other => new_xs.push(other),
+                                other => {
+                                    let empty = BTreeMap::new();
+                                    new_xs.push(Type::ModeMap(
+                                        empty,
+                                        Some(Box::new(other)),
+                                        ModeKind::Implicit(1),
+                                    ));
+                                }
                             }
                         }
                         let s = sa.compose(sf);
@@ -568,7 +594,10 @@ pub(crate) fn infer_expr(
                                     Type::Unit
                                 }
                             }
-                            other => other,
+                            other => {
+                                let empty = BTreeMap::new();
+                                Type::ModeMap(empty, Some(Box::new(other)), ModeKind::Implicit(1))
+                            }
                         };
                         let s = sa.compose(sf);
                         return Ok((Type::List(Box::new(selected)).apply(&s), s));
