@@ -171,15 +171,27 @@ pub(crate) fn infer_expr(
             Type::ModeMap(map, def, ModeKind::Implicit(n)) => {
                 if n == u8::MAX {
                     if let Some(sp) = span {
-                        return Err(TypeError::TooManyImplicitModeApplications { span_offset: sp.offset, span_len: sp.len });
+                        return Err(TypeError::TooManyImplicitModeApplications {
+                            span_offset: sp.offset,
+                            span_len: sp.len,
+                        });
                     } else {
-                        return Err(TypeError::TooManyImplicitModeApplications { span_offset: 0, span_len: 0 });
+                        return Err(TypeError::TooManyImplicitModeApplications {
+                            span_offset: 0,
+                            span_len: 0,
+                        });
                     }
                 }
                 Ok(Type::ModeMap(map, def, ModeKind::Implicit(n.saturating_add(1))))
             }
-            Type::ModeMap(map, def, ModeKind::Explicit) => Ok(Type::ModeMap(map, def, ModeKind::Explicit)),
-            other => Ok(Type::ModeMap(std::collections::BTreeMap::new(), Some(Box::new(other)), ModeKind::Implicit(1))),
+            Type::ModeMap(map, def, ModeKind::Explicit) => {
+                Ok(Type::ModeMap(map, def, ModeKind::Explicit))
+            }
+            other => Ok(Type::ModeMap(
+                std::collections::BTreeMap::new(),
+                Some(Box::new(other)),
+                ModeKind::Implicit(1),
+            )),
         }
     }
 
