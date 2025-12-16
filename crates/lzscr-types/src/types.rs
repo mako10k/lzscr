@@ -69,6 +69,14 @@ pub enum Type {
     /// Each field maps to a tuple of (Type, optional Span for error reporting).
     /// Records are closed (exact field set required for unification).
     Record(BTreeMap<String, (Type, Option<Span>)>),
+    /// ModeMap type: maps mode labels to arm types, with a default arm and a
+    /// `ModeKind` indicating whether this was an explicit mode-map literal or
+    /// an implicit view.
+    ///
+    /// This is distinct from `Record` at the semantic level; represented as a
+    /// frame from mode name -> (Type, optional Span), a default arm (`Option<Type>`)
+    /// and a `ModeKind` annotation used by the inference/display logic.
+    ModeMap(BTreeMap<String, (Type, Option<Span>)>, Option<Box<Type>>, ModeKind),
     /// Constructor type: `.Tag payload1 payload2 ...`
     ///
     /// Represents tagged values like `Some x` or `Ok value`.
@@ -86,6 +94,15 @@ pub enum Type {
     /// - No duplicate tags
     /// - At least 2 variants (single variant collapses to `Ctor`)
     SumCtor(Vec<(String, Vec<Type>)>),
+}
+
+/// Distinguish how a ModeMap was created / should be treated.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ModeKind {
+    /// ModeMap created by an explicit `. { ... }` literal in source.
+    Explicit,
+    /// ModeMap implied as a view over another type (implicit/default wrapper).
+    Implicit,
 }
 
 impl Type {

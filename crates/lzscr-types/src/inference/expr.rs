@@ -17,7 +17,7 @@ use crate::typeexpr::{
     build_typedefs_frame, build_typename_frame, typedefs_lookup_typename,
     validate_typedecls_positive,
 };
-use crate::types::{TvId, Type};
+use crate::types::{TvId, Type, ModeKind};
 use crate::unification::{ctx_unify, unify};
 
 /// Main expression type inference function.
@@ -431,6 +431,153 @@ pub(crate) fn infer_expr(
             }
             let (tf, sf) = infer_expr(ctx, func, allow_effects)?;
             let (ta, sa) = infer_expr(ctx, arg, allow_effects)?;
+            // Treat `.Ident <record>` as selection sugar (virtual `.select`).
+            // If the function position is a symbol like `.foo` and the
+            // argument type is a `Record`, return the field's type directly.
+            if let ExprKind::Symbol(field_sym) = &func.kind {
+                let field_name = field_sym.strip_prefix('.').unwrap_or(field_sym.as_str());
+                match ta.apply(&sa) {
+                    Type::ModeMap(mut fs, default_opt, _kind) => {
+                        if let Some((fty, _sp)) = fs.remove(field_name) {
+                            let s = sa.compose(sf);
+                            return Ok((fty.apply(&s), s));
+                        }
+                        if let Some(def_ty) = default_opt {
+                            let s = sa.compose(sf);
+                            return Ok(((*def_ty).clone().apply(&s), s));
+                        }
+                        // No matching arm and no default: fall through to normal application
+                    }
+                    Type::Record(mut fs) => {
+                        if let Some((fty, _sp)) = fs.remove(field_name) {
+                            let s = sa.compose(sf);
+                            return Ok((fty.apply(&s), s));
+                        }
+                        // Attempt to project through nested ModeMaps (transpose-like):
+                        // If record fields are ModeMaps (or treated as implicit ModeMaps),
+                        // build a resulting record mapping the same keys to the arm types
+                        // for `field_name`. For plain field values, treat them as an
+                        // implicit ModeMap with only a default arm equal to the value.
+                        let mut out_map: BTreeMap<String, (Type, Option<Span>)> = BTreeMap::new();
+                        let mut any_found = false;
+                        for (k, (v, sp)) in fs.into_iter() {
+                            match v {
+                                Type::ModeMap(mut inner_fs, inner_def, _ik) => {
+                                    if let Some((arm_ty, _)) = inner_fs.remove(field_name) {
+                                        any_found = true;
+                                        out_map.insert(k, (arm_ty, sp));
+                                    } else if let Some(def_ty) = inner_def {
+                                        any_found = true;
+                                        out_map.insert(k, ((*def_ty).clone(), sp));
+                                    } else {
+                                        // No arm and no default: create fresh tv to keep inference
+                                        let tv = ctx.fresh_tv();
+                                        any_found = true;
+                                        out_map.insert(k, (tv, sp));
+                                    }
+                                }
+                                other => {
+                                    // Treat any non-ModeMap value as an implicit ModeMap
+                                    // with the value as its default arm.
+                                    any_found = true;
+                                    out_map.insert(k, (other, sp));
+                                }
+                            }
+                        }
+                        if any_found {
+                            let s = sa.compose(sf);
+                            return Ok((Type::Record(out_map).apply(&s), s));
+                        }
+                        // Missing record field and no nested ModeMaps: fall through
+                    }
+                    Type::Ctor { tag, payload } => {
+                        let mut new_payload: Vec<Type> = Vec::with_capacity(payload.len());
+                        for p in payload.into_iter() {
+                            match p {
+                                Type::ModeMap(mut inner_fs, inner_def, _ik) => {
+                                    if let Some((arm_ty, _)) = inner_fs.remove(field_name) {
+                                        new_payload.push(arm_ty);
+                                    } else if let Some(def_ty) = inner_def {
+                                        new_payload.push((*def_ty).clone());
+                                    } else {
+                                        new_payload.push(Type::Unit);
+                                    }
+                                }
+                                other => {
+                                    // Non-ModeMap element: implicit ModeMap with default = element
+                                    new_payload.push(other);
+                                }
+                            }
+                        }
+                        let s = sa.compose(sf);
+                        return Ok((Type::Ctor { tag: tag.clone(), payload: new_payload }.apply(&s), s));
+                    }
+                    Type::SumCtor(vs) => {
+                        let mut new_vs: Vec<(String, Vec<Type>)> = Vec::with_capacity(vs.len());
+                        for (tag, ps) in vs.into_iter() {
+                            let mut new_ps: Vec<Type> = Vec::with_capacity(ps.len());
+                            for p in ps.into_iter() {
+                                match p {
+                                    Type::ModeMap(mut inner_fs, inner_def, _ik) => {
+                                        if let Some((arm_ty, _)) = inner_fs.remove(field_name) {
+                                            new_ps.push(arm_ty);
+                                        } else if let Some(def_ty) = inner_def {
+                                            new_ps.push((*def_ty).clone());
+                                        } else {
+                                            new_ps.push(Type::Unit);
+                                        }
+                                    }
+                                    other => new_ps.push(other),
+                                }
+                            }
+                            new_vs.push((tag, new_ps));
+                        }
+                        let s = sa.compose(sf);
+                        return Ok((Type::SumCtor(new_vs).apply(&s), s));
+                    }
+                    Type::Tuple(xs) => {
+                        let mut new_xs: Vec<Type> = Vec::with_capacity(xs.len());
+                        for x in xs.into_iter() {
+                            match x {
+                                Type::ModeMap(mut inner_fs, inner_def, _ik) => {
+                                    if let Some((arm_ty, _)) = inner_fs.remove(field_name) {
+                                        new_xs.push(arm_ty);
+                                    } else if let Some(def_ty) = inner_def {
+                                        new_xs.push((*def_ty).clone());
+                                    } else {
+                                        new_xs.push(Type::Unit);
+                                    }
+                                }
+                                other => new_xs.push(other),
+                            }
+                        }
+                        let s = sa.compose(sf);
+                        return Ok((Type::Tuple(new_xs).apply(&s), s));
+                    }
+                    Type::List(elem) => {
+                        let selected = match *elem {
+                            Type::ModeMap(mut inner_fs, inner_def, _ik) => {
+                                if let Some((arm_ty, _)) = inner_fs.remove(field_name) {
+                                    arm_ty
+                                } else if let Some(def_ty) = inner_def {
+                                    (*def_ty).clone()
+                                } else {
+                                    Type::Unit
+                                }
+                            }
+                            other => other,
+                        };
+                        let s = sa.compose(sf);
+                        return Ok((Type::List(Box::new(selected)).apply(&s), s));
+                    }
+                    other => {
+                        // Treat any other type as an implicit ModeMap whose default arm
+                        // is the whole value; selecting a field returns that default.
+                        let s = sa.compose(sf);
+                        return Ok((other.apply(&s), s));
+                    }
+                }
+            }
             let r = ctx.fresh_tv();
             let lhs_fun = tf.apply(&sa).apply(&sf);
             let rhs_fun = Type::fun(ta.apply(&sa), r.clone());
@@ -492,14 +639,20 @@ pub(crate) fn infer_expr(
             Ok((Type::Record(map), subst))
         }
         ExprKind::ModeMap(fields) => {
-            // ModeMap is like a record but for mode-based dispatch
-            // For now treat as unit; phase 2 will handle polymorphic modes
+            // ModeMap is like a record at the value level: map mode names to arm types.
+            // Represent it as a `Type::Record` so `.Ident <modemap>` selection works
+            // uniformly with record field selection (the runtime treats ModeMap
+            // specially, but for typing a record-like frame suffices).
             let mut subst = Subst::new();
+            let mut map = BTreeMap::new();
             for f in fields {
-                let (_tv, sv) = infer_expr(ctx, &f.value, allow_effects)?;
+                let (tv, sv) = infer_expr(ctx, &f.value, allow_effects)?;
                 subst = sv.compose(subst);
+                map.insert(f.name.clone(), (tv.apply(&subst), Some(f.name_span)));
             }
-            Ok((Type::Unit, subst))
+            // Ensure ModeMap always carries a default arm; if parser didn't supply one,
+            // use `Unit` as the default per design. Mark parser-created maps as Explicit.
+            Ok((Type::ModeMap(map, Some(Box::new(Type::Unit)), ModeKind::Explicit), subst))
         }
         ExprKind::LetGroup { type_decls, bindings, body, .. } => {
             // Recursive let-group inference (Algorithm W style for letrec):

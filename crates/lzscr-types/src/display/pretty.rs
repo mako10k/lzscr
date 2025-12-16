@@ -63,6 +63,16 @@ fn pp_type_with_renaming(
             items.sort();
             format!("{{{}}}", items.join(", "))
         }
+        Type::ModeMap(fs, _def, _kind) => {
+            let mut items: Vec<_> = fs
+                .iter()
+                .map(|(k, (v, _))| {
+                    format!("{}: {}", k, pp_type_with_renaming(v, rename_map, counter))
+                })
+                .collect();
+            items.sort();
+            format!("{{{}}}", items.join(", "))
+        }
         Type::Fun(a, b) => format!(
             "{} -> {}",
             pp_atom_with_renaming(a, rename_map, counter),

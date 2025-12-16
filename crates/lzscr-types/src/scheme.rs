@@ -132,6 +132,14 @@ pub fn zonk_type(t: &Type, s: &Subst) -> Type {
             }
             Type::Record(m)
         }
+        Type::ModeMap(fs, def, _kind) => {
+            let mut m = BTreeMap::new();
+            for (k, (v, sp)) in fs {
+                m.insert(k.clone(), (zonk_type(v, s), *sp));
+            }
+            let d = def.as_ref().map(|b| Box::new(zonk_type(&*b, s)));
+            Type::ModeMap(m, d, crate::types::ModeKind::Explicit)
+        }
         Type::Ctor { tag, payload } => Type::Ctor {
             tag: tag.clone(),
             payload: payload.iter().map(|x| zonk_type(x, s)).collect(),
@@ -170,6 +178,14 @@ pub fn normalize_tuples(t: &Type) -> Type {
             }
             Type::Record(m)
         }
+        Type::ModeMap(fs, def, kind) => {
+            let mut m = BTreeMap::new();
+            for (k, (v, sp)) in fs {
+                m.insert(k.clone(), (normalize_tuples(v), *sp));
+            }
+            let d = def.as_ref().map(|b| Box::new(normalize_tuples(&*b)));
+            Type::ModeMap(m, d, *kind)
+        }
         Type::Ctor { tag, payload } => {
             Type::Ctor { tag: tag.clone(), payload: payload.iter().map(normalize_tuples).collect() }
         }
@@ -204,6 +220,14 @@ impl TypesApply for Type {
                     m.insert(k.clone(), (v.apply(s), *sp));
                 }
                 Type::Record(m)
+            }
+            Type::ModeMap(fs, def, kind) => {
+                let mut m = BTreeMap::new();
+                for (k, (v, sp)) in fs {
+                    m.insert(k.clone(), (v.apply(s), *sp));
+                }
+                let d = def.as_ref().map(|b| Box::new(b.apply(s)));
+                Type::ModeMap(m, d, *kind)
             }
             Type::Ctor { tag, payload } => Type::Ctor {
                 tag: tag.clone(),
@@ -244,6 +268,14 @@ impl TypesApply for Type {
             Type::Record(fs) => {
                 for (v, _) in fs.values() {
                     s.extend(v.ftv());
+                }
+            }
+            Type::ModeMap(fs, def, _kind) => {
+                for (v, _) in fs.values() {
+                    s.extend(v.ftv());
+                }
+                if let Some(d) = def {
+                    s.extend(d.ftv());
                 }
             }
             Type::Ctor { payload, .. } => {

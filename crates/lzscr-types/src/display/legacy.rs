@@ -29,6 +29,12 @@ pub(crate) fn pp_type_legacy(t: &Type) -> String {
             items.sort();
             format!("{{{}}}", items.join(", "))
         }
+        Type::ModeMap(fs, _def, _kind) => {
+            let mut items: Vec<_> =
+                fs.iter().map(|(k, (v, _))| format!("{}: {}", k, pp_type_legacy(v))).collect();
+            items.sort();
+            format!("{{{}}}", items.join(", "))
+        }
         Type::Fun(a, b) => format!("{} -> {}", pp_atom_legacy(a), pp_type_legacy(b)),
         Type::Ctor { tag, payload } => {
             let head = tag.clone();

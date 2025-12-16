@@ -45,6 +45,11 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
                     collect_order(&v.0, order, seen);
                 }
             }
+            Type::ModeMap(fs, _def, _kind) => {
+                for v in fs.values() {
+                    collect_order(&v.0, order, seen);
+                }
+            }
             Type::Ctor { payload, .. } => {
                 for x in payload {
                     collect_order(x, order, seen);
@@ -100,6 +105,12 @@ fn normalize_type_and_map(t: &Type) -> (String, HashMap<TvId, String>) {
                 format!("({})", inner)
             }
             Type::Record(fs) => {
+                let mut items: Vec<_> =
+                    fs.iter().map(|(k, (v, _))| format!("{}: {}", k, go(v, m, seen))).collect();
+                items.sort();
+                format!("{{{}}}", items.join(", "))
+            }
+            Type::ModeMap(fs, _def, _kind) => {
                 let mut items: Vec<_> =
                     fs.iter().map(|(k, (v, _))| format!("{}: {}", k, go(v, m, seen))).collect();
                 items.sort();
