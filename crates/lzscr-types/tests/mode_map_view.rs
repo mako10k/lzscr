@@ -1,5 +1,5 @@
-use lzscr_types::api::infer_program;
 use lzscr_parser::parse_expr;
+use lzscr_types::api::infer_program;
 
 #[test]
 fn record_transpose_modes() {

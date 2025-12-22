@@ -335,8 +335,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 } else {
                     let name = t.text.to_string();
                     let mut args = Vec::new();
-                    loop {
-                        let Some(nxt) = toks.get(*i) else { break };
+                    while let Some(nxt) = toks.get(*i) {
                         match nxt.tok {
                             Tok::Arrow | Tok::RParen | Tok::Comma | Tok::Eq | Tok::Semicolon => {
                                 break
@@ -743,8 +742,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             span: Span,
         ) -> Result<TypeExpr, ParseError> {
             let mut args = Vec::new();
-            loop {
-                let Some(nxt) = toks.get(*j) else { break };
+            while let Some(nxt) = toks.get(*j) {
                 if !is_type_atom_start(&nxt.tok) {
                     break;
                 }
@@ -1106,8 +1104,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
             bp: u8,
         ) -> Result<TypeExpr, ParseError> {
             let mut lhs = parse_type_atom(j, toks)?;
-            loop {
-                let Some(nxt) = toks.get(*j) else { break };
+            while let Some(nxt) = toks.get(*j) {
                 if matches!(nxt.tok, Tok::Arrow) {
                     if 5 < bp {
                         break;
@@ -2389,8 +2386,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     ) -> Result<Expr, ParseError> {
         // Note: grouped/annotated lambdas are accepted downstream; syntactic checks are relaxed here.
         let mut lhs = parse_atom(i, toks)?;
-        loop {
-            let Some(nxt) = peek(*i, toks) else { break };
+        while let Some(nxt) = peek(*i, toks) {
             // Special-case pipeline operator '|>' parsed as two tokens Pipe + Greater
             if let Tok::Pipe = nxt.tok {
                 if let Some(n2) = peek(*i + 1, toks) {

@@ -137,7 +137,7 @@ pub fn zonk_type(t: &Type, s: &Subst) -> Type {
             for (k, (v, sp)) in fs {
                 m.insert(k.clone(), (zonk_type(v, s), *sp));
             }
-            let d = def.as_ref().map(|b| Box::new(zonk_type(&*b, s)));
+            let d = def.as_ref().map(|b| Box::new(zonk_type(b, s)));
             Type::ModeMap(m, d, crate::types::ModeKind::Explicit)
         }
         Type::Ctor { tag, payload } => Type::Ctor {
@@ -183,7 +183,7 @@ pub fn normalize_tuples(t: &Type) -> Type {
             for (k, (v, sp)) in fs {
                 m.insert(k.clone(), (normalize_tuples(v), *sp));
             }
-            let d = def.as_ref().map(|b| Box::new(normalize_tuples(&*b)));
+            let d = def.as_ref().map(|b| Box::new(normalize_tuples(b)));
             Type::ModeMap(m, d, *kind)
         }
         Type::Ctor { tag, payload } => {

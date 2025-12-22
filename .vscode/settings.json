@@ -25,6 +25,9 @@
     },
     "lzscr/.vscode/mcp.json: copilot-instructions": {
       "allowedDuringChat": true
+    },
+    "lzscr/.vscode/mcp.json: shell-server": {
+      "allowedDuringChat": true
     }
   },
   "files.associations": {
