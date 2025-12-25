@@ -1,0 +1,9 @@
+type error: record field 'age' type mismatch: expected %{expected} vs actual %{actual}
+type variable defined here:
+at ./stdlib/prelude.lzscr:2:12
+    # Namespaces (delegate to runtime Builtins)
+               ^~~
+occurs inside here:
+at ./stdlib/prelude.lzscr:1:17
+    # lzscr stdlib prelude (M1 minimal)
+                    ^~~
