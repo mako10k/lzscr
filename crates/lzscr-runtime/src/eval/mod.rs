@@ -304,10 +304,12 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
 
 pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
     fn print_type_expr(t: &TypeExpr) -> String {
+        // Print the type constructor name as it appears in the AST/token stream.
+        // The lexer preserves a leading '.' for member-style names (e.g. ".Int").
+        // Do not unconditionally add a dot here; use the raw name so that
+        // `%{A}` prints as `%{A}` (not `%{.A}`) while `.%{Int}` remains `.Int`.
         fn dotted(name: &str) -> String {
-            let mut s = String::from(".");
-            s.push_str(name);
-            s
+            name.to_string()
         }
         match t {
             TypeExpr::Unit => dotted("Unit"),
