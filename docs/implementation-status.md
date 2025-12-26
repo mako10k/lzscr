@@ -9,9 +9,24 @@ This document tracks the implementation status of key features and improvements 
 ### Completed
 - ✅ **LetRec Evaluation** (2025-12-26)
   - Full support for recursive let-bindings in CoreIR evaluator
-  - Tests: `eval_ir_letrec`, `eval_ir_letrec_function`
+  - Tests: `eval_ir_letrec`, `eval_ir_letrec_function`, `eval_ir_letrec_nested`, 
+    `eval_ir_letrec_closure_capture`, `eval_ir_seq_integration`, `eval_ir_chain_integration`
   - Algorithm: 3-step evaluation with placeholder environment for mutual recursion
   - Enables proper evaluation of mutually recursive definitions
+  - **14 CoreIR tests** (up from 8, 75% increase in coverage)
+
+- ✅ **Convenience Constructors** (2025-12-26)
+  - Helper methods for easier Term construction: `Term::int()`, `Term::var()`, 
+    `Term::lambda()`, `Term::app()`, `Term::letrec()`, etc.
+  - Reduces boilerplate in tests and IR construction code
+  - Improves code readability and maintainability
+  - Tests: `test_convenience_constructors`, `test_convenience_lambda`
+
+- ✅ **Developer Documentation** (2025-12-26)
+  - Comprehensive CoreIR developer guide in `docs/coreir-guide.md`
+  - Practical examples and common patterns
+  - Debugging tips and troubleshooting
+  - Clear explanation of lowering and evaluation model
 
 ### In Progress
 - 🔄 **Exception/Alt/Catch Representation**
@@ -79,12 +94,14 @@ This document tracks the implementation status of key features and improvements 
 ## Testing
 
 ### Current Coverage
-- **Total Tests**: 115 (up from 113)
+- **Total Tests**: 121 (up from 113 initially, then 115)
+- **CoreIR Tests**: 14 (up from 8, 75% increase)
 - **Coverage**: ~70%+ maintained
 - **All Tests Passing**: ✅
 
 ### Recent Additions
-- CoreIR LetRec tests (2 new tests)
+- CoreIR LetRec tests (6 new comprehensive tests)
+- CoreIR convenience constructor tests (2 tests)
 - Record field error diagnostics tests (existing)
 
 ## Build & Quality
