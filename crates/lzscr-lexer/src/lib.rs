@@ -8,7 +8,7 @@ pub enum Tok {
     _Whitespace,
 
     // Comments are preserved in token stream
-    #[regex(r"#[^\n]*")]
+    #[regex(r"#[^\n]*", allow_greedy = true)]
     CommentLine,
     #[regex(r"\{-", parse_block_comment)]
     CommentBlock,
