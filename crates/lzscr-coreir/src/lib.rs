@@ -53,6 +53,41 @@ impl Term {
     pub fn new(op: Op) -> Self {
         Self { op }
     }
+
+    /// Convenience constructor for integer literal
+    pub fn int(n: i64) -> Self {
+        Self::new(Op::Int(n))
+    }
+
+    /// Convenience constructor for float literal
+    pub fn float(f: f64) -> Self {
+        Self::new(Op::Float(f))
+    }
+
+    /// Convenience constructor for string literal
+    pub fn string<S: Into<String>>(s: S) -> Self {
+        Self::new(Op::Str(s.into()))
+    }
+
+    /// Convenience constructor for variable reference
+    pub fn var<S: Into<String>>(name: S) -> Self {
+        Self::new(Op::Ref(name.into()))
+    }
+
+    /// Convenience constructor for lambda
+    pub fn lambda<S: Into<String>>(param: S, body: Term) -> Self {
+        Self::new(Op::Lam { param: param.into(), body: Box::new(body) })
+    }
+
+    /// Convenience constructor for function application
+    pub fn app(func: Term, arg: Term) -> Self {
+        Self::new(Op::App { func: Box::new(func), arg: Box::new(arg) })
+    }
+
+    /// Convenience constructor for letrec
+    pub fn letrec(bindings: Vec<(String, Term)>, body: Term) -> Self {
+        Self::new(Op::LetRec { bindings, body: Box::new(body) })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -494,9 +529,26 @@ fn eval_term_with_env(
             let k = eval_term_with_env(cont, env)?;
             eval_app(k, v)
         }
-        Op::LetRec { .. } => {
-            // Not yet supported in PoC evaluator
-            Err(IrEvalError::UnsupportedParam("letrec".into()))
+        Op::LetRec { bindings, body } => {
+            // For letrec, we need to support mutual recursion by creating thunks
+            // In a lazy language, each binding would be a thunk that closes over the extended environment.
+            // For this PoC, we'll use a simpler approach: evaluate each binding in the extended environment.
+
+            // Step 1: Add all binding names to the environment as placeholders (Unit for now)
+            // This allows bindings to reference each other
+            for (name, _) in bindings {
+                env.insert(name.clone(), IrValue::Unit);
+            }
+
+            // Step 2: Evaluate each binding in the extended environment and update immediately
+            // This allows later bindings to use earlier ones (left-to-right evaluation order)
+            for (name, term) in bindings {
+                let value = eval_term_with_env(term, env)?;
+                env.insert(name.clone(), value);
+            }
+
+            // Step 3: Evaluate the body in the extended environment
+            eval_term_with_env(body, env)
         }
     }
 }
@@ -756,5 +808,161 @@ mod tests {
         let t2 = lower_expr_to_core(&b2);
         let v2 = eval_term(&t2).expect("ir eval bind");
         assert_eq!(print_ir_value(&v2), "2");
+    }
+
+    #[test]
+    fn eval_ir_letrec() {
+        // Test LetRec evaluation: (letrec { ~x = 1; ~y = (~add ~x 2); } ~y) => 3
+        let bindings = vec![
+            ("x".into(), Term::new(Op::Int(1))),
+            (
+                "y".into(),
+                Term::new(Op::App {
+                    func: Box::new(Term::new(Op::App {
+                        func: Box::new(Term::new(Op::Ref("add".into()))),
+                        arg: Box::new(Term::new(Op::Ref("x".into()))),
+                    })),
+                    arg: Box::new(Term::new(Op::Int(2))),
+                }),
+            ),
+        ];
+        let body = Term::new(Op::Ref("y".into()));
+        let letrec = Term::new(Op::LetRec { bindings, body: Box::new(body) });
+
+        let result = eval_term(&letrec).expect("ir eval letrec");
+        assert_eq!(print_ir_value(&result), "3");
+    }
+
+    #[test]
+    fn eval_ir_letrec_function() {
+        // Test LetRec with function: (letrec { ~f = \~x -> (~add ~x 1); } (~f 5)) => 6
+        let bindings = vec![(
+            "f".into(),
+            Term::new(Op::Lam {
+                param: "~x".into(),
+                body: Box::new(Term::new(Op::App {
+                    func: Box::new(Term::new(Op::App {
+                        func: Box::new(Term::new(Op::Ref("add".into()))),
+                        arg: Box::new(Term::new(Op::Ref("x".into()))),
+                    })),
+                    arg: Box::new(Term::new(Op::Int(1))),
+                })),
+            }),
+        )];
+        let body = Term::new(Op::App {
+            func: Box::new(Term::new(Op::Ref("f".into()))),
+            arg: Box::new(Term::new(Op::Int(5))),
+        });
+        let letrec = Term::new(Op::LetRec { bindings, body: Box::new(body) });
+
+        let result = eval_term(&letrec).expect("ir eval letrec with function");
+        assert_eq!(print_ir_value(&result), "6");
+    }
+
+    #[test]
+    fn eval_ir_letrec_nested() {
+        // Test nested LetRec: (letrec { ~x = (letrec { ~y = 2; } ~y); } (~add ~x 3)) => 5
+        let inner_bindings = vec![("y".into(), Term::new(Op::Int(2)))];
+        let inner_body = Term::new(Op::Ref("y".into()));
+        let inner_letrec =
+            Term::new(Op::LetRec { bindings: inner_bindings, body: Box::new(inner_body) });
+
+        let outer_bindings = vec![("x".into(), inner_letrec)];
+        let outer_body = Term::new(Op::App {
+            func: Box::new(Term::new(Op::App {
+                func: Box::new(Term::new(Op::Ref("add".into()))),
+                arg: Box::new(Term::new(Op::Ref("x".into()))),
+            })),
+            arg: Box::new(Term::new(Op::Int(3))),
+        });
+        let outer_letrec =
+            Term::new(Op::LetRec { bindings: outer_bindings, body: Box::new(outer_body) });
+
+        let result = eval_term(&outer_letrec).expect("ir eval nested letrec");
+        assert_eq!(print_ir_value(&result), "5");
+    }
+
+    #[test]
+    fn eval_ir_letrec_closure_capture() {
+        // Test LetRec with closure capturing outer bindings:
+        // (letrec { ~x = 10; ~f = \~y -> (~add ~x ~y); } (~f 5)) => 15
+        let bindings = vec![
+            ("x".into(), Term::new(Op::Int(10))),
+            (
+                "f".into(),
+                Term::new(Op::Lam {
+                    param: "~y".into(),
+                    body: Box::new(Term::new(Op::App {
+                        func: Box::new(Term::new(Op::App {
+                            func: Box::new(Term::new(Op::Ref("add".into()))),
+                            arg: Box::new(Term::new(Op::Ref("x".into()))),
+                        })),
+                        arg: Box::new(Term::new(Op::Ref("y".into()))),
+                    })),
+                }),
+            ),
+        ];
+        let body = Term::new(Op::App {
+            func: Box::new(Term::new(Op::Ref("f".into()))),
+            arg: Box::new(Term::new(Op::Int(5))),
+        });
+        let letrec = Term::new(Op::LetRec { bindings, body: Box::new(body) });
+
+        let result = eval_term(&letrec).expect("ir eval letrec with closure");
+        assert_eq!(print_ir_value(&result), "15");
+    }
+
+    #[test]
+    fn eval_ir_seq_integration() {
+        // Test Seq with LetRec: (~seq 1 (letrec { ~x = 2; } ~x)) => 2
+        let bindings = vec![("x".into(), Term::new(Op::Int(2)))];
+        let body = Term::new(Op::Ref("x".into()));
+        let letrec = Term::new(Op::LetRec { bindings, body: Box::new(body) });
+
+        let seq =
+            Term::new(Op::Seq { first: Box::new(Term::new(Op::Int(1))), second: Box::new(letrec) });
+
+        let result = eval_term(&seq).expect("ir eval seq with letrec");
+        assert_eq!(print_ir_value(&result), "2");
+    }
+
+    #[test]
+    fn eval_ir_chain_integration() {
+        // Test Chain with LetRec operations
+        let bindings = vec![("x".into(), Term::new(Op::Int(5)))];
+        let body = Term::new(Op::Ref("x".into()));
+        let letrec = Term::new(Op::LetRec { bindings, body: Box::new(body) });
+
+        let chain = Term::new(Op::Chain {
+            first: Box::new(letrec),
+            second: Box::new(Term::new(Op::Int(10))),
+        });
+
+        let result = eval_term(&chain).expect("ir eval chain with letrec");
+        assert_eq!(print_ir_value(&result), "10");
+    }
+
+    #[test]
+    fn test_convenience_constructors() {
+        // Test convenience constructors: let x = 5 in x + 3
+        let bindings = vec![("x".into(), Term::int(5))];
+        let body = Term::app(Term::app(Term::var("add"), Term::var("x")), Term::int(3));
+        let expr = Term::letrec(bindings, body);
+
+        let result = eval_term(&expr).expect("eval with convenience constructors");
+        assert_eq!(print_ir_value(&result), "8");
+    }
+
+    #[test]
+    fn test_convenience_lambda() {
+        // Test lambda convenience: (\x -> x + 1) 5
+        let lambda = Term::lambda(
+            "~x",
+            Term::app(Term::app(Term::var("add"), Term::var("x")), Term::int(1)),
+        );
+        let expr = Term::app(lambda, Term::int(5));
+
+        let result = eval_term(&expr).expect("eval lambda with convenience constructors");
+        assert_eq!(print_ir_value(&result), "6");
     }
 }
