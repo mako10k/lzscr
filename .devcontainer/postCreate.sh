@@ -5,6 +5,8 @@ cd /workspaces/lzscr
 
 echo "[postCreate] rustc: $(rustc --version)"
 echo "[postCreate] cargo: $(cargo --version)"
+echo "[postCreate] node:  $(node --version)"
+echo "[postCreate] npm:   $(npm --version)"
 
 # Pre-fetch deps to make first build/test faster in Codespaces.
 # Keep it lightweight: just metadata resolution.
