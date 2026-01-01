@@ -1,6 +1,7 @@
 {
   "name": "lzscr (Codespaces)",
-  "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+  "image": "mcr.microsoft.com/devcontainers/base:1-bookworm",
+  "init": true,
   "features": {
     "ghcr.io/devcontainers/features/rust:1": {
       "version": "1.75"
