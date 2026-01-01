@@ -25,5 +25,5 @@
     }
   },
   "postCreateCommand": "bash .devcontainer/postCreate.sh",
-  "remoteUser": "vscode"
+  "remoteUser": "automatic"
 }
