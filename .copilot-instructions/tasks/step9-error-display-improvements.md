@@ -91,7 +91,7 @@ Update expected error output to show:
 
 Update error message documentation to showcase improved diagnostics:
 - Before/after examples
-- Screenshots or text examples in `docs/diagnostics-improvement-plan.md`
+- Screenshots or text examples in the PR description (or a short note under `docs/` if needed)
 
 ## Expected Outcomes
 

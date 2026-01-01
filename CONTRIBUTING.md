@@ -273,7 +273,7 @@ Related to #456
 
 - Files: `stdlib/*.lzscr`
 - Focus: Pure LazyScript implementations
-- See: `docs/stdlib.md`
+- See: `stdlib/readme.md`
 
 ### CLI
 
@@ -297,7 +297,7 @@ Related to #456
 2. Register in `mk_initial_env()` or `Builtins` record
 3. Add type signature in stdlib prelude (if exposed)
 4. Add tests (unit + integration)
-5. Document in `docs/stdlib.md`
+5. Document in `stdlib/readme.md`
 
 ### Adding a New Syntax Feature
 
