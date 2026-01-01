@@ -6,6 +6,16 @@ cd /workspaces/lzscr
 echo "[postCreate] rustc: $(rustc --version)"
 echo "[postCreate] cargo: $(cargo --version)"
 
+if ! command -v git-lfs >/dev/null 2>&1; then
+	echo "[postCreate] git-lfs: (not installed) -> installing..."
+	sudo apt-get update -y
+	sudo apt-get install -y git-lfs
+	git lfs install
+	echo "[postCreate] git-lfs: $(git-lfs --version)"
+else
+	echo "[postCreate] git-lfs: $(git-lfs --version)"
+fi
+
 if command -v node >/dev/null 2>&1; then
 	echo "[postCreate] node:  $(node --version)"
 else
