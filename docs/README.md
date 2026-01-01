@@ -14,5 +14,5 @@ This folder contains documentation for the lzscr PoC: language specs and tools, 
   - analyzer.md: static analysis (duplicates/unbound/shadowed/unused) and JSON output
 
 Notes:
-- docs/lzscr.md is an early design note and contains future ideas (WIP). Do not treat it as a commitment. For the up-to-date, implementation-conformant spec, see the /spec set instead.
+- Roadmap/source of truth for prioritization: `ROADMAP.md`.
 - parser-letgroup-regression.md captures the November 2025 parser RCA (cause, fix, repro commands).

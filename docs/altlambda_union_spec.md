@@ -135,4 +135,4 @@ Recommended tests to add:
 Planned follow-up: add a golden-test harness capturing pretty + legacy outputs side-by-side to detect accidental printer drift.
 
 ---
-After feedback this draft (expanded) will be partially merged into `docs/lzscr.md` (section on type formatting & CLI flags) and cross-referenced from the general language overview.
+This is a draft; for the implementation-conformant spec, prefer `docs/spec/*`.

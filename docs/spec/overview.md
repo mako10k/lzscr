@@ -1,7 +1,7 @@
 # Language overview (current)
 Note: This overview reflects the current implementation. Any "future" or "planned" mentions are exploratory (WIP) and are not commitments.
 
-For future ideas/roadmap (WIP, not commitments), see ../lzscr.md.
+Roadmap/source of truth for prioritization: see ../ROADMAP.md.
 
 - Goal: proof-of-concept of a lazy-evaluated, expression-based language.
 - Execution paths: direct AST eval (interpreter) plus a Core IR pipeline (AST→IR lowering, textual dump).
