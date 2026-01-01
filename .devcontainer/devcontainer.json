@@ -1,6 +1,14 @@
 {
   "name": "lzscr (Codespaces)",
-  "image": "mcr.microsoft.com/devcontainers/rust:1-1-bookworm",
+  "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "1.75"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": [
