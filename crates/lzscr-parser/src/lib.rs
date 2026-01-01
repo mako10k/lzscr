@@ -29,6 +29,16 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     let mut tokens = lex(src);
     // Drop comments for parsing; they are handled in PRE-AST/formatter layer
     tokens.retain(|t| !matches!(t.tok, Tok::CommentLine | Tok::CommentBlock));
+
+    // If lexing failed (e.g., invalid escape sequence), surface it as a span-aware parse error
+    // so the CLI can render a caret at the offending region.
+    if let Some(t) = tokens.iter().find(|t| matches!(t.tok, Tok::Error)) {
+        return Err(ParseError::WithSpan {
+            msg: format!("lex error: invalid token {}", t.text),
+            span_offset: t.span.offset,
+            span_len: t.span.len,
+        });
+    }
     let mut i = 0usize;
 
     // line/col now supplied by lexer tokens; no local computation needed
@@ -3004,6 +3014,20 @@ mod tests {
                 matches!(fields[0].value.kind, ExprKind::Lambda { .. });
             }
             other => panic!("expected ModeMap, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn lex_error_invalid_escape_in_string_literal() {
+        // Unknown escape sequences are errors.
+        let r = parse_expr("\"\\q\"");
+        match r {
+            Err(ParseError::WithSpan { msg, .. }) => assert!(
+                msg.contains("lex error"),
+                "unexpected msg: {}",
+                msg
+            ),
+            other => panic!("expected Err(ParseError::WithSpan), got {:?}", other),
         }
     }
 }

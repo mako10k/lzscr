@@ -32,7 +32,7 @@ Lexing is implemented with logos (crates/lzscr-lexer). Representative tokens and
 - Literals:
   - Int: `[0-9]+` → Int(i64)
   - Float: `([0-9]+\.[0-9]*|\.[0-9]+)` → Float(f64)
-  - Str: `"([^"\\]|\\.)*"` (simple escapes)
+  - Str: `"([^"\\]|\\.)*"` (escapes; unknown escapes are errors; see syntax.md)
   - Char: `'(?:[^'\\]|\\u\{[0-9a-fA-F]+\}|\\.)'` → Unicode code point (i32)
 - Identifiers:
   - `Ident`: `[a-zA-Z_][a-zA-Z0-9_]*`

@@ -7,8 +7,8 @@
 - **Unit**: `()`
 - **Int**: `42`, `0x2A` (hex), `0o52` (octal), `0b101010` (binary)
 - **Float**: `1.0`, `.5`, `3.`, `1.5e10`, `2e-3`
-- **Str**: `"hello"` (supports escape sequences: `\n`, `\t`, `\\`, `\"`, `\xHH`, `\u{HHHH}`)
-- **Char**: `'a'`, `'\n'`, `'\x41'`, `'\u{3042}'`
+- **Str**: `"hello"` (supports escape sequences: `\n`, `\r`, `\t`, `\0`, `\\`, `\"`, `\'`, `\u{HEX+}`; unknown escapes are errors)
+- **Char**: `'a'`, `'\n'`, `'\u{3042}'` (unknown escapes are errors)
 - **Ref**: `~name` (variable reference, e.g., `~add`, `~x`)
 - **Named ctor**: bare identifier such as `Foo`, `Some`, `Tree`
   - They represent value-level tags whose arity is enforced only by how many arguments you apply: `Some 1`, `Tree left right`.
