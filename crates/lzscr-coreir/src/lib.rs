@@ -188,17 +188,6 @@ pub struct Module {
 }
 
 pub fn lower_expr_to_core(e: &Expr) -> Term {
-    fn is_symbol(e: &Expr, sym: &str) -> bool {
-        matches!(&e.kind, ExprKind::Symbol(s) if s == sym)
-    }
-
-    fn symbol_value(e: &Expr) -> Option<(&str, Span)> {
-        match &e.kind {
-            ExprKind::Symbol(s) => Some((s.as_str(), e.span)),
-            _ => None,
-        }
-    }
-
     fn is_tuple_tag_symbol(s: &str) -> bool {
         // Matches runtime tuple tag encoding like `.,,` (dot then commas).
         let mut chars = s.chars();
@@ -362,21 +351,9 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             Term::new(Op::Lam { param: param.clone(), body: Box::new(lower_expr_to_core(body)) })
         }
         ExprKind::Apply { func, arg } => {
-            // Desugar selection: `(.select .M e)`.
-            if let ExprKind::Apply { func: f2, arg: a2 } = &func.kind {
-                if is_symbol(f2, ".select") {
-                    if let Some((label, label_span)) = symbol_value(a2) {
-                        return Term::new(Op::Select {
-                            label: label.to_string(),
-                            label_span,
-                            target: Box::new(lower_expr_to_core(arg)),
-                        });
-                    }
-                }
-            }
-
-            // Desugar selection sugar: `(.M e)` ≡ `(.select .M e)`.
-            // This is a CoreIR convenience so dumps/eval are usable without later-phase desugaring.
+            // Desugar selection sugar: `(.M e)`.
+            // Note: surface `.select` remains a normal symbol; CoreIR `Select` is not directly
+            // expressible from surface syntax.
             if let ExprKind::Symbol(sym) = &func.kind {
                 if sym.starts_with('.') && sym != ".select" && !is_tuple_tag_symbol(sym) {
                     return Term::new(Op::Select {
@@ -1293,47 +1270,6 @@ mod tests {
     }
 
     #[test]
-    fn lower_select_is_explicit_op_and_eval_selects_modemap_arm() {
-        let a = ExprRecordField::new("Int".into(), Span::new(10, 3), int_expr(1));
-        let b = ExprRecordField::new(
-            "Str".into(),
-            Span::new(20, 3),
-            Expr::new(ExprKind::Str("x".into()), Span::new(0, 0)),
-        );
-        let mm =
-            Expr::new(ExprKind::ModeMap { fields: vec![a, b], default: None }, Span::new(0, 0));
-
-        let select = Expr::new(
-            ExprKind::Apply {
-                func: Box::new(Expr::new(
-                    ExprKind::Apply {
-                        func: Box::new(Expr::new(
-                            ExprKind::Symbol(".select".into()),
-                            Span::new(0, 0),
-                        )),
-                        arg: Box::new(Expr::new(ExprKind::Symbol(".Int".into()), Span::new(1, 4))),
-                    },
-                    Span::new(0, 0),
-                )),
-                arg: Box::new(mm),
-            },
-            Span::new(0, 0),
-        );
-
-        let t = lower_expr_to_core(&select);
-        match &t.op {
-            Op::Select { label, label_span, .. } => {
-                assert_eq!(label, ".Int");
-                assert_eq!(*label_span, Span::new(1, 4));
-            }
-            other => panic!("expected Op::Select, got {other:?}"),
-        }
-        assert!(print_term(&t).starts_with("(.select .Int "));
-        let v = eval_term(&t).expect("eval select");
-        assert_eq!(v, IrValue::Int(1));
-    }
-
-    #[test]
     fn lower_select_sugar_is_explicit_op_and_eval_selects_modemap_arm() {
         let a = ExprRecordField::new("Int".into(), Span::new(10, 3), int_expr(1));
         let b = ExprRecordField::new(
@@ -1344,7 +1280,7 @@ mod tests {
         let mm =
             Expr::new(ExprKind::ModeMap { fields: vec![a, b], default: None }, Span::new(0, 0));
 
-        // .Int mm  (sugar for .select)
+        // .Int mm
         let sugar = Expr::new(
             ExprKind::Apply {
                 func: Box::new(Expr::new(ExprKind::Symbol(".Int".into()), Span::new(1, 4))),
@@ -1361,8 +1297,26 @@ mod tests {
             }
             other => panic!("expected Op::Select, got {other:?}"),
         }
-        let v = eval_term(&t).expect("eval select sugar");
+        let v = eval_term(&t).expect("eval select");
         assert_eq!(v, IrValue::Int(1));
+    }
+
+    #[test]
+    fn surface_select_is_not_a_special_form_in_coreir_lowering() {
+        let a = ExprRecordField::new("Int".into(), Span::new(10, 3), int_expr(1));
+        let mm = Expr::new(ExprKind::ModeMap { fields: vec![a], default: None }, Span::new(0, 0));
+
+        // (.select mm) should lower as a normal application, not Op::Select.
+        let app = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(ExprKind::Symbol(".select".into()), Span::new(0, 0))),
+                arg: Box::new(mm),
+            },
+            Span::new(0, 0),
+        );
+
+        let t = lower_expr_to_core(&app);
+        assert!(matches!(&t.op, Op::App { .. }));
     }
 
     #[test]
@@ -1374,23 +1328,15 @@ mod tests {
             },
             Span::new(0, 0),
         );
-        let select = Expr::new(
+        // .Str mm
+        let sugar = Expr::new(
             ExprKind::Apply {
-                func: Box::new(Expr::new(
-                    ExprKind::Apply {
-                        func: Box::new(Expr::new(
-                            ExprKind::Symbol(".select".into()),
-                            Span::new(0, 0),
-                        )),
-                        arg: Box::new(Expr::new(ExprKind::Symbol(".Str".into()), Span::new(0, 0))),
-                    },
-                    Span::new(0, 0),
-                )),
+                func: Box::new(Expr::new(ExprKind::Symbol(".Str".into()), Span::new(0, 0))),
                 arg: Box::new(mm),
             },
             Span::new(0, 0),
         );
-        let t = lower_expr_to_core(&select);
+        let t = lower_expr_to_core(&sugar);
         let err = eval_term(&t).expect_err("missing label");
         match err {
             IrEvalError::ModeLabelNotFound(s) => assert_eq!(s, ".Str"),
@@ -1407,24 +1353,15 @@ mod tests {
             },
             Span::new(0, 0),
         );
-        // (.select .Str mm) -> default (999)
-        let select = Expr::new(
+        // .Str mm -> default (999)
+        let sugar = Expr::new(
             ExprKind::Apply {
-                func: Box::new(Expr::new(
-                    ExprKind::Apply {
-                        func: Box::new(Expr::new(
-                            ExprKind::Symbol(".select".into()),
-                            Span::new(0, 0),
-                        )),
-                        arg: Box::new(Expr::new(ExprKind::Symbol(".Str".into()), Span::new(0, 0))),
-                    },
-                    Span::new(0, 0),
-                )),
+                func: Box::new(Expr::new(ExprKind::Symbol(".Str".into()), Span::new(0, 0))),
                 arg: Box::new(mm),
             },
             Span::new(0, 0),
         );
-        let t = lower_expr_to_core(&select);
+        let t = lower_expr_to_core(&sugar);
         let v = eval_term(&t).expect("select default");
         assert_eq!(v, IrValue::Int(999));
     }
