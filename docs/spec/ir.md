@@ -10,6 +10,7 @@ Location: `crates/lzscr-coreir`
   - `List { items: Vec<Term> }`
   - `Record { fields: Vec<RecordFieldTerm> }` (tracks `name_span`)
   - `ModeMap { fields: Vec<RecordFieldTerm> }` (tracks `name_span`)
+  - `Select { label, label_span, target }` (ModeMap selection)
   - `Lam { param, body } | App { func, arg }`
   - `Seq { first, second } | Chain { first, second } | Bind { value, cont }`
   - `Raise { payload } | Catch { left, right } | OrElse { left, right }` (exceptions/control)
@@ -25,6 +26,7 @@ Lowering `lower_expr_to_core(&Expr) -> Term`:
 - Convert AST `[a, b, c]` into `List { items: [a, b, c] }`.
 - Convert AST `{ k1: e1, k2: e2 }` into `Record { fields: ... }` and preserve each field's `name_span`.
 - Convert AST `.{ M1: e1, M2: e2 }` into `ModeMap { fields: ... }` and preserve each field's `name_span`.
+- Convert AST `(.select .M e)` into `Select { label=".M", label_span, target=e }`.
 - Everything else maps shape-wise.
 
 Evaluator conventions (PoC)

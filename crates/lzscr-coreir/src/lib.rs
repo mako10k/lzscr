@@ -39,6 +39,10 @@ pub enum Op {
     List { items: Vec<Term> },
     Record { fields: Vec<RecordFieldTerm> },
     ModeMap { fields: Vec<RecordFieldTerm> },
+    /// ModeMap selection: `.select .M e`.
+    ///
+    /// `label` is the raw symbol string such as `.Int`.
+    Select { label: String, label_span: Span, target: Box<Term> },
     Lam { param: Pattern, body: Box<Term> },
     App { func: Box<Term>, arg: Box<Term> },
     Seq { first: Box<Term>, second: Box<Term> },
@@ -134,6 +138,17 @@ pub struct Module {
 }
 
 pub fn lower_expr_to_core(e: &Expr) -> Term {
+    fn is_symbol(e: &Expr, sym: &str) -> bool {
+        matches!(&e.kind, ExprKind::Symbol(s) if s == sym)
+    }
+
+    fn symbol_value(e: &Expr) -> Option<(&str, Span)> {
+        match &e.kind {
+            ExprKind::Symbol(s) => Some((s.as_str(), e.span)),
+            _ => None,
+        }
+    }
+
     fn print_type_expr(t: &TypeExpr) -> String {
         fn dotted(name: &str) -> String {
             let mut s = String::from(".");
@@ -274,6 +289,19 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             Term::new(Op::Lam { param: param.clone(), body: Box::new(lower_expr_to_core(body)) })
         }
         ExprKind::Apply { func, arg } => {
+            // Desugar selection: `(.select .M e)`.
+            // Note: Sugar `.M e` is handled in later phases; CoreIR only recognizes the explicit `.select` form.
+            if let ExprKind::Apply { func: f2, arg: a2 } = &func.kind {
+                if is_symbol(f2, ".select") {
+                    if let Some((label, label_span)) = symbol_value(a2) {
+                        return Term::new(Op::Select {
+                            label: label.to_string(),
+                            label_span,
+                            target: Box::new(lower_expr_to_core(arg)),
+                        });
+                    }
+                }
+            }
             // desugar (~seq a b) into Seq
             if let ExprKind::Apply { func: seq_ref_expr, arg: a_expr } = &func.kind {
                 if let ExprKind::Ref(seq_name) = &seq_ref_expr.kind {
@@ -392,6 +420,7 @@ pub fn print_term(t: &Term) -> String {
                 .join(", ");
             format!(".{{{}}}", inner)
         }
+        Op::Select { label, target, .. } => format!("(.select {} {})", label, print_term(target)),
         Op::Lam { param, body } => format!("\\{} -> {}", print_pattern(param), print_term(body)),
         Op::App { func, arg } => format!("({} {})", print_term(func), print_term(arg)),
         Op::Seq { first, second } => format!("(~seq {} {})", print_term(first), print_term(second)),
@@ -449,6 +478,10 @@ pub enum IrEvalError {
     Unbound(String),
     #[error("not a function: {0:?}")]
     NotFunction(Box<IrValue>),
+    #[error("select target is not a ModeMap: {0:?}")]
+    SelectNotModeMap(Box<IrValue>),
+    #[error("mode label not found: {0}")]
+    ModeLabelNotFound(String),
     #[error("unsupported pattern in lambda parameter: {0}")]
     UnsupportedParam(String),
     #[error("unsupported pattern: {0}")]
@@ -611,6 +644,10 @@ fn is_tuple_tag_symbol(s: &str) -> bool {
     }
     let rest: Vec<char> = chars.collect();
     !rest.is_empty() && rest.iter().all(|c| *c == ',')
+}
+
+fn mode_label_key(label: &str) -> &str {
+    label.strip_prefix('.').unwrap_or(label)
 }
 
 fn symbol_to_value(s: &str) -> IrValue {
@@ -823,6 +860,19 @@ fn eval_term_with_env(
                 map.insert(f.name.clone(), v);
             }
             Ok(IrValue::ModeMap(map))
+        }
+        Op::Select { label, target, .. } => {
+            let v = eval_term_with_env(target, env)?;
+            if let IrValue::Raised(_) = v {
+                return Ok(v);
+            }
+            let IrValue::ModeMap(map) = v else {
+                return Err(IrEvalError::SelectNotModeMap(Box::new(v)));
+            };
+            let key = mode_label_key(label);
+            map.get(key)
+                .cloned()
+                .ok_or_else(|| IrEvalError::ModeLabelNotFound(label.clone()))
         }
         Op::Ref(n) => {
             if let Some(v) = env.get(n).cloned() {
@@ -1040,6 +1090,66 @@ mod tests {
         assert_eq!(print_term(&t), ".{a: 1, b: 2}");
         let v = eval_term(&t).expect("eval modemap");
         assert_eq!(print_ir_value(&v), ".{a: 1, b: 2}");
+    }
+
+    #[test]
+    fn lower_select_is_explicit_op_and_eval_selects_modemap_arm() {
+        let a = ExprRecordField::new("Int".into(), Span::new(10, 3), int_expr(1));
+        let b = ExprRecordField::new("Str".into(), Span::new(20, 3), Expr::new(ExprKind::Str("x".into()), Span::new(0, 0)));
+        let mm = Expr::new(ExprKind::ModeMap(vec![a, b]), Span::new(0, 0));
+
+        let select = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(
+                    ExprKind::Apply {
+                        func: Box::new(Expr::new(ExprKind::Symbol(".select".into()), Span::new(0, 0))),
+                        arg: Box::new(Expr::new(ExprKind::Symbol(".Int".into()), Span::new(1, 4))),
+                    },
+                    Span::new(0, 0),
+                )),
+                arg: Box::new(mm),
+            },
+            Span::new(0, 0),
+        );
+
+        let t = lower_expr_to_core(&select);
+        match &t.op {
+            Op::Select { label, label_span, .. } => {
+                assert_eq!(label, ".Int");
+                assert_eq!(*label_span, Span::new(1, 4));
+            }
+            other => panic!("expected Op::Select, got {other:?}"),
+        }
+        assert!(print_term(&t).starts_with("(.select .Int "));
+        let v = eval_term(&t).expect("eval select");
+        assert_eq!(v, IrValue::Int(1));
+    }
+
+    #[test]
+    fn eval_select_missing_label_is_error() {
+        let mm = Expr::new(
+            ExprKind::ModeMap(vec![ExprRecordField::new("Int".into(), Span::new(0, 0), int_expr(1))]),
+            Span::new(0, 0),
+        );
+        let select = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(
+                    ExprKind::Apply {
+                        func: Box::new(Expr::new(ExprKind::Symbol(".select".into()), Span::new(0, 0))),
+                        arg: Box::new(Expr::new(ExprKind::Symbol(".Str".into()), Span::new(0, 0))),
+                    },
+                    Span::new(0, 0),
+                )),
+                arg: Box::new(mm),
+            },
+            Span::new(0, 0),
+        );
+        let t = lower_expr_to_core(&select);
+        let err = eval_term(&t).expect_err("missing label");
+        match err {
+            IrEvalError::ModeLabelNotFound(s) => assert_eq!(s, ".Str"),
+            other => panic!("expected ModeLabelNotFound, got {other:?}"),
+        }
     }
 
     #[test]
