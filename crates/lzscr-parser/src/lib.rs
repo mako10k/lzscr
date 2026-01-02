@@ -3022,11 +3022,9 @@ mod tests {
         // Unknown escape sequences are errors.
         let r = parse_expr("\"\\q\"");
         match r {
-            Err(ParseError::WithSpan { msg, .. }) => assert!(
-                msg.contains("lex error"),
-                "unexpected msg: {}",
-                msg
-            ),
+            Err(ParseError::WithSpan { msg, .. }) => {
+                assert!(msg.contains("lex error"), "unexpected msg: {}", msg)
+            }
             other => panic!("expected Err(ParseError::WithSpan), got {:?}", other),
         }
     }

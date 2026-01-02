@@ -31,6 +31,7 @@ Lowering `lower_expr_to_core(&Expr) -> Term`:
 - Convert AST `{ k1: e1, k2: e2 }` into `Record { fields: ... }` and preserve each field's `name_span`.
 - Convert AST `.{ M1: e1, M2: e2 }` into `ModeMap { fields: ... }` and preserve each field's `name_span`.
 - Convert AST `(.select .M e)` into `Select { label=".M", label_span, target=e }`.
+- Convert AST `(.M e)` (ModeMap selection sugar; excluding `.select` itself and tuple tags like `.,`) into `Select { label=".M", label_span, target=e }`.
 - Convert AST bare symbols/constructors (`ExprKind::Symbol(s)`) into either:
   - `AtomSymbol(s)` if `s` starts with `.` (e.g. `.Int`, `.Pure`)
   - `Ctor(s)` otherwise (e.g. `Some`)
