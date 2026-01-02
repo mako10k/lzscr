@@ -35,6 +35,7 @@ pub enum Op {
     Str(String),
     Char(i32),
     Unit,
+    List { items: Vec<Term> },
     Lam { param: Pattern, body: Box<Term> },
     App { func: Box<Term>, arg: Box<Term> },
     Seq { first: Box<Term>, second: Box<Term> },
@@ -244,17 +245,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             Term::new(Op::LetRec { bindings: bs, body: Box::new(lower_expr_to_core(body)) })
         }
         ExprKind::List(xs) => {
-            // Lower to foldr cons []
-            let mut tail = Term::new(Op::Symbol("[]".into()));
-            for x in xs.iter().rev() {
-                let cons = Term::new(Op::Ref("cons".into()));
-                let app1 = Term::new(Op::App {
-                    func: Box::new(cons),
-                    arg: Box::new(lower_expr_to_core(x)),
-                });
-                tail = Term::new(Op::App { func: Box::new(app1), arg: Box::new(tail) });
-            }
-            tail
+            Term::new(Op::List { items: xs.iter().map(lower_expr_to_core).collect() })
         }
         ExprKind::Raise(inner) => {
             Term::new(Op::Raise { payload: Box::new(lower_expr_to_core(inner)) })
@@ -380,6 +371,9 @@ pub fn print_term(t: &Term) -> String {
         }
         Op::Ref(n) => format!("~{n}"),
         Op::Symbol(s) => s.clone(),
+        Op::List { items } => {
+            format!("[{}]", items.iter().map(print_term).collect::<Vec<_>>().join(", "))
+        }
         Op::Lam { param, body } => format!("\\{} -> {}", print_pattern(param), print_term(body)),
         Op::App { func, arg } => format!("({} {})", print_term(func), print_term(arg)),
         Op::Seq { first, second } => format!("(~seq {} {})", print_term(first), print_term(second)),
@@ -765,6 +759,17 @@ fn eval_term_with_env(
         }),
         Op::Str(s) => Ok(IrValue::Str(s.clone())),
         Op::Char(c) => Ok(IrValue::Char(*c)),
+        Op::List { items } => {
+            let mut vs = Vec::with_capacity(items.len());
+            for item in items {
+                let v = eval_term_with_env(item, env)?;
+                if let IrValue::Raised(_) = v {
+                    return Ok(v);
+                }
+                vs.push(v);
+            }
+            Ok(IrValue::List(vs))
+        }
         Op::Ref(n) => {
             if let Some(v) = env.get(n).cloned() {
                 return Ok(v);
@@ -918,6 +923,24 @@ mod tests {
 
     fn int_expr(n: i64) -> Expr {
         Expr::new(ExprKind::Int(n), Span::new(0, 0))
+    }
+
+    #[test]
+    fn lower_list_is_explicit_op_and_eval_is_list_value() {
+        let e = Expr::new(
+            ExprKind::List(vec![int_expr(1), int_expr(2), int_expr(3)]),
+            Span::new(0, 0),
+        );
+        let t = lower_expr_to_core(&e);
+        match &t.op {
+            Op::List { items } => {
+                assert_eq!(items.len(), 3);
+            }
+            other => panic!("expected Op::List, got {:?}", other),
+        }
+        assert_eq!(print_term(&t), "[1, 2, 3]");
+        let v = eval_term(&t).expect("eval list");
+        assert_eq!(print_ir_value(&v), "[1, 2, 3]");
     }
 
     #[test]
