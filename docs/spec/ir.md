@@ -11,6 +11,7 @@ Location: `crates/lzscr-coreir`
   - `AtomSymbol(String)` (atomic symbol value, e.g. `.Int`)
   - `Symbol(String)` (legacy; avoid in new lowering)
   - `List { items: Vec<Term> }`
+  - `Tuple { items: Vec<Term> }`
   - `Record { fields: Vec<RecordFieldTerm> }` (tracks `name_span`)
   - `ModeMap { fields: Vec<RecordFieldTerm> }` (tracks `name_span`)
   - `Select { label, label_span, target }` (ModeMap selection)
@@ -33,6 +34,9 @@ Lowering `lower_expr_to_core(&Expr) -> Term`:
 - Convert AST bare symbols/constructors (`ExprKind::Symbol(s)`) into either:
   - `AtomSymbol(s)` if `s` starts with `.` (e.g. `.Int`, `.Pure`)
   - `Ctor(s)` otherwise (e.g. `Some`)
+- Convert saturated tuple-tag constructor application into `Tuple { items }`.
+  - Tuple tag encoding is `.` followed by one or more commas, e.g. `.,` / `.,,`.
+  - Example: `((., a) b)` lowers to `Tuple { items: [a, b] }`.
 - Everything else maps shape-wise.
 
 Evaluator conventions (PoC)

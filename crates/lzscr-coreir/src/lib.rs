@@ -44,6 +44,7 @@ pub enum Op {
     Char(i32),
     Unit,
     List { items: Vec<Term> },
+    Tuple { items: Vec<Term> },
     Record { fields: Vec<RecordFieldTerm> },
     ModeMap { fields: Vec<RecordFieldTerm> },
     /// ModeMap selection: `.select .M e`.
@@ -238,6 +239,16 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             }
         }
     }
+
+    fn tuple_tag_arity(sym: &str) -> Option<usize> {
+        // Tuple tag encoding: `.` followed by one or more commas.
+        // Arity = comma_count + 1.
+        if !is_tuple_tag_symbol(sym) {
+            return None;
+        }
+        let comma_count = sym.chars().skip(1).filter(|c| *c == ',').count();
+        Some(comma_count + 1)
+    }
     // Pattern printing is shared between lowering and pretty-print.
     match &e.kind {
         ExprKind::Annot { ty: _, expr } => lower_expr_to_core(expr),
@@ -328,6 +339,28 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                             label_span,
                             target: Box::new(lower_expr_to_core(arg)),
                         });
+                    }
+                }
+            }
+
+            // Desugar tuple tags like `((., a) b)` into `Tuple { items: [a, b] }`.
+            // Only when fully saturated (arity matches).
+            // For partial applications, keep as normal App chain.
+            let mut args_rev: Vec<&Expr> = vec![arg];
+            let mut head = func.as_ref();
+            while let ExprKind::Apply { func: f, arg: a } = &head.kind {
+                args_rev.push(a);
+                head = f.as_ref();
+            }
+            if let ExprKind::Symbol(sym) = &head.kind {
+                if let Some(arity) = tuple_tag_arity(sym) {
+                    if args_rev.len() == arity {
+                        let items = args_rev
+                            .into_iter()
+                            .rev()
+                            .map(lower_expr_to_core)
+                            .collect::<Vec<_>>();
+                        return Term::new(Op::Tuple { items });
                     }
                 }
             }
@@ -432,6 +465,9 @@ pub fn print_term(t: &Term) -> String {
         Op::Symbol(s) | Op::Ctor(s) | Op::AtomSymbol(s) => s.clone(),
         Op::List { items } => {
             format!("[{}]", items.iter().map(print_term).collect::<Vec<_>>().join(", "))
+        }
+        Op::Tuple { items } => {
+            format!("({})", items.iter().map(print_term).collect::<Vec<_>>().join(", "))
         }
         Op::Record { fields } => {
             let inner = fields
@@ -869,6 +905,17 @@ fn eval_term_with_env(
             }
             Ok(IrValue::List(vs))
         }
+        Op::Tuple { items } => {
+            let mut vs = Vec::with_capacity(items.len());
+            for item in items {
+                let v = eval_term_with_env(item, env)?;
+                if let IrValue::Raised(_) = v {
+                    return Ok(v);
+                }
+                vs.push(v);
+            }
+            Ok(IrValue::Tuple(vs))
+        }
         Op::Record { fields } => {
             let mut map = BTreeMap::new();
             for f in fields {
@@ -1084,6 +1131,30 @@ mod tests {
         assert_eq!(print_term(&t), "[1, 2, 3]");
         let v = eval_term(&t).expect("eval list");
         assert_eq!(print_ir_value(&v), "[1, 2, 3]");
+    }
+
+    fn apply_expr(func: Expr, arg: Expr) -> Expr {
+        Expr::new(
+            ExprKind::Apply { func: Box::new(func), arg: Box::new(arg) },
+            Span::new(0, 0),
+        )
+    }
+
+    #[test]
+    fn lower_tuple_tag_application_is_explicit_tuple_op() {
+        // ((., 1) 2)  == (1, 2)
+        let tag = Expr::new(ExprKind::Symbol(".,".into()), Span::new(0, 0));
+        let e = apply_expr(apply_expr(tag, int_expr(1)), int_expr(2));
+        let t = lower_expr_to_core(&e);
+        match &t.op {
+            Op::Tuple { items } => {
+                assert_eq!(items.len(), 2);
+            }
+            other => panic!("expected Tuple, got {other:?}"),
+        }
+        assert_eq!(print_term(&t), "(1, 2)");
+        let v = eval_term(&t).expect("eval tuple");
+        assert_eq!(print_ir_value(&v), "(1, 2)");
     }
 
     #[test]
