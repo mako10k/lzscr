@@ -8,7 +8,7 @@
 
 use lzscr_ast::ast::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 // Core IR: deliberately small for PoC. Lambda-calculus-like with explicit refs and sequence.
 
@@ -411,6 +411,18 @@ pub enum IrValue {
     Float(f64),
     Str(String),
     Char(i32),
+    /// Constructor value, curried by application.
+    ///
+    /// Applying a constructor accumulates args: `Ctor(name, []) arg` => `Ctor(name, [arg])`.
+    Ctor { name: String, args: Vec<IrValue> },
+    /// Symbol value (distinct from constructors).
+    Symbol(String),
+    /// Concrete list value.
+    List(Vec<IrValue>),
+    /// Concrete tuple value.
+    Tuple(Vec<IrValue>),
+    /// Concrete record value.
+    Record(BTreeMap<String, IrValue>),
     Raised(Box<IrValue>),
     Fun { param: Pattern, body: Term, env: HashMap<String, IrValue> },
     Alt { left: Box<IrValue>, right: Box<IrValue> },
@@ -422,7 +434,7 @@ pub enum IrEvalError {
     #[error("unbound ref: {0}")]
     Unbound(String),
     #[error("not a function: {0:?}")]
-    NotFunction(IrValue),
+    NotFunction(Box<IrValue>),
     #[error("unsupported pattern in lambda parameter: {0}")]
     UnsupportedParam(String),
     #[error("unsupported pattern: {0}")]
@@ -459,6 +471,110 @@ fn match_pattern(
             m.insert(name.clone(), v.clone());
             Ok(Some(m))
         }
+        PatternKind::Unit => Ok(matches!(v, IrValue::Unit).then(HashMap::new)),
+        PatternKind::Int(n) => Ok(matches!(v, IrValue::Int(m) if m == n).then(HashMap::new)),
+        PatternKind::Float(f) => Ok(matches!(v, IrValue::Float(g) if g == f).then(HashMap::new)),
+        PatternKind::Str(s) => Ok(matches!(v, IrValue::Str(t) if t == s).then(HashMap::new)),
+        PatternKind::Char(c) => Ok(matches!(v, IrValue::Char(d) if d == c).then(HashMap::new)),
+        PatternKind::Symbol(s) => {
+            Ok(matches!(v, IrValue::Symbol(t) if t == s).then(HashMap::new))
+        }
+        PatternKind::Ctor { name, args } => {
+            let IrValue::Ctor { name: got, args: got_args } = v else {
+                return Ok(None);
+            };
+            if got != name {
+                return Ok(None);
+            }
+            if got_args.len() != args.len() {
+                return Ok(None);
+            }
+            let mut acc = HashMap::new();
+            for (p, v) in args.iter().zip(got_args.iter()) {
+                let Some(b) = match_pattern(p, v)? else {
+                    return Ok(None);
+                };
+                let Some(next) = merge_bindings(acc, b) else {
+                    return Ok(None);
+                };
+                acc = next;
+            }
+            Ok(Some(acc))
+        }
+        PatternKind::Tuple(ps) => {
+            let IrValue::Tuple(vs) = v else {
+                return Ok(None);
+            };
+            if ps.len() != vs.len() {
+                return Ok(None);
+            }
+            let mut acc = HashMap::new();
+            for (p, v) in ps.iter().zip(vs.iter()) {
+                let Some(b) = match_pattern(p, v)? else {
+                    return Ok(None);
+                };
+                let Some(next) = merge_bindings(acc, b) else {
+                    return Ok(None);
+                };
+                acc = next;
+            }
+            Ok(Some(acc))
+        }
+        PatternKind::List(ps) => {
+            let IrValue::List(vs) = v else {
+                return Ok(None);
+            };
+            if ps.len() != vs.len() {
+                return Ok(None);
+            }
+            let mut acc = HashMap::new();
+            for (p, v) in ps.iter().zip(vs.iter()) {
+                let Some(b) = match_pattern(p, v)? else {
+                    return Ok(None);
+                };
+                let Some(next) = merge_bindings(acc, b) else {
+                    return Ok(None);
+                };
+                acc = next;
+            }
+            Ok(Some(acc))
+        }
+        PatternKind::Cons(h, t) => {
+            let IrValue::List(vs) = v else {
+                return Ok(None);
+            };
+            if vs.is_empty() {
+                return Ok(None);
+            }
+            let head = &vs[0];
+            let tail = IrValue::List(vs[1..].to_vec());
+            let Some(bh) = match_pattern(h, head)? else {
+                return Ok(None);
+            };
+            let Some(bt) = match_pattern(t, &tail)? else {
+                return Ok(None);
+            };
+            Ok(merge_bindings(bh, bt))
+        }
+        PatternKind::Record(fields) => {
+            let IrValue::Record(map) = v else {
+                return Ok(None);
+            };
+            let mut acc = HashMap::new();
+            for f in fields {
+                let Some(vf) = map.get(&f.name) else {
+                    return Ok(None);
+                };
+                let Some(b) = match_pattern(&f.pattern, vf)? else {
+                    return Ok(None);
+                };
+                let Some(next) = merge_bindings(acc, b) else {
+                    return Ok(None);
+                };
+                acc = next;
+            }
+            Ok(Some(acc))
+        }
         PatternKind::TypeBind { pat, .. } => match_pattern(pat, v),
         PatternKind::As(a, b) => {
             let Some(ba) = match_pattern(a, v)? else {
@@ -469,13 +585,27 @@ fn match_pattern(
             };
             Ok(merge_bindings(ba, bb))
         }
-        PatternKind::Unit => Ok(matches!(v, IrValue::Unit).then(HashMap::new)),
-        PatternKind::Int(n) => Ok(matches!(v, IrValue::Int(m) if m == n).then(HashMap::new)),
-        PatternKind::Float(f) => Ok(matches!(v, IrValue::Float(g) if g == f).then(HashMap::new)),
-        PatternKind::Str(s) => Ok(matches!(v, IrValue::Str(t) if t == s).then(HashMap::new)),
-        PatternKind::Char(c) => Ok(matches!(v, IrValue::Char(d) if d == c).then(HashMap::new)),
-        // Not yet supported in CoreIR evaluator (PoC)
-        other => Err(IrEvalError::UnsupportedPattern(format!("{:?}", other))),
+    }
+}
+
+fn is_tuple_tag_symbol(s: &str) -> bool {
+    // Matches runtime tuple tag encoding like `.,,` (dot then commas).
+    let mut chars = s.chars();
+    if chars.next() != Some('.') {
+        return false;
+    }
+    let rest: Vec<char> = chars.collect();
+    !rest.is_empty() && rest.iter().all(|c| *c == ',')
+}
+
+fn symbol_to_value(s: &str) -> IrValue {
+    if s == "[]" {
+        return IrValue::List(vec![]);
+    }
+    if s.starts_with('.') && !is_tuple_tag_symbol(s) {
+        IrValue::Symbol(s.to_string())
+    } else {
+        IrValue::Ctor { name: s.to_string(), args: vec![] }
     }
 }
 
@@ -499,6 +629,32 @@ fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
                 tmp.push(ch);
                 format!("'{}'", tmp.escape_default())
             }
+            IrValue::Ctor { name, args } => {
+                if args.is_empty() {
+                    name.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        name,
+                        args.iter().map(print_ir_value).collect::<Vec<_>>().join(" ")
+                    )
+                }
+            }
+            IrValue::Symbol(s) => s.clone(),
+            IrValue::List(xs) => {
+                format!("[{}]", xs.iter().map(print_ir_value).collect::<Vec<_>>().join(", "))
+            }
+            IrValue::Tuple(xs) => {
+                format!("({})", xs.iter().map(print_ir_value).collect::<Vec<_>>().join(", "))
+            }
+            IrValue::Record(map) => {
+                let inner = map
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, print_ir_value(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", inner)
+            }
             IrValue::Raised(inner) => format!("^({})", match &**inner {
                 IrValue::Str(s) => s.clone(),
                 other => print_ir_value(other),
@@ -516,6 +672,19 @@ fn ir_equal(a: &IrValue, b: &IrValue) -> bool {
         (IrValue::Float(x), IrValue::Float(y)) => x == y,
         (IrValue::Str(x), IrValue::Str(y)) => x == y,
         (IrValue::Char(x), IrValue::Char(y)) => x == y,
+        (IrValue::Ctor { name: nx, args: ax }, IrValue::Ctor { name: ny, args: ay }) => {
+            nx == ny && ax.len() == ay.len() && ax.iter().zip(ay.iter()).all(|(x, y)| ir_equal(x, y))
+        }
+        (IrValue::Symbol(x), IrValue::Symbol(y)) => x == y,
+        (IrValue::List(x), IrValue::List(y)) => {
+            x.len() == y.len() && x.iter().zip(y.iter()).all(|(x, y)| ir_equal(x, y))
+        }
+        (IrValue::Tuple(x), IrValue::Tuple(y)) => {
+            x.len() == y.len() && x.iter().zip(y.iter()).all(|(x, y)| ir_equal(x, y))
+        }
+        (IrValue::Record(x), IrValue::Record(y)) => {
+            x.len() == y.len() && x.iter().all(|(k, vx)| y.get(k).is_some_and(|vy| ir_equal(vx, vy)))
+        }
         (IrValue::Raised(x), IrValue::Raised(y)) => ir_equal(x, y),
         _ => false,
     }
@@ -532,6 +701,10 @@ fn builtin_arity(name: &str) -> Option<usize> {
 fn eval_app(func: IrValue, arg: IrValue) -> Result<IrValue, IrEvalError> {
     match func {
         IrValue::Raised(_) => Ok(func),
+        IrValue::Ctor { name, mut args } => {
+            args.push(arg);
+            Ok(IrValue::Ctor { name, args })
+        }
         IrValue::Fun { param, body, mut env } => {
             let Some(bindings) = match_pattern(&param, &arg)? else {
                 return Ok(IrValue::Raised(Box::new(arg)));
@@ -574,7 +747,7 @@ fn eval_app(func: IrValue, arg: IrValue) -> Result<IrValue, IrEvalError> {
                 Err(IrEvalError::Unbound(name))
             }
         }
-        other => Err(IrEvalError::NotFunction(other)),
+        other => Err(IrEvalError::NotFunction(Box::new(other))),
     }
 }
 
@@ -586,7 +759,10 @@ fn eval_term_with_env(
         Op::Unit => Ok(IrValue::Unit),
         Op::Int(n) => Ok(IrValue::Int(*n)),
         Op::Float(f) => Ok(IrValue::Float(*f)),
-        Op::Bool(b) => Ok(IrValue::Str(if *b { "True".into() } else { "False".into() })),
+        Op::Bool(b) => Ok(IrValue::Ctor {
+            name: if *b { "True".into() } else { "False".into() },
+            args: vec![],
+        }),
         Op::Str(s) => Ok(IrValue::Str(s.clone())),
         Op::Char(c) => Ok(IrValue::Char(*c)),
         Op::Ref(n) => {
@@ -599,7 +775,7 @@ fn eval_term_with_env(
             }
             Err(IrEvalError::Unbound(n.clone()))
         }
-        Op::Symbol(s) => Ok(IrValue::Str(s.clone())), // minimal placeholder
+        Op::Symbol(s) => Ok(symbol_to_value(s)),
         Op::Raise { payload } => {
             let v = eval_term_with_env(payload, env)?;
             Ok(IrValue::Raised(Box::new(v)))
@@ -708,6 +884,28 @@ pub fn print_ir_value(v: &IrValue) -> String {
             tmp.push(ch);
             format!("'{}'", tmp.escape_default())
         }
+        IrValue::Ctor { name, args } => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                format!("{} {}", name, args.iter().map(print_ir_value).collect::<Vec<_>>().join(" "))
+            }
+        }
+        IrValue::Symbol(s) => s.clone(),
+        IrValue::List(xs) => {
+            format!("[{}]", xs.iter().map(print_ir_value).collect::<Vec<_>>().join(", "))
+        }
+        IrValue::Tuple(xs) => {
+            format!("({})", xs.iter().map(print_ir_value).collect::<Vec<_>>().join(", "))
+        }
+        IrValue::Record(map) => {
+            let inner = map
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, print_ir_value(v)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{}}}", inner)
+        }
         IrValue::Raised(inner) => format!("^({})", print_ir_value(inner)),
         IrValue::Fun { .. } | IrValue::Alt { .. } | IrValue::Builtin { .. } => "<fun>".into(),
     }
@@ -721,11 +919,30 @@ mod tests {
     fn int_expr(n: i64) -> Expr {
         Expr::new(ExprKind::Int(n), Span::new(0, 0))
     }
-    fn ref_expr(n: &str) -> Expr {
-        Expr::new(ExprKind::Ref(n.into()), Span::new(0, 0))
-    }
-    fn apply(f: Expr, a: Expr) -> Expr {
-        Expr::new(ExprKind::Apply { func: Box::new(f), arg: Box::new(a) }, Span::new(0, 0))
+
+    #[test]
+    fn eval_ctor_pattern_match_success_and_mismatch_raises_input() {
+        let pat = Pattern::new(
+            PatternKind::Ctor {
+                name: "Foo".into(),
+                args: vec![Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0))],
+            },
+            Span::new(0, 0),
+        );
+        let lam = Term::lambda(pat, Term::var("x"));
+
+        let foo_42 = Term::app(Term::new(Op::Symbol("Foo".into())), Term::int(42));
+        let ok = Term::app(lam.clone(), foo_42);
+        let v = eval_term(&ok).expect("eval ctor match");
+        assert_eq!(v, IrValue::Int(42));
+
+        let bar_1 = Term::app(Term::new(Op::Symbol("Bar".into())), Term::int(1));
+        let bad = Term::app(lam, bar_1.clone());
+        let v = eval_term(&bad).expect("eval ctor mismatch");
+        match v {
+            IrValue::Raised(payload) => assert_eq!(*payload, eval_term(&bar_1).unwrap()),
+            other => panic!("expected Raised(arg), got {other:?}"),
+        }
     }
 
     #[test]
