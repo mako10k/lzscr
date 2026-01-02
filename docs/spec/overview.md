@@ -13,4 +13,4 @@ Roadmap/source of truth for prioritization: see ../ROADMAP.md.
   - Sugar: !sym → (~effects .sym); constructors use bare identifiers, symbols remain `.name` atoms
   - Sequential sugar: !{ … } → chain/bind chaining
 - Analysis: duplicate detection/unbound/shadowing/unused params (CLI --analyze)
-- Tools: CLI (-e eval, --strict-effects, --analyze, --format json, --dump-coreir, --dump-coreir-json). CI runs fmt/clippy/test/audit/deny/coverage.
+- Tools: CLI (-e eval, --strict-effects, --analyze, --format json, --dump-coreir, --dump-coreir-json, --dump-llvmir). CI runs fmt/clippy/test/audit/deny/coverage.

@@ -49,6 +49,18 @@ fn dump_coreir_json_outputs_term() {
 }
 
 #[test]
+fn dump_llvmir_outputs_basic_ir() {
+    let mut cmd = cli_cmd();
+    cmd.args(["-e", "1 + 2 * 3", "--dump-llvmir", "--no-stdlib"]);
+    cmd.assert().success().stdout(
+        contains("define i64 @main()")
+            .and(contains("mul i64 2, 3"))
+            .and(contains("add i64 1"))
+            .and(contains("ret i64")),
+    );
+}
+
+#[test]
 fn file_option_executes_program() {
     // Create a temporary file with top-level bindings and an expression
     let mut tmp = NamedTempFile::new().unwrap();

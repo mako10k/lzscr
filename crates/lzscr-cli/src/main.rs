@@ -441,6 +441,10 @@ struct Opt {
     #[arg(long = "dump-coreir-json", default_value_t = false)]
     dump_coreir_json: bool,
 
+    /// Dump LLVM IR (text, PoC; lowers from Core IR subset)
+    #[arg(long = "dump-llvmir", default_value_t = false)]
+    dump_llvmir: bool,
+
     /// Evaluate via Core IR evaluator (PoC)
     #[arg(long = "eval-coreir", default_value_t = false)]
     eval_coreir: bool,
@@ -1005,8 +1009,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if opt.analyze_trace {
         eprintln!("trace: ast-nodes {}", ast_nodes);
     }
-    // Core IR dump/eval modes take precedence over analyze/execute
-    if opt.dump_coreir || opt.dump_coreir_json || opt.eval_coreir {
+    // Core IR / LLVM IR dump/eval modes take precedence over analyze/execute
+    if opt.dump_coreir || opt.dump_coreir_json || opt.eval_coreir || opt.dump_llvmir {
         let term = lower_expr_to_core(&ast);
         if opt.dump_coreir_json {
             println!("{}", serde_json::to_string_pretty(&term)?);
@@ -1017,6 +1021,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(v) => println!("{}", print_ir_value(&v)),
                 Err(e) => {
                     eprintln!("coreir eval error: {}", e);
+                    std::process::exit(2);
+                }
+            }
+        } else if opt.dump_llvmir {
+            match lzscr_llvmir::lower_to_llvm_ir_text(&term) {
+                Ok(s) => print!("{}", s),
+                Err(e) => {
+                    eprintln!("llvmir lower error: {}", e);
                     std::process::exit(2);
                 }
             }
