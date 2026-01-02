@@ -443,12 +443,26 @@ struct Opt {
     dump_coreir_json: bool,
 
     /// Dump LLVM IR (text, PoC; lowers from Core IR subset)
-    #[arg(long = "dump-llvmir", default_value_t = false)]
+    #[arg(long = "dump-llvmir", default_value_t = false, conflicts_with = "build_exe")]
     dump_llvmir: bool,
 
     /// Build a native executable (PoC; requires clang or llc+cc)
-    #[arg(long = "build-exe")]
+    #[arg(
+        long = "build-exe",
+        conflicts_with_all = [
+            "dump_coreir",
+            "dump_coreir_json",
+            "eval_coreir",
+            "dump_llvmir",
+            "analyze",
+            "format_code"
+        ]
+    )]
     build_exe: Option<PathBuf>,
+
+    /// Allow overwriting the output path used by --build-exe
+    #[arg(long = "build-exe-overwrite", default_value_t = false, requires = "build_exe")]
+    build_exe_overwrite: bool,
 
     /// Evaluate via Core IR evaluator (PoC)
     #[arg(long = "eval-coreir", default_value_t = false)]
@@ -545,7 +559,18 @@ fn run_cmd(program: &str, args: &[String]) -> Result<(), String> {
     ))
 }
 
-fn build_executable_from_coreir(term: &lzscr_coreir::Term, out_path: &Path) -> Result<(), String> {
+fn build_executable_from_coreir(
+    term: &lzscr_coreir::Term,
+    out_path: &Path,
+    overwrite: bool,
+) -> Result<(), String> {
+    if out_path.exists() && !overwrite {
+        return Err(format!(
+            "output already exists: {} (use --build-exe-overwrite to replace)",
+            out_path.display()
+        ));
+    }
+
     let ir = lzscr_llvmir::lower_to_llvm_ir_text(term).map_err(|e| e.to_string())?;
 
     if let Some(parent) = out_path.parent() {
@@ -1133,7 +1158,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         } else if let Some(out_path) = opt.build_exe {
-            if let Err(e) = build_executable_from_coreir(&term, out_path.as_path()) {
+            if let Err(e) =
+                build_executable_from_coreir(&term, out_path.as_path(), opt.build_exe_overwrite)
+            {
                 eprintln!("build-exe error: {e}");
                 std::process::exit(2);
             }

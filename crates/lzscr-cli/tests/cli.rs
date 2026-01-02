@@ -80,8 +80,26 @@ fn build_exe_produces_runnable_binary_when_toolchain_available() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("lzscr_out");
 
+    // First build should succeed
     let mut cmd = cli_cmd();
     cmd.args(["-e", "1 + 2 * 3", "--build-exe", out.to_str().unwrap(), "--no-stdlib"]);
+    cmd.assert().success();
+
+    // Second build without overwrite should fail
+    let mut cmd = cli_cmd();
+    cmd.args(["-e", "1 + 2 * 3", "--build-exe", out.to_str().unwrap(), "--no-stdlib"]);
+    cmd.assert().failure().stderr(contains("output already exists"));
+
+    // With overwrite flag it should succeed again
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "1 + 2 * 3",
+        "--build-exe",
+        out.to_str().unwrap(),
+        "--build-exe-overwrite",
+        "--no-stdlib",
+    ]);
     cmd.assert().success();
 
     let st = Command::new(&out).status().unwrap();
