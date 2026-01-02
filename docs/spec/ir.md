@@ -8,6 +8,8 @@ Location: `crates/lzscr-coreir`
   - `Unit | Int(i64) | Str(String)`
   - `Ref(String) | Symbol(String)`
   - `List { items: Vec<Term> }`
+  - `Record { fields: Vec<RecordFieldTerm> }` (tracks `name_span`)
+  - `ModeMap { fields: Vec<RecordFieldTerm> }` (tracks `name_span`)
   - `Lam { param, body } | App { func, arg }`
   - `Seq { first, second } | Chain { first, second } | Bind { value, cont }`
   - `Raise { payload } | Catch { left, right } | OrElse { left, right }` (exceptions/control)
@@ -21,6 +23,8 @@ Lowering `lower_expr_to_core(&Expr) -> Term`:
 - Convert AST `^(e)` / `(a ^| h)` / `(a || b)` into `Raise` / `Catch` / `OrElse`.
 - Convert AST `(l | r)` (AltLambda) into `Alt { left=l, right=r }`.
 - Convert AST `[a, b, c]` into `List { items: [a, b, c] }`.
+- Convert AST `{ k1: e1, k2: e2 }` into `Record { fields: ... }` and preserve each field's `name_span`.
+- Convert AST `.{ M1: e1, M2: e2 }` into `ModeMap { fields: ... }` and preserve each field's `name_span`.
 - Everything else maps shape-wise.
 
 Textual form:

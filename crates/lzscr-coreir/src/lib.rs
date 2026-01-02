@@ -7,6 +7,7 @@
 //! Source of truth: docs/ROADMAP.md
 
 use lzscr_ast::ast::*;
+use lzscr_ast::span::Span;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
@@ -36,6 +37,8 @@ pub enum Op {
     Char(i32),
     Unit,
     List { items: Vec<Term> },
+    Record { fields: Vec<RecordFieldTerm> },
+    ModeMap { fields: Vec<RecordFieldTerm> },
     Lam { param: Pattern, body: Box<Term> },
     App { func: Box<Term>, arg: Box<Term> },
     Seq { first: Box<Term>, second: Box<Term> },
@@ -62,6 +65,13 @@ pub enum Op {
     Alt { left: Box<Term>, right: Box<Term> },
     // Recursive let-group to reflect lazy, mutually recursive semantics
     LetRec { bindings: Vec<(String, Term)>, body: Box<Term> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RecordFieldTerm {
+    pub name: String,
+    pub name_span: Span,
+    pub value: Term,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -208,36 +218,28 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
         ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
         ExprKind::Record(fields) => {
-            // Lower structurally to a synthetic Op::Record (if exists) else build associative nest.
-            // Since no dedicated Op currently, reuse a tagged symbol chain: start with Symbol("RECORD") then fold KV.
-            let mut acc = Term::new(Op::Symbol("RECORD".into()));
-            for f in fields {
-                let kv_sym = Term::new(Op::Symbol("KV".into()));
-                let key = Term::new(Op::Str(f.name.clone()));
-                let kv1 = Term::new(Op::App { func: Box::new(kv_sym), arg: Box::new(key) });
-                let kv2 = Term::new(Op::App {
-                    func: Box::new(kv1),
-                    arg: Box::new(lower_expr_to_core(&f.value)),
-                });
-                acc = Term::new(Op::App { func: Box::new(acc), arg: Box::new(kv2) });
-            }
-            acc
+            Term::new(Op::Record {
+                fields: fields
+                    .iter()
+                    .map(|f| RecordFieldTerm {
+                        name: f.name.clone(),
+                        name_span: f.name_span,
+                        value: lower_expr_to_core(&f.value),
+                    })
+                    .collect(),
+            })
         }
         ExprKind::ModeMap(fields) => {
-            // ModeMap: similar structure to Record, but tagged as "MODEMAP"
-            // Will be desugared further in Type and Runtime phases
-            let mut acc = Term::new(Op::Symbol("MODEMAP".into()));
-            for f in fields {
-                let kv_sym = Term::new(Op::Symbol("KV".into()));
-                let key = Term::new(Op::Str(f.name.clone()));
-                let kv1 = Term::new(Op::App { func: Box::new(kv_sym), arg: Box::new(key) });
-                let kv2 = Term::new(Op::App {
-                    func: Box::new(kv1),
-                    arg: Box::new(lower_expr_to_core(&f.value)),
-                });
-                acc = Term::new(Op::App { func: Box::new(acc), arg: Box::new(kv2) });
-            }
-            acc
+            Term::new(Op::ModeMap {
+                fields: fields
+                    .iter()
+                    .map(|f| RecordFieldTerm {
+                        name: f.name.clone(),
+                        name_span: f.name_span,
+                        value: lower_expr_to_core(&f.value),
+                    })
+                    .collect(),
+            })
         }
         ExprKind::LetGroup { bindings, body, .. } => {
             let bs: Vec<(String, Term)> =
@@ -374,6 +376,22 @@ pub fn print_term(t: &Term) -> String {
         Op::List { items } => {
             format!("[{}]", items.iter().map(print_term).collect::<Vec<_>>().join(", "))
         }
+        Op::Record { fields } => {
+            let inner = fields
+                .iter()
+                .map(|f| format!("{}: {}", f.name, print_term(&f.value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{}}}", inner)
+        }
+        Op::ModeMap { fields } => {
+            let inner = fields
+                .iter()
+                .map(|f| format!("{}: {}", f.name, print_term(&f.value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(".{{{}}}", inner)
+        }
         Op::Lam { param, body } => format!("\\{} -> {}", print_pattern(param), print_term(body)),
         Op::App { func, arg } => format!("({} {})", print_term(func), print_term(arg)),
         Op::Seq { first, second } => format!("(~seq {} {})", print_term(first), print_term(second)),
@@ -417,6 +435,8 @@ pub enum IrValue {
     Tuple(Vec<IrValue>),
     /// Concrete record value.
     Record(BTreeMap<String, IrValue>),
+    /// Concrete modemap value (record extension).
+    ModeMap(BTreeMap<String, IrValue>),
     Raised(Box<IrValue>),
     Fun { param: Pattern, body: Term, env: HashMap<String, IrValue> },
     Alt { left: Box<IrValue>, right: Box<IrValue> },
@@ -551,8 +571,9 @@ fn match_pattern(
             Ok(merge_bindings(bh, bt))
         }
         PatternKind::Record(fields) => {
-            let IrValue::Record(map) = v else {
-                return Ok(None);
+            let map = match v {
+                IrValue::Record(map) | IrValue::ModeMap(map) => map,
+                _ => return Ok(None),
             };
             let mut acc = HashMap::new();
             for f in fields {
@@ -649,6 +670,14 @@ fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
                     .join(", ");
                 format!("{{{}}}", inner)
             }
+            IrValue::ModeMap(map) => {
+                let inner = map
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, print_ir_value(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(".{{{}}}", inner)
+            }
             IrValue::Raised(inner) => format!("^({})", match &**inner {
                 IrValue::Str(s) => s.clone(),
                 other => print_ir_value(other),
@@ -677,6 +706,9 @@ fn ir_equal(a: &IrValue, b: &IrValue) -> bool {
             x.len() == y.len() && x.iter().zip(y.iter()).all(|(x, y)| ir_equal(x, y))
         }
         (IrValue::Record(x), IrValue::Record(y)) => {
+            x.len() == y.len() && x.iter().all(|(k, vx)| y.get(k).is_some_and(|vy| ir_equal(vx, vy)))
+        }
+        (IrValue::ModeMap(x), IrValue::ModeMap(y)) => {
             x.len() == y.len() && x.iter().all(|(k, vx)| y.get(k).is_some_and(|vy| ir_equal(vx, vy)))
         }
         (IrValue::Raised(x), IrValue::Raised(y)) => ir_equal(x, y),
@@ -769,6 +801,28 @@ fn eval_term_with_env(
                 vs.push(v);
             }
             Ok(IrValue::List(vs))
+        }
+        Op::Record { fields } => {
+            let mut map = BTreeMap::new();
+            for f in fields {
+                let v = eval_term_with_env(&f.value, env)?;
+                if let IrValue::Raised(_) = v {
+                    return Ok(v);
+                }
+                map.insert(f.name.clone(), v);
+            }
+            Ok(IrValue::Record(map))
+        }
+        Op::ModeMap { fields } => {
+            let mut map = BTreeMap::new();
+            for f in fields {
+                let v = eval_term_with_env(&f.value, env)?;
+                if let IrValue::Raised(_) = v {
+                    return Ok(v);
+                }
+                map.insert(f.name.clone(), v);
+            }
+            Ok(IrValue::ModeMap(map))
         }
         Op::Ref(n) => {
             if let Some(v) = env.get(n).cloned() {
@@ -911,6 +965,14 @@ pub fn print_ir_value(v: &IrValue) -> String {
                 .join(", ");
             format!("{{{}}}", inner)
         }
+        IrValue::ModeMap(map) => {
+            let inner = map
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, print_ir_value(v)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(".{{{}}}", inner)
+        }
         IrValue::Raised(inner) => format!("^({})", print_ir_value(inner)),
         IrValue::Fun { .. } | IrValue::Alt { .. } | IrValue::Builtin { .. } => "<fun>".into(),
     }
@@ -919,7 +981,6 @@ pub fn print_ir_value(v: &IrValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lzscr_ast::span::Span;
 
     fn int_expr(n: i64) -> Expr {
         Expr::new(ExprKind::Int(n), Span::new(0, 0))
@@ -941,6 +1002,44 @@ mod tests {
         assert_eq!(print_term(&t), "[1, 2, 3]");
         let v = eval_term(&t).expect("eval list");
         assert_eq!(print_ir_value(&v), "[1, 2, 3]");
+    }
+
+    #[test]
+    fn lower_record_and_modemap_are_explicit_ops_and_preserve_name_spans() {
+        let a = ExprRecordField::new("a".into(), Span::new(10, 1), int_expr(1));
+        let b = ExprRecordField::new("b".into(), Span::new(20, 1), int_expr(2));
+
+        let rec = Expr::new(ExprKind::Record(vec![a.clone(), b.clone()]), Span::new(0, 0));
+        let t = lower_expr_to_core(&rec);
+        match &t.op {
+            Op::Record { fields } => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "a");
+                assert_eq!(fields[0].name_span, Span::new(10, 1));
+                assert_eq!(fields[1].name, "b");
+                assert_eq!(fields[1].name_span, Span::new(20, 1));
+            }
+            other => panic!("expected Op::Record, got {:?}", other),
+        }
+        assert_eq!(print_term(&t), "{a: 1, b: 2}");
+        let v = eval_term(&t).expect("eval record");
+        assert_eq!(print_ir_value(&v), "{a: 1, b: 2}");
+
+        let mm = Expr::new(ExprKind::ModeMap(vec![a, b]), Span::new(0, 0));
+        let t = lower_expr_to_core(&mm);
+        match &t.op {
+            Op::ModeMap { fields } => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "a");
+                assert_eq!(fields[0].name_span, Span::new(10, 1));
+                assert_eq!(fields[1].name, "b");
+                assert_eq!(fields[1].name_span, Span::new(20, 1));
+            }
+            other => panic!("expected Op::ModeMap, got {:?}", other),
+        }
+        assert_eq!(print_term(&t), ".{a: 1, b: 2}");
+        let v = eval_term(&t).expect("eval modemap");
+        assert_eq!(print_ir_value(&v), ".{a: 1, b: 2}");
     }
 
     #[test]
