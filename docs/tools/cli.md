@@ -21,8 +21,11 @@ Rust-based PoC CLI. Provides expression evaluation, static analysis, and Core IR
   - `lzscr-cli -e "..." --eval-coreir`
 - LLVM IR dump (PoC)
   - `lzscr-cli -e "..." --dump-llvmir`
+- Build native executable (PoC)
+  - `lzscr-cli -e "..." --build-exe /path/to/out`
+  - Requires an external toolchain: `clang` (recommended) or `llc` + `cc`.
 
-Mode precedence: `--dump-coreir-json | --dump-coreir | --eval-coreir | --dump-llvmir` > `--analyze` > evaluation.
+Mode precedence: `--dump-coreir-json | --dump-coreir | --eval-coreir | --dump-llvmir | --build-exe` > `--analyze` > evaluation.
 
 ## Examples
 

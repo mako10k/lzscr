@@ -11,7 +11,8 @@ use lzscr_runtime::{eval, Env, Value};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Instant;
 
 type TypeDeclsAndExprs = (Vec<TypeDecl>, Vec<(Pattern, Expr)>);
@@ -445,6 +446,10 @@ struct Opt {
     #[arg(long = "dump-llvmir", default_value_t = false)]
     dump_llvmir: bool,
 
+    /// Build a native executable (PoC; requires clang or llc+cc)
+    #[arg(long = "build-exe")]
+    build_exe: Option<PathBuf>,
+
     /// Evaluate via Core IR evaluator (PoC)
     #[arg(long = "eval-coreir", default_value_t = false)]
     eval_coreir: bool,
@@ -516,6 +521,96 @@ struct Opt {
     /// Print timing of analysis phases and sizes to stderr
     #[arg(long = "analyze-trace", default_value_t = false)]
     analyze_trace: bool,
+}
+
+fn tool_available(program: &str, args: &[&str]) -> bool {
+    Command::new(program).args(args).output().is_ok()
+}
+
+fn run_cmd(program: &str, args: &[String]) -> Result<(), String> {
+    let out = Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|e| format!("failed to spawn {program}: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    Err(format!(
+        "{program} failed (exit={:?})\nstdout:\n{}\nstderr:\n{}",
+        out.status.code(),
+        stdout,
+        stderr
+    ))
+}
+
+fn build_executable_from_coreir(term: &lzscr_coreir::Term, out_path: &Path) -> Result<(), String> {
+    let ir = lzscr_llvmir::lower_to_llvm_ir_text(term).map_err(|e| e.to_string())?;
+
+    if let Some(parent) = out_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("failed to create output dir {}: {e}", parent.display()))?;
+        }
+    }
+
+    let tmp_dir = std::env::temp_dir();
+    let nonce = format!(
+        "lzscr_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
+    let ll_path = tmp_dir.join(format!("{nonce}.ll"));
+    fs::write(&ll_path, ir).map_err(|e| format!("failed to write {}: {e}", ll_path.display()))?;
+
+    let out_str = out_path.to_string_lossy().to_string();
+    let ll_str = ll_path.to_string_lossy().to_string();
+
+    // Prefer clang: it can compile LLVM IR directly.
+    let clang_ok = tool_available("clang", &["--version"]);
+    if clang_ok {
+        let args = vec![
+            "-O0".to_string(),
+            "-x".to_string(),
+            "ir".to_string(),
+            ll_str,
+            "-o".to_string(),
+            out_str,
+        ];
+        let res = run_cmd("clang", &args);
+        let _ = fs::remove_file(&ll_path);
+        return res;
+    }
+
+    // Fallback: llc -> object, then link with cc.
+    let llc_ok = tool_available("llc", &["--version"]);
+    let cc_ok = tool_available("cc", &["--version"]);
+    if llc_ok && cc_ok {
+        let obj_path = tmp_dir.join(format!("{nonce}.o"));
+        let obj_str = obj_path.to_string_lossy().to_string();
+
+        let llc_args = vec![
+            "-filetype=obj".to_string(),
+            ll_path.to_string_lossy().to_string(),
+            "-o".to_string(),
+            obj_str.clone(),
+        ];
+        run_cmd("llc", &llc_args)?;
+
+        let cc_args = vec![obj_str, "-o".to_string(), out_path.to_string_lossy().to_string()];
+        let res = run_cmd("cc", &cc_args);
+
+        let _ = fs::remove_file(&ll_path);
+        let _ = fs::remove_file(&obj_path);
+        return res;
+    }
+
+    let _ = fs::remove_file(&ll_path);
+    Err("no LLVM toolchain found: install 'clang' (recommended) or provide 'llc' + 'cc'".into())
 }
 
 /// Display a type error using structured diagnostic information.
@@ -1009,8 +1104,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if opt.analyze_trace {
         eprintln!("trace: ast-nodes {}", ast_nodes);
     }
-    // Core IR / LLVM IR dump/eval modes take precedence over analyze/execute
-    if opt.dump_coreir || opt.dump_coreir_json || opt.eval_coreir || opt.dump_llvmir {
+    // Core IR / LLVM IR dump/eval/build modes take precedence over analyze/execute
+    if opt.dump_coreir
+        || opt.dump_coreir_json
+        || opt.eval_coreir
+        || opt.dump_llvmir
+        || opt.build_exe.is_some()
+    {
         let term = lower_expr_to_core(&ast);
         if opt.dump_coreir_json {
             println!("{}", serde_json::to_string_pretty(&term)?);
@@ -1031,6 +1131,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("llvmir lower error: {}", e);
                     std::process::exit(2);
                 }
+            }
+        } else if let Some(out_path) = opt.build_exe {
+            if let Err(e) = build_executable_from_coreir(&term, out_path.as_path()) {
+                eprintln!("build-exe error: {e}");
+                std::process::exit(2);
             }
         }
         return Ok(());
@@ -1847,8 +1952,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 } // end of main()
 
 // ---------- ~require expansion ----------
-
-use std::path::Path;
 fn build_module_search_paths(stdlib_dir: &Path, module_path: Option<&str>) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     // 1) current directory

@@ -60,6 +60,34 @@ fn dump_llvmir_outputs_basic_ir() {
     );
 }
 
+fn have_build_toolchain() -> bool {
+    let clang_ok = Command::new("clang").arg("--version").output().is_ok();
+    if clang_ok {
+        return true;
+    }
+    let llc_ok = Command::new("llc").arg("--version").output().is_ok();
+    let cc_ok = Command::new("cc").arg("--version").output().is_ok();
+    llc_ok && cc_ok
+}
+
+#[test]
+fn build_exe_produces_runnable_binary_when_toolchain_available() {
+    if !have_build_toolchain() {
+        eprintln!("skip: no clang/llc toolchain available");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("lzscr_out");
+
+    let mut cmd = cli_cmd();
+    cmd.args(["-e", "1 + 2 * 3", "--build-exe", out.to_str().unwrap(), "--no-stdlib"]);
+    cmd.assert().success();
+
+    let st = Command::new(&out).status().unwrap();
+    assert_eq!(st.code(), Some(7));
+}
+
 #[test]
 fn file_option_executes_program() {
     // Create a temporary file with top-level bindings and an expression
