@@ -413,6 +413,7 @@ pub enum IrValue {
     Char(i32),
     Raised(Box<IrValue>),
     Fun { param: Pattern, body: Term, env: HashMap<String, IrValue> },
+    Alt { left: Box<IrValue>, right: Box<IrValue> },
     Builtin { name: String, args: Vec<IrValue> },
 }
 
@@ -502,10 +503,21 @@ fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
                 IrValue::Str(s) => s.clone(),
                 other => print_ir_value(other),
             }),
-            IrValue::Fun { .. } => "<fun>".into(),
-            IrValue::Builtin { .. } => "<fun>".into(),
+            IrValue::Fun { .. } | IrValue::Alt { .. } | IrValue::Builtin { .. } => "<fun>".into(),
         })),
         _ => Err(IrEvalError::Arity(name.into())),
+    }
+}
+
+fn ir_equal(a: &IrValue, b: &IrValue) -> bool {
+    match (a, b) {
+        (IrValue::Unit, IrValue::Unit) => true,
+        (IrValue::Int(x), IrValue::Int(y)) => x == y,
+        (IrValue::Float(x), IrValue::Float(y)) => x == y,
+        (IrValue::Str(x), IrValue::Str(y)) => x == y,
+        (IrValue::Char(x), IrValue::Char(y)) => x == y,
+        (IrValue::Raised(x), IrValue::Raised(y)) => ir_equal(x, y),
+        _ => false,
     }
 }
 
@@ -528,6 +540,19 @@ fn eval_app(func: IrValue, arg: IrValue) -> Result<IrValue, IrEvalError> {
                 env.insert(k, v);
             }
             eval_term_with_env(&body, &mut env)
+        }
+        IrValue::Alt { left, right } => {
+            let input = arg;
+            match eval_app((*left).clone(), input.clone())? {
+                IrValue::Raised(payload) => {
+                    if ir_equal(payload.as_ref(), &input) {
+                        eval_app((*right).clone(), input)
+                    } else {
+                        Ok(IrValue::Raised(payload))
+                    }
+                }
+                other => Ok(other),
+            }
         }
         IrValue::Builtin { name, mut args } => {
             args.push(arg);
@@ -595,7 +620,17 @@ fn eval_term_with_env(
                 other => Ok(other),
             }
         }
-        Op::Alt { .. } => Err(IrEvalError::UnsupportedOp("Alt".into())),
+        Op::Alt { left, right } => {
+            let lv = eval_term_with_env(left, env)?;
+            if let IrValue::Raised(_) = lv {
+                return Ok(lv);
+            }
+            let rv = eval_term_with_env(right, env)?;
+            if let IrValue::Raised(_) = rv {
+                return Ok(rv);
+            }
+            Ok(IrValue::Alt { left: Box::new(lv), right: Box::new(rv) })
+        }
         Op::Lam { param, body } => {
             // Keep full pattern for alt/catch semantics.
             Ok(IrValue::Fun { param: param.clone(), body: (*body.clone()), env: env.clone() })
@@ -674,7 +709,7 @@ pub fn print_ir_value(v: &IrValue) -> String {
             format!("'{}'", tmp.escape_default())
         }
         IrValue::Raised(inner) => format!("^({})", print_ir_value(inner)),
-        IrValue::Fun { .. } | IrValue::Builtin { .. } => "<fun>".into(),
+        IrValue::Fun { .. } | IrValue::Alt { .. } | IrValue::Builtin { .. } => "<fun>".into(),
     }
 }
 
@@ -1048,5 +1083,31 @@ mod tests {
 
         let result = eval_term(&expr).expect("eval lambda with convenience constructors");
         assert_eq!(print_ir_value(&result), "6");
+    }
+
+    #[test]
+    fn eval_alt_fallback_on_pattern_mismatch_only() {
+        // Left matches only 1; right matches anything.
+        // Apply to 2 => left mismatches => ^(2) equals input => fallback => 20
+        let left = Term::lambda(
+            Pattern::new(PatternKind::Int(1), Span::new(0, 0)),
+            Term::int(10),
+        );
+        let right = Term::lambda(Pattern::new(PatternKind::Wildcard, Span::new(0, 0)), Term::int(20));
+        let alt = Term::new(Op::Alt { left: Box::new(left), right: Box::new(right) });
+        let app = Term::app(alt, Term::int(2));
+        let v = eval_term(&app).expect("eval alt");
+        assert_eq!(print_ir_value(&v), "20");
+
+        // If left raises a payload not equal to input, it should NOT fallback.
+        let left2 = Term::lambda(
+            Pattern::new(PatternKind::Wildcard, Span::new(0, 0)),
+            Term::new(Op::Raise { payload: Box::new(Term::int(999)) }),
+        );
+        let right2 = Term::lambda(Pattern::new(PatternKind::Wildcard, Span::new(0, 0)), Term::int(1));
+        let alt2 = Term::new(Op::Alt { left: Box::new(left2), right: Box::new(right2) });
+        let app2 = Term::app(alt2, Term::int(2));
+        let v2 = eval_term(&app2).expect("eval alt");
+        assert_eq!(print_ir_value(&v2), "^(999)");
     }
 }
