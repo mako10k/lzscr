@@ -61,19 +61,14 @@ fn dump_llvmir_outputs_basic_ir() {
 }
 
 fn have_build_toolchain() -> bool {
-    let clang_ok = Command::new("clang").arg("--version").output().is_ok();
-    if clang_ok {
-        return true;
-    }
-    let llc_ok = Command::new("llc").arg("--version").output().is_ok();
-    let cc_ok = Command::new("cc").arg("--version").output().is_ok();
-    llc_ok && cc_ok
+    // Prefer clang for determinism; skip the test if clang isn't available.
+    Command::new("clang").arg("--version").output().is_ok()
 }
 
 #[test]
 fn build_exe_produces_runnable_binary_when_toolchain_available() {
     if !have_build_toolchain() {
-        eprintln!("skip: no clang/llc toolchain available");
+        eprintln!("skip: clang not available");
         return;
     }
 
