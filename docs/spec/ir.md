@@ -13,7 +13,7 @@ Location: `crates/lzscr-coreir`
   - `List { items: Vec<Term> }`
   - `Tuple { items: Vec<Term> }`
   - `Record { fields: Vec<RecordFieldTerm> }` (tracks `name_span`)
-  - `ModeMap { fields: Vec<RecordFieldTerm> }` (tracks `name_span`)
+  - `ModeMap { fields: Vec<RecordFieldTerm>, default: Option<Box<Term>> }` (tracks `name_span`, optional default arm)
   - `Select { label, label_span, target }` (ModeMap selection)
   - `Lam { param, body } | App { func, arg }`
   - `Seq { first, second } | Chain { first, second } | Bind { value, cont }`
@@ -29,7 +29,8 @@ Lowering `lower_expr_to_core(&Expr) -> Term`:
 - Convert AST `(l | r)` (AltLambda) into `Alt { left=l, right=r }`.
 - Convert AST `[a, b, c]` into `List { items: [a, b, c] }`.
 - Convert AST `{ k1: e1, k2: e2 }` into `Record { fields: ... }` and preserve each field's `name_span`.
-- Convert AST `.{ M1: e1, M2: e2 }` into `ModeMap { fields: ... }` and preserve each field's `name_span`.
+- Convert AST `.{ M1: e1, M2: e2 }` into `ModeMap { fields: ..., default: None }` and preserve each field's `name_span`.
+- Convert AST `.{ M1: e1, M2: e2; eDefault }` into `ModeMap { fields: ..., default: Some(eDefault) }`.
 - Convert AST `(.select .M e)` into `Select { label=".M", label_span, target=e }`.
 - Convert AST `(.M e)` (ModeMap selection sugar; excluding `.select` itself and tuple tags like `.,`) into `Select { label=".M", label_span, target=e }`.
 - Convert AST bare symbols/constructors (`ExprKind::Symbol(s)`) into either:

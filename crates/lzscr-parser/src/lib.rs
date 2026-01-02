@@ -1413,7 +1413,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     if matches!(nxt.tok, Tok::LBrace) {
                         let _ = bump(i, toks); // consume '{'
 
-                        // Parse mode map fields
+                        // Parse mode map fields (optionally with a default arm `; exprDefault`).
                         if let Some(check_empty) = peek(*i, toks) {
                             if matches!(check_empty.tok, Tok::RBrace) {
                                 let r = bump(i, toks).unwrap();
@@ -1421,11 +1421,42 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                     t.span.offset,
                                     r.span.offset + r.span.len - t.span.offset,
                                 );
-                                return Ok(Expr::new(ExprKind::ModeMap(vec![]), span_all));
+                                return Ok(Expr::new(
+                                    ExprKind::ModeMap { fields: vec![], default: None },
+                                    span_all,
+                                ));
+                            }
+                            if matches!(check_empty.tok, Tok::Semicolon) {
+                                let _ = bump(i, toks); // consume ';'
+                                let default_expr = parse_expr_bp(i, toks, 0)?;
+                                let rb = bump(i, toks).ok_or_else(|| {
+                                    ParseError::Generic(
+                                        "expected } after mode map default arm".into(),
+                                    )
+                                })?;
+                                if !matches!(rb.tok, Tok::RBrace) {
+                                    return Err(ParseError::WithSpan {
+                                        msg: "expected } after mode map default arm".into(),
+                                        span_offset: rb.span.offset,
+                                        span_len: rb.span.len,
+                                    });
+                                }
+                                let span_all = Span::new(
+                                    t.span.offset,
+                                    rb.span.offset + rb.span.len - t.span.offset,
+                                );
+                                return Ok(Expr::new(
+                                    ExprKind::ModeMap {
+                                        fields: vec![],
+                                        default: Some(Box::new(default_expr)),
+                                    },
+                                    span_all,
+                                ));
                             }
                         }
 
                         let mut fields: Vec<lzscr_ast::ast::ExprRecordField> = Vec::new();
+                        let mut default: Option<Box<Expr>> = None;
                         loop {
                             let ktok = bump(i, toks)
                                 .ok_or_else(|| ParseError::Generic("expected mode name".into()))?;
@@ -1453,7 +1484,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                             let val = parse_expr_bp(i, toks, 0)?;
                             fields.push(lzscr_ast::ast::ExprRecordField::new(key, key_span, val));
                             let sep = bump(i, toks).ok_or_else(|| {
-                                ParseError::Generic("expected , or } in mode map".into())
+                                ParseError::Generic(
+                                    "expected , or } (or ; default) in mode map".into(),
+                                )
                             })?;
                             match sep.tok {
                                 Tok::Comma => continue,
@@ -1462,11 +1495,38 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                                         t.span.offset,
                                         sep.span.offset + sep.span.len - t.span.offset,
                                     );
-                                    return Ok(Expr::new(ExprKind::ModeMap(fields), span_all));
+                                    return Ok(Expr::new(
+                                        ExprKind::ModeMap { fields, default },
+                                        span_all,
+                                    ));
+                                }
+                                Tok::Semicolon => {
+                                    let d = parse_expr_bp(i, toks, 0)?;
+                                    default = Some(Box::new(d));
+                                    let rb = bump(i, toks).ok_or_else(|| {
+                                        ParseError::Generic(
+                                            "expected } after mode map default arm".into(),
+                                        )
+                                    })?;
+                                    if !matches!(rb.tok, Tok::RBrace) {
+                                        return Err(ParseError::WithSpan {
+                                            msg: "expected } after mode map default arm".into(),
+                                            span_offset: rb.span.offset,
+                                            span_len: rb.span.len,
+                                        });
+                                    }
+                                    let span_all = Span::new(
+                                        t.span.offset,
+                                        rb.span.offset + rb.span.len - t.span.offset,
+                                    );
+                                    return Ok(Expr::new(
+                                        ExprKind::ModeMap { fields, default },
+                                        span_all,
+                                    ));
                                 }
                                 _ => {
                                     return Err(ParseError::WithSpan {
-                                        msg: "expected , or } in mode map".into(),
+                                        msg: "expected , or } (or ; default) in mode map".into(),
                                         span_offset: sep.span.offset,
                                         span_len: sep.span.len,
                                     })
@@ -2967,7 +3027,10 @@ mod tests {
         let src = ".{}";
         let r = parse_expr(src).expect("empty mode map should parse");
         match r.kind {
-            ExprKind::ModeMap(fields) => assert!(fields.is_empty()),
+            ExprKind::ModeMap { fields, default } => {
+                assert!(fields.is_empty());
+                assert!(default.is_none());
+            }
             other => panic!("expected ModeMap, got {:?}", other),
         }
     }
@@ -2977,9 +3040,10 @@ mod tests {
         let src = ".{ Pure: 1 }";
         let r = parse_expr(src).expect("mode map with single mode should parse");
         match r.kind {
-            ExprKind::ModeMap(fields) => {
+            ExprKind::ModeMap { fields, default } => {
                 assert_eq!(fields.len(), 1);
                 assert_eq!(fields[0].name, "Pure");
+                assert!(default.is_none());
                 match &fields[0].value.kind {
                     ExprKind::Int(1) => {}
                     other => panic!("expected Int(1), got {:?}", other),
@@ -2994,11 +3058,12 @@ mod tests {
         let src = ".{ Pure: 1, Strict: 2, Lazy: 3 }";
         let r = parse_expr(src).expect("mode map with multiple modes should parse");
         match r.kind {
-            ExprKind::ModeMap(fields) => {
+            ExprKind::ModeMap { fields, default } => {
                 assert_eq!(fields.len(), 3);
                 assert_eq!(fields[0].name, "Pure");
                 assert_eq!(fields[1].name, "Strict");
                 assert_eq!(fields[2].name, "Lazy");
+                assert!(default.is_none());
             }
             other => panic!("expected ModeMap, got {:?}", other),
         }
@@ -3009,9 +3074,25 @@ mod tests {
         let src = ".{ Pure: \\x -> x, Strict: (1 + 2) }";
         let r = parse_expr(src).expect("mode map with complex expressions should parse");
         match r.kind {
-            ExprKind::ModeMap(fields) => {
+            ExprKind::ModeMap { fields, default } => {
                 assert_eq!(fields.len(), 2);
+                assert!(default.is_none());
                 matches!(fields[0].value.kind, ExprKind::Lambda { .. });
+            }
+            other => panic!("expected ModeMap, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn mode_map_with_default_arm() {
+        let src = ".{ Pure: 1; 999 }";
+        let r = parse_expr(src).expect("mode map with default arm should parse");
+        match r.kind {
+            ExprKind::ModeMap { fields, default } => {
+                assert_eq!(fields.len(), 1);
+                assert_eq!(fields[0].name, "Pure");
+                let d = default.expect("default arm");
+                assert!(matches!(d.kind, ExprKind::Int(999)));
             }
             other => panic!("expected ModeMap, got {:?}", other),
         }

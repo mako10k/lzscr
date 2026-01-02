@@ -54,6 +54,7 @@ pub enum Op {
     },
     ModeMap {
         fields: Vec<RecordFieldTerm>,
+        default: Option<Box<Term>>,
     },
     /// ModeMap selection: `.select .M e`.
     ///
@@ -323,7 +324,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                 })
                 .collect(),
         }),
-        ExprKind::ModeMap(fields) => Term::new(Op::ModeMap {
+        ExprKind::ModeMap { fields, default } => Term::new(Op::ModeMap {
             fields: fields
                 .iter()
                 .map(|f| RecordFieldTerm {
@@ -332,6 +333,7 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
                     value: lower_expr_to_core(&f.value),
                 })
                 .collect(),
+            default: default.as_deref().map(|d| Box::new(lower_expr_to_core(d))),
         }),
         ExprKind::LetGroup { bindings, body, .. } => {
             let bs: Vec<(String, Term)> =
@@ -361,7 +363,6 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         }
         ExprKind::Apply { func, arg } => {
             // Desugar selection: `(.select .M e)`.
-            // Note: Sugar `.M e` is handled in later phases; CoreIR only recognizes the explicit `.select` form.
             if let ExprKind::Apply { func: f2, arg: a2 } = &func.kind {
                 if is_symbol(f2, ".select") {
                     if let Some((label, label_span)) = symbol_value(a2) {
@@ -517,13 +518,17 @@ pub fn print_term(t: &Term) -> String {
                 .join(", ");
             format!("{{{}}}", inner)
         }
-        Op::ModeMap { fields } => {
+        Op::ModeMap { fields, default } => {
             let inner = fields
                 .iter()
                 .map(|f| format!("{}: {}", f.name, print_term(&f.value)))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!(".{{{}}}", inner)
+            match default {
+                Some(d) if inner.is_empty() => format!(".{{; {}}}", print_term(d)),
+                Some(d) => format!(".{{{}; {}}}", inner, print_term(d)),
+                None => format!(".{{{}}}", inner),
+            }
         }
         Op::Select { label, target, .. } => format!("(.select {} {})", label, print_term(target)),
         Op::Lam { param, body } => format!("\\{} -> {}", print_pattern(param), print_term(body)),
@@ -572,8 +577,11 @@ pub enum IrValue {
     Tuple(Vec<IrValue>),
     /// Concrete record value.
     Record(BTreeMap<String, IrValue>),
-    /// Concrete modemap value (record extension).
-    ModeMap(BTreeMap<String, IrValue>),
+    /// Concrete modemap value (record extension), with an optional default arm.
+    ModeMap {
+        fields: BTreeMap<String, IrValue>,
+        default: Option<Box<IrValue>>,
+    },
     Raised(Box<IrValue>),
     Fun {
         param: Pattern,
@@ -721,7 +729,8 @@ fn match_pattern(
         }
         PatternKind::Record(fields) => {
             let map = match v {
-                IrValue::Record(map) | IrValue::ModeMap(map) => map,
+                IrValue::Record(map) => map,
+                IrValue::ModeMap { fields: map, .. } => map,
                 _ => return Ok(None),
             };
             let mut acc = HashMap::new();
@@ -824,13 +833,17 @@ fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
                     .join(", ");
                 format!("{{{}}}", inner)
             }
-            IrValue::ModeMap(map) => {
+            IrValue::ModeMap { fields: map, default } => {
                 let inner = map
                     .iter()
                     .map(|(k, v)| format!("{}: {}", k, print_ir_value(v)))
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!(".{{{}}}", inner)
+                match default {
+                    Some(d) if inner.is_empty() => format!(".{{; {}}}", print_ir_value(d)),
+                    Some(d) => format!(".{{{}; {}}}", inner, print_ir_value(d)),
+                    None => format!(".{{{}}}", inner),
+                }
             }
             IrValue::Raised(inner) => format!(
                 "^({})",
@@ -868,9 +881,17 @@ fn ir_equal(a: &IrValue, b: &IrValue) -> bool {
             x.len() == y.len()
                 && x.iter().all(|(k, vx)| y.get(k).is_some_and(|vy| ir_equal(vx, vy)))
         }
-        (IrValue::ModeMap(x), IrValue::ModeMap(y)) => {
+        (
+            IrValue::ModeMap { fields: x, default: dx },
+            IrValue::ModeMap { fields: y, default: dy },
+        ) => {
             x.len() == y.len()
                 && x.iter().all(|(k, vx)| y.get(k).is_some_and(|vy| ir_equal(vx, vy)))
+                && match (dx, dy) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => ir_equal(a, b),
+                    _ => false,
+                }
         }
         (IrValue::Raised(x), IrValue::Raised(y)) => ir_equal(x, y),
         _ => false,
@@ -985,7 +1006,7 @@ fn eval_term_with_env(
             }
             Ok(IrValue::Record(map))
         }
-        Op::ModeMap { fields } => {
+        Op::ModeMap { fields, default } => {
             let mut map = BTreeMap::new();
             for f in fields {
                 let v = eval_term_with_env(&f.value, env)?;
@@ -994,18 +1015,33 @@ fn eval_term_with_env(
                 }
                 map.insert(f.name.clone(), v);
             }
-            Ok(IrValue::ModeMap(map))
+            let default_v = match default {
+                None => None,
+                Some(d) => {
+                    let v = eval_term_with_env(d, env)?;
+                    if let IrValue::Raised(_) = v {
+                        return Ok(v);
+                    }
+                    Some(Box::new(v))
+                }
+            };
+            Ok(IrValue::ModeMap { fields: map, default: default_v })
         }
         Op::Select { label, target, .. } => {
             let v = eval_term_with_env(target, env)?;
             if let IrValue::Raised(_) = v {
                 return Ok(v);
             }
-            let IrValue::ModeMap(map) = v else {
+            let IrValue::ModeMap { fields: map, default } = v else {
                 return Err(IrEvalError::SelectNotModeMap(Box::new(v)));
             };
             let key = mode_label_key(label);
-            map.get(key).cloned().ok_or_else(|| IrEvalError::ModeLabelNotFound(label.clone()))
+            match map.get(key).cloned() {
+                Some(v) => Ok(v),
+                None => {
+                    default.map(|d| *d).ok_or_else(|| IrEvalError::ModeLabelNotFound(label.clone()))
+                }
+            }
         }
         Op::Ref(n) => {
             if let Some(v) = env.get(n).cloned() {
@@ -1154,13 +1190,17 @@ pub fn print_ir_value(v: &IrValue) -> String {
                 .join(", ");
             format!("{{{}}}", inner)
         }
-        IrValue::ModeMap(map) => {
+        IrValue::ModeMap { fields: map, default } => {
             let inner = map
                 .iter()
                 .map(|(k, v)| format!("{}: {}", k, print_ir_value(v)))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!(".{{{}}}", inner)
+            match default {
+                Some(d) if inner.is_empty() => format!(".{{; {}}}", print_ir_value(d)),
+                Some(d) => format!(".{{{}; {}}}", inner, print_ir_value(d)),
+                None => format!(".{{{}}}", inner),
+            }
         }
         IrValue::Raised(inner) => format!("^({})", print_ir_value(inner)),
         IrValue::Fun { .. } | IrValue::Alt { .. } | IrValue::Builtin { .. } => "<fun>".into(),
@@ -1233,15 +1273,17 @@ mod tests {
         let v = eval_term(&t).expect("eval record");
         assert_eq!(print_ir_value(&v), "{a: 1, b: 2}");
 
-        let mm = Expr::new(ExprKind::ModeMap(vec![a, b]), Span::new(0, 0));
+        let mm =
+            Expr::new(ExprKind::ModeMap { fields: vec![a, b], default: None }, Span::new(0, 0));
         let t = lower_expr_to_core(&mm);
         match &t.op {
-            Op::ModeMap { fields } => {
+            Op::ModeMap { fields, default } => {
                 assert_eq!(fields.len(), 2);
                 assert_eq!(fields[0].name, "a");
                 assert_eq!(fields[0].name_span, Span::new(10, 1));
                 assert_eq!(fields[1].name, "b");
                 assert_eq!(fields[1].name_span, Span::new(20, 1));
+                assert!(default.is_none());
             }
             other => panic!("expected Op::ModeMap, got {:?}", other),
         }
@@ -1258,7 +1300,8 @@ mod tests {
             Span::new(20, 3),
             Expr::new(ExprKind::Str("x".into()), Span::new(0, 0)),
         );
-        let mm = Expr::new(ExprKind::ModeMap(vec![a, b]), Span::new(0, 0));
+        let mm =
+            Expr::new(ExprKind::ModeMap { fields: vec![a, b], default: None }, Span::new(0, 0));
 
         let select = Expr::new(
             ExprKind::Apply {
@@ -1298,7 +1341,8 @@ mod tests {
             Span::new(20, 3),
             Expr::new(ExprKind::Str("x".into()), Span::new(0, 0)),
         );
-        let mm = Expr::new(ExprKind::ModeMap(vec![a, b]), Span::new(0, 0));
+        let mm =
+            Expr::new(ExprKind::ModeMap { fields: vec![a, b], default: None }, Span::new(0, 0));
 
         // .Int mm  (sugar for .select)
         let sugar = Expr::new(
@@ -1324,11 +1368,10 @@ mod tests {
     #[test]
     fn eval_select_missing_label_is_error() {
         let mm = Expr::new(
-            ExprKind::ModeMap(vec![ExprRecordField::new(
-                "Int".into(),
-                Span::new(0, 0),
-                int_expr(1),
-            )]),
+            ExprKind::ModeMap {
+                fields: vec![ExprRecordField::new("Int".into(), Span::new(0, 0), int_expr(1))],
+                default: None,
+            },
             Span::new(0, 0),
         );
         let select = Expr::new(
@@ -1353,6 +1396,37 @@ mod tests {
             IrEvalError::ModeLabelNotFound(s) => assert_eq!(s, ".Str"),
             other => panic!("expected ModeLabelNotFound, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn eval_select_missing_label_uses_modemap_default_when_present() {
+        let mm = Expr::new(
+            ExprKind::ModeMap {
+                fields: vec![ExprRecordField::new("Int".into(), Span::new(0, 0), int_expr(1))],
+                default: Some(Box::new(int_expr(999))),
+            },
+            Span::new(0, 0),
+        );
+        // (.select .Str mm) -> default (999)
+        let select = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(
+                    ExprKind::Apply {
+                        func: Box::new(Expr::new(
+                            ExprKind::Symbol(".select".into()),
+                            Span::new(0, 0),
+                        )),
+                        arg: Box::new(Expr::new(ExprKind::Symbol(".Str".into()), Span::new(0, 0))),
+                    },
+                    Span::new(0, 0),
+                )),
+                arg: Box::new(mm),
+            },
+            Span::new(0, 0),
+        );
+        let t = lower_expr_to_core(&select);
+        let v = eval_term(&t).expect("select default");
+        assert_eq!(v, IrValue::Int(999));
     }
 
     #[test]

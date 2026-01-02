@@ -987,7 +987,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Block(inner) => 1 + count(inner),
                 List(xs) => 1 + xs.iter().map(count).sum::<usize>(),
                 Record(fs) => 1 + fs.iter().map(|f| count(&f.value)).sum::<usize>(),
-                ModeMap(fs) => 1 + fs.iter().map(|f| count(&f.value)).sum::<usize>(),
+                ModeMap { fields: fs, default } => {
+                    1 + fs.iter().map(|f| count(&f.value)).sum::<usize>()
+                        + default.as_ref().map(|d| count(d)).unwrap_or(0)
+                }
                 LetGroup { bindings, body, .. } => {
                     1 + count(body) + bindings.iter().map(|(_, ex)| count(ex)).sum::<usize>()
                 }
@@ -1794,6 +1797,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .join(", ");
                 format!("{{{}}}", inner)
             }
+            Value::ModeMap { fields, default } => {
+                let inner = fields
+                    .iter()
+                    .map(|(k, v)| {
+                        let rendered = val_to_string(env, v);
+                        let needs_wrap = rendered.chars().any(|ch| ch.is_whitespace())
+                            || rendered.contains(',')
+                            || rendered.contains('{')
+                            || rendered.contains('[');
+                        let wrapped = if needs_wrap { format!("({})", rendered) } else { rendered };
+                        format!("{}: {}", k, wrapped)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                match default {
+                    Some(d) if inner.is_empty() => format!(".{{; {}}}", val_to_string(env, d)),
+                    Some(d) => format!(".{{{}; {}}}", inner, val_to_string(env, d)),
+                    None => format!(".{{{}}}", inner),
+                }
+            }
             Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
         }
     }
@@ -1966,8 +1990,9 @@ fn expand_requires_in_expr(
                 })
                 .collect::<Result<Vec<_>, String>>()?,
         ),
-        ModeMap(fs) => ModeMap(
-            fs.iter()
+        ModeMap { fields: fs, default } => {
+            let fields = fs
+                .iter()
                 .map(|f| {
                     Ok(ExprRecordField::new(
                         f.name.clone(),
@@ -1981,8 +2006,21 @@ fn expand_requires_in_expr(
                         )?,
                     ))
                 })
-                .collect::<Result<Vec<_>, String>>()?,
-        ),
+                .collect::<Result<Vec<_>, String>>()?;
+
+            let default = match default {
+                Some(d) => Some(Box::new(expand_requires_in_expr(
+                    d,
+                    search_paths,
+                    stack,
+                    src_reg,
+                    stdlib_mode,
+                )?)),
+                None => None,
+            };
+
+            ModeMap { fields, default }
+        }
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
@@ -2095,12 +2133,12 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
             }
             Record(new)
         }
-        ModeMap(fields) => {
+        ModeMap { fields, default } => {
             let mut new = Vec::with_capacity(fields.len());
             for f in fields.iter() {
                 new.push(ExprRecordField::new(f.name.clone(), f.name_span, map_expr(&f.value)));
             }
-            ModeMap(new)
+            ModeMap { fields: new, default: default.as_deref().map(map_box) }
         }
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
@@ -2298,7 +2336,7 @@ fn node_kind_name(k: &ExprKind) -> &'static str {
         ExprKind::Block(_) => "Block",
         ExprKind::List(_) => "List",
         ExprKind::Record(_) => "Record",
-        ExprKind::ModeMap(_) => "ModeMap",
+        ExprKind::ModeMap { .. } => "ModeMap",
         ExprKind::LetGroup { .. } => "LetGroup",
         ExprKind::Raise(_) => "Raise",
         ExprKind::AltLambda { .. } => "AltLambda",

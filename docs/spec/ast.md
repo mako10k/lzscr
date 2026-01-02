@@ -7,7 +7,7 @@ Location: `crates/lzscr-ast`
 - `ExprKind`:
   - Literals: `Unit | Int(i64) | Float(f64) | Str(String) | Char(i32)`
   - Names: `Ref(String)` (e.g. `~x`) / `Symbol(String)` (e.g. `.println`)
-  - Structural: `List(Vec<Expr>) | Record(Vec<ExprRecordField>) | ModeMap(Vec<ExprRecordField>)`
+  - Structural: `List(Vec<Expr>) | Record(Vec<ExprRecordField>) | ModeMap { fields: Vec<ExprRecordField>, default: Option<Box<Expr>> }`
   - Functions: `Lambda { param: Pattern, body: Box<Expr> } | Apply { func, arg }`
   - Types: `Annot { ty: TypeExpr, expr } | TypeVal(TypeExpr)`
   - Groups/Control: `LetGroup { ... } | Raise | AltLambda | OrElse | Catch`
