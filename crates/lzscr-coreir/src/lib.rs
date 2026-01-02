@@ -29,7 +29,14 @@ pub enum Ty {
 pub enum Op {
     // Builtins and ops as symbolic names for now
     Ref(String),    // reference to name (pre-resolve)
-    Symbol(String), // bare symbol
+    /// Legacy (older dumps): ambiguous symbol/constructor.
+    ///
+    /// New lowering prefers `Ctor` and `AtomSymbol`.
+    Symbol(String),
+    /// Constructor value (curried via application).
+    Ctor(String),
+    /// Atomic symbol value (used for ModeMap labels, `.select`, etc).
+    AtomSymbol(String),
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -149,6 +156,16 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         }
     }
 
+    fn is_tuple_tag_symbol(s: &str) -> bool {
+        // Matches runtime tuple tag encoding like `.,,` (dot then commas).
+        let mut chars = s.chars();
+        if chars.next() != Some('.') {
+            return false;
+        }
+        let rest: Vec<char> = chars.collect();
+        !rest.is_empty() && rest.iter().all(|c| *c == ',')
+    }
+
     fn print_type_expr(t: &TypeExpr) -> String {
         fn dotted(name: &str) -> String {
             let mut s = String::from(".");
@@ -231,7 +248,19 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Str(s) => Term::new(Op::Str(s.clone())),
         ExprKind::Char(c) => Term::new(Op::Char(*c)),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
-        ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
+        ExprKind::Symbol(s) => {
+            // Disambiguate at lowering time:
+            // - tuple tags like `.,,` are constructors
+            // - dot-led names like `.Int` are atomic symbols
+            // - everything else is a constructor name (e.g. `Some`)
+            if is_tuple_tag_symbol(s) {
+                Term::new(Op::Ctor(s.clone()))
+            } else if s.starts_with('.') {
+                Term::new(Op::AtomSymbol(s.clone()))
+            } else {
+                Term::new(Op::Ctor(s.clone()))
+            }
+        }
         ExprKind::Record(fields) => {
             Term::new(Op::Record {
                 fields: fields
@@ -400,7 +429,7 @@ pub fn print_term(t: &Term) -> String {
             format!("'{}'", tmp.escape_default())
         }
         Op::Ref(n) => format!("~{n}"),
-        Op::Symbol(s) => s.clone(),
+        Op::Symbol(s) | Op::Ctor(s) | Op::AtomSymbol(s) => s.clone(),
         Op::List { items } => {
             format!("[{}]", items.iter().map(print_term).collect::<Vec<_>>().join(", "))
         }
@@ -650,7 +679,8 @@ fn mode_label_key(label: &str) -> &str {
     label.strip_prefix('.').unwrap_or(label)
 }
 
-fn symbol_to_value(s: &str) -> IrValue {
+fn legacy_symbol_to_value(s: &str) -> IrValue {
+    // Legacy behavior for Op::Symbol in older dumps.
     if s == "[]" {
         return IrValue::List(vec![]);
     }
@@ -884,7 +914,9 @@ fn eval_term_with_env(
             }
             Err(IrEvalError::Unbound(n.clone()))
         }
-        Op::Symbol(s) => Ok(symbol_to_value(s)),
+        Op::Symbol(s) => Ok(legacy_symbol_to_value(s)),
+        Op::Ctor(s) => Ok(IrValue::Ctor { name: s.clone(), args: vec![] }),
+        Op::AtomSymbol(s) => Ok(IrValue::Symbol(s.clone())),
         Op::Raise { payload } => {
             let v = eval_term_with_env(payload, env)?;
             Ok(IrValue::Raised(Box::new(v)))
@@ -1163,12 +1195,12 @@ mod tests {
         );
         let lam = Term::lambda(pat, Term::var("x"));
 
-        let foo_42 = Term::app(Term::new(Op::Symbol("Foo".into())), Term::int(42));
+        let foo_42 = Term::app(Term::new(Op::Ctor("Foo".into())), Term::int(42));
         let ok = Term::app(lam.clone(), foo_42);
         let v = eval_term(&ok).expect("eval ctor match");
         assert_eq!(v, IrValue::Int(42));
 
-        let bar_1 = Term::app(Term::new(Op::Symbol("Bar".into())), Term::int(1));
+        let bar_1 = Term::app(Term::new(Op::Ctor("Bar".into())), Term::int(1));
         let bad = Term::app(lam, bar_1.clone());
         let v = eval_term(&bad).expect("eval ctor mismatch");
         match v {

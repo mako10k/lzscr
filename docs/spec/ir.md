@@ -6,7 +6,10 @@ Location: `crates/lzscr-coreir`
   - `Unit | Int | Float | Bool | Str | Fun(Box<Ty>, Box<Ty>) | Dyn`
 - Operators `Op` and `Term`:
   - `Unit | Int(i64) | Float(f64) | Bool(bool) | Str(String) | Char(i32)`
-  - `Ref(String) | Symbol(String)`
+  - `Ref(String)`
+  - `Ctor(String)` (constructor value)
+  - `AtomSymbol(String)` (atomic symbol value, e.g. `.Int`)
+  - `Symbol(String)` (legacy; avoid in new lowering)
   - `List { items: Vec<Term> }`
   - `Record { fields: Vec<RecordFieldTerm> }` (tracks `name_span`)
   - `ModeMap { fields: Vec<RecordFieldTerm> }` (tracks `name_span`)
@@ -27,6 +30,9 @@ Lowering `lower_expr_to_core(&Expr) -> Term`:
 - Convert AST `{ k1: e1, k2: e2 }` into `Record { fields: ... }` and preserve each field's `name_span`.
 - Convert AST `.{ M1: e1, M2: e2 }` into `ModeMap { fields: ... }` and preserve each field's `name_span`.
 - Convert AST `(.select .M e)` into `Select { label=".M", label_span, target=e }`.
+- Convert AST bare symbols/constructors (`ExprKind::Symbol(s)`) into either:
+  - `AtomSymbol(s)` if `s` starts with `.` (e.g. `.Int`, `.Pure`)
+  - `Ctor(s)` otherwise (e.g. `Some`)
 - Everything else maps shape-wise.
 
 Evaluator conventions (PoC)
@@ -35,11 +41,9 @@ Evaluator conventions (PoC)
 It is not the language runtime, but it tries to follow the same *value-level* conventions where possible.
 
 - `Op::Bool(true/false)` evaluates to constructor values `True` / `False`.
-- `Op::Symbol(s)` evaluates using a small heuristic:
-  - `"[]"` becomes an empty list value.
-  - Symbols that start with `.` and are **not** tuple tags are treated as atomic symbols (e.g. `.Int`, `.Pure`).
-  - Everything else is treated as a constructor value (curried via application).
-- Tuple tags are encoded as `.` followed by one or more commas, e.g. `.,` / `.,,`.
+- `Op::Ctor(name)` evaluates to a constructor value and is curried by application.
+- `Op::AtomSymbol(name)` evaluates to an atomic symbol value.
+- `Op::Symbol(name)` is kept only for backward compatibility with older CoreIR dumps.
 
 These conventions exist to keep CoreIR dumps and the PoC evaluator usable while the IR is still evolving.
 
