@@ -765,6 +765,10 @@ fn legacy_symbol_to_value(s: &str) -> IrValue {
 }
 
 fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
+    fn bool_ctor(b: bool) -> IrValue {
+        IrValue::Ctor { name: if b { "True".into() } else { "False".into() }, args: vec![] }
+    }
+
     match (name, args) {
         ("add", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a + b)),
         ("sub", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a - b)),
@@ -773,6 +777,33 @@ fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
             Err(IrEvalError::Arity("div by zero".into()))
         }
         ("div", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a / b)),
+
+        ("fadd", [IrValue::Float(a), IrValue::Float(b)]) => Ok(IrValue::Float(a + b)),
+        ("fsub", [IrValue::Float(a), IrValue::Float(b)]) => Ok(IrValue::Float(a - b)),
+        ("fmul", [IrValue::Float(a), IrValue::Float(b)]) => Ok(IrValue::Float(a * b)),
+        ("fdiv", [IrValue::Float(_), IrValue::Float(b)]) if *b == 0.0 => {
+            Err(IrEvalError::Arity("fdiv by zero".into()))
+        }
+        ("fdiv", [IrValue::Float(a), IrValue::Float(b)]) => Ok(IrValue::Float(a / b)),
+
+        ("eq", [a, b]) => Ok(bool_ctor(ir_equal(a, b))),
+        ("ne", [a, b]) => Ok(bool_ctor(!ir_equal(a, b))),
+        ("lt", [IrValue::Int(a), IrValue::Int(b)]) => Ok(bool_ctor(a < b)),
+        ("lt", [IrValue::Float(a), IrValue::Float(b)]) => Ok(bool_ctor(a < b)),
+        ("le", [IrValue::Int(a), IrValue::Int(b)]) => Ok(bool_ctor(a <= b)),
+        ("le", [IrValue::Float(a), IrValue::Float(b)]) => Ok(bool_ctor(a <= b)),
+        ("gt", [IrValue::Int(a), IrValue::Int(b)]) => Ok(bool_ctor(a > b)),
+        ("gt", [IrValue::Float(a), IrValue::Float(b)]) => Ok(bool_ctor(a > b)),
+        ("ge", [IrValue::Int(a), IrValue::Int(b)]) => Ok(bool_ctor(a >= b)),
+        ("ge", [IrValue::Float(a), IrValue::Float(b)]) => Ok(bool_ctor(a >= b)),
+
+        ("cons", [head, IrValue::List(tail)]) => {
+            let mut out = Vec::with_capacity(tail.len() + 1);
+            out.push(head.clone());
+            out.extend(tail.iter().cloned());
+            Ok(IrValue::List(out))
+        }
+
         ("to_str", [v]) => Ok(IrValue::Str(match v {
             IrValue::Unit => "()".into(),
             IrValue::Int(n) => n.to_string(),
@@ -878,6 +909,9 @@ fn ir_equal(a: &IrValue, b: &IrValue) -> bool {
 fn builtin_arity(name: &str) -> Option<usize> {
     match name {
         "add" | "sub" | "mul" | "div" => Some(2),
+        "fadd" | "fsub" | "fmul" | "fdiv" => Some(2),
+        "eq" | "ne" | "lt" | "le" | "gt" | "ge" => Some(2),
+        "cons" => Some(2),
         "to_str" => Some(1),
         _ => None,
     }
@@ -1206,6 +1240,56 @@ mod tests {
         assert_eq!(print_term(&t), "[1, 2, 3]");
         let v = eval_term(&t).expect("eval list");
         assert_eq!(print_ir_value(&v), "[1, 2, 3]");
+    }
+
+    #[test]
+    fn eval_builtins_cons_cmp_and_float_ops() {
+        // ((~cons 1) [2,3]) => [1,2,3]
+        let cons = Term::new(Op::Ref("cons".into()));
+        let app1 =
+            Term::new(Op::App { func: Box::new(cons), arg: Box::new(Term::new(Op::Int(1))) });
+        let list =
+            Term::new(Op::List { items: vec![Term::new(Op::Int(2)), Term::new(Op::Int(3))] });
+        let app2 = Term::new(Op::App { func: Box::new(app1), arg: Box::new(list) });
+        let v = eval_term(&app2).expect("eval cons");
+        assert_eq!(print_ir_value(&v), "[1, 2, 3]");
+
+        // ((~lt 1) 2) => True
+        let lt = Term::new(Op::Ref("lt".into()));
+        let lt_app1 =
+            Term::new(Op::App { func: Box::new(lt), arg: Box::new(Term::new(Op::Int(1))) });
+        let lt_app2 =
+            Term::new(Op::App { func: Box::new(lt_app1), arg: Box::new(Term::new(Op::Int(2))) });
+        let v = eval_term(&lt_app2).expect("eval lt");
+        assert_eq!(print_ir_value(&v), "True");
+
+        // ((~eq 1) 1) => True, ((~ne 1) 1) => False
+        let eq = Term::new(Op::Ref("eq".into()));
+        let eq_app1 =
+            Term::new(Op::App { func: Box::new(eq), arg: Box::new(Term::new(Op::Int(1))) });
+        let eq_app2 =
+            Term::new(Op::App { func: Box::new(eq_app1), arg: Box::new(Term::new(Op::Int(1))) });
+        let v = eval_term(&eq_app2).expect("eval eq");
+        assert_eq!(print_ir_value(&v), "True");
+
+        let ne = Term::new(Op::Ref("ne".into()));
+        let ne_app1 =
+            Term::new(Op::App { func: Box::new(ne), arg: Box::new(Term::new(Op::Int(1))) });
+        let ne_app2 =
+            Term::new(Op::App { func: Box::new(ne_app1), arg: Box::new(Term::new(Op::Int(1))) });
+        let v = eval_term(&ne_app2).expect("eval ne");
+        assert_eq!(print_ir_value(&v), "False");
+
+        // ((~fadd 1.0) 2.0) => 3.0
+        let fadd = Term::new(Op::Ref("fadd".into()));
+        let fadd_app1 =
+            Term::new(Op::App { func: Box::new(fadd), arg: Box::new(Term::new(Op::Float(1.0))) });
+        let fadd_app2 = Term::new(Op::App {
+            func: Box::new(fadd_app1),
+            arg: Box::new(Term::new(Op::Float(2.0))),
+        });
+        let v = eval_term(&fadd_app2).expect("eval fadd");
+        assert_eq!(print_ir_value(&v), "3");
     }
 
     fn apply_expr(func: Expr, arg: Expr) -> Expr {
