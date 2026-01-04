@@ -49,6 +49,416 @@ fn dump_coreir_json_outputs_term() {
 }
 
 #[test]
+fn dump_llvmir_outputs_basic_ir() {
+    let mut cmd = cli_cmd();
+    cmd.args(["-e", "1 + 2 * 3", "--dump-llvmir", "--no-stdlib"]);
+    cmd.assert().success().stdout(
+        contains("define i64 @main()")
+            .and(contains("mul i64 2, 3"))
+            .and(contains("add i64 1"))
+            .and(contains("ret i64")),
+    );
+}
+
+#[test]
+fn dump_llvmir_unary_minus() {
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args(["-e", "-1", "--dump-llvmir", "--no-stdlib"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("sub i64 0, 1"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_seq_i64_only() {
+    // Ensure we can lower ~seq when both sides are i64 expressions.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(~seq (1 + 2 * 3) (4 + 5))",
+            "--dump-llvmir",
+            "--no-stdlib",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("mul i64 2, 3"), "llvm ir: {s}");
+    assert!(s.contains("add i64 4, 5"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_lt_i64_only() {
+    // Comparisons lower to icmp + zext (i64 0/1) in the current i64-only LLVM subset.
+    // Typecheck is disabled because the surface language type for lt is Bool.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "1 < 2",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp slt i64 1, 2"), "llvm ir: {s}");
+    assert!(s.contains("zext i1"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_chain_i64_only() {
+    // Ensure we can lower ~chain when both sides are i64 expressions.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(~chain (1 + 2 * 3) (4 + 5))",
+            "--dump-llvmir",
+            "--no-stdlib",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("mul i64 2, 3"), "llvm ir: {s}");
+    assert!(s.contains("add i64 4, 5"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_inline_lambda_application_i64_only() {
+    // Ensure we can lower immediate lambda applications by inlining.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "((\\~x -> (~x + 1)) 5)",
+            "--dump-llvmir",
+            "--no-stdlib",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("add i64 5, 1"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_let_group_i64_only() {
+    // Ensure we can lower a non-recursive let-group (CoreIR LetRec) in the current i64-only LLVM subset.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(~x = 5; (~add ~x 2))",
+            "--dump-llvmir",
+            "--no-stdlib",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("add i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_if_i64_only() {
+    // Ensure we can lower `if` (as constructors in CoreIR) using br+phi.
+    // Typecheck is disabled because the surface language type for if is polymorphic with Bool-like.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(if True 1 2)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_if_with_lt_condition_i64_only() {
+    // Ensure `if` condition works with Bool-like produced by comparisons.
+    // Typecheck is disabled because surface `1 < 2` is Bool.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(if (1 < 2) 10 20)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp slt i64 1, 2"), "llvm ir: {s}");
+    assert!(s.contains("zext i1"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_if_with_truthy_i64_condition_i64_only() {
+    // Ensure `if` treats non-zero i64 as true in the current i64-only LLVM subset.
+    // Typecheck is disabled because surface `if` expects Bool-like.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(if 42 1 2)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 42, 0"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_if_with_zero_condition_i64_only() {
+    // Ensure `if` treats i64 0 as false in the current i64-only LLVM subset.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(if 0 1 2)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 0, 0"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_if_with_false_ctor_condition_i64_only() {
+    // Ensure `if` works when condition is the constructor `False` (CoreIR ctor).
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(if False 1 2)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 0, 0"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_if_with_seq_and_chain_branches_i64_only() {
+    // Ensure branch expressions can contain ~seq/~chain and still lower into blocks.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(if True (~seq (1 + 2 * 3) (4 + 5)) (~chain (6 + 7) (8 + 9)))",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("mul i64 2, 3"), "llvm ir: {s}");
+    assert!(s.contains("add i64 4, 5"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_and_short_circuit_i64_only() {
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(and 0 5)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 0, 0"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 5, 0"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_or_short_circuit_i64_only() {
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(or 7 0)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 7, 0"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_not_i64_only() {
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(not 0)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp eq i64 0, 0"), "llvm ir: {s}");
+    assert!(s.contains("zext i1"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+fn have_build_toolchain() -> bool {
+    // Prefer clang for determinism; skip the test if clang isn't available.
+    Command::new("clang").arg("--version").output().is_ok()
+}
+
+#[test]
+fn build_exe_produces_runnable_binary_when_toolchain_available() {
+    if !have_build_toolchain() {
+        eprintln!("skip: clang not available");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("lzscr_out");
+
+    // First build should succeed
+    let mut cmd = cli_cmd();
+    cmd.args(["-e", "1 + 2 * 3", "--build-exe", out.to_str().unwrap(), "--no-stdlib"]);
+    cmd.assert().success();
+
+    // Second build without overwrite should fail
+    let mut cmd = cli_cmd();
+    cmd.args(["-e", "1 + 2 * 3", "--build-exe", out.to_str().unwrap(), "--no-stdlib"]);
+    cmd.assert().failure().stderr(contains("output already exists"));
+
+    // With overwrite flag it should succeed again
+    let mut cmd = cli_cmd();
+    cmd.args([
+        "-e",
+        "1 + 2 * 3",
+        "--build-exe",
+        out.to_str().unwrap(),
+        "--build-exe-overwrite",
+        "--no-stdlib",
+    ]);
+    cmd.assert().success();
+
+    let st = Command::new(&out).status().unwrap();
+    assert_eq!(st.code(), Some(7));
+}
+
+#[test]
 fn file_option_executes_program() {
     // Create a temporary file with top-level bindings and an expression
     let mut tmp = NamedTempFile::new().unwrap();

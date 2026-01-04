@@ -7,6 +7,8 @@ pub enum Tok {
     #[regex(r"[ \t\r\n]+", logos::skip)]
     _Whitespace,
 
+    Error,
+
     // Comments are preserved in token stream
     #[regex(r"#[^\n]*", allow_greedy = true)]
     CommentLine,
@@ -146,39 +148,8 @@ fn parse_string(lex: &mut Lexer<Tok>) -> Option<String> {
     let mut chars = inner.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\\' {
-            match chars.next()? {
-                '\\' => out.push('\\'),
-                '"' => out.push('"'),
-                '\'' => out.push('\''),
-                'n' => out.push('\n'),
-                'r' => out.push('\r'),
-                't' => out.push('\t'),
-                '0' => out.push('\0'),
-                'u' => {
-                    // expect {HEX+}
-                    if chars.next()? != '{' {
-                        return None;
-                    }
-                    let mut hex = String::new();
-                    while let Some(&ch) = chars.peek() {
-                        chars.next();
-                        if ch == '}' {
-                            break;
-                        }
-                        hex.push(ch);
-                    }
-                    let v = u32::from_str_radix(hex.trim(), 16).ok()?;
-                    if let Some(ch) = char::from_u32(v) {
-                        out.push(ch);
-                    } else {
-                        return None;
-                    }
-                }
-                other => {
-                    // Unknown escape, keep literally following many languages behavior
-                    out.push(other);
-                }
-            }
+            let ch = parse_escape_seq(&mut chars)?;
+            out.push(ch);
         } else {
             out.push(c);
         }
@@ -193,37 +164,56 @@ fn parse_char(lex: &mut Lexer<Tok>) -> Option<i32> {
         return None;
     }
     let inner = &s[1..s.len() - 1];
-    let mut chars = inner.chars();
-    let c = match chars.next()? {
-        '\\' => {
-            match chars.next()? {
-                '\'' => '\'' as u32,
-                '"' => '"' as u32,
-                'n' => '\n' as u32,
-                'r' => '\r' as u32,
-                't' => '\t' as u32,
-                '0' => '\0' as u32,
-                'u' => {
-                    // expect {HEX+}
-                    if chars.next()? != '{' {
-                        return None;
-                    }
-                    let mut hex = String::new();
-                    for ch in chars {
-                        if ch == '}' {
-                            break;
-                        }
-                        hex.push(ch);
-                    }
-                    let v = u32::from_str_radix(hex.trim(), 16).ok()?;
-                    v
-                }
-                other => other as u32,
-            }
-        }
-        other => other as u32,
+    let mut chars = inner.chars().peekable();
+    let ch = match chars.next()? {
+        '\\' => parse_escape_seq(&mut chars)?,
+        other => other,
     };
-    Some(c as i32)
+    // Ensure the literal represents exactly one character after unescaping.
+    if chars.next().is_some() {
+        return None;
+    }
+    Some(ch as u32 as i32)
+}
+
+fn parse_escape_seq<I>(chars: &mut std::iter::Peekable<I>) -> Option<char>
+where
+    I: Iterator<Item = char>,
+{
+    match chars.next()? {
+        '\\' => Some('\\'),
+        '"' => Some('"'),
+        '\'' => Some('\''),
+        'n' => Some('\n'),
+        'r' => Some('\r'),
+        't' => Some('\t'),
+        '0' => Some('\0'),
+        'u' => parse_unicode_escape(chars),
+        _other => None,
+    }
+}
+
+fn parse_unicode_escape<I>(chars: &mut std::iter::Peekable<I>) -> Option<char>
+where
+    I: Iterator<Item = char>,
+{
+    // Expect {HEX+}
+    if chars.next()? != '{' {
+        return None;
+    }
+    let mut hex = String::new();
+    while let Some(&ch) = chars.peek() {
+        chars.next();
+        if ch == '}' {
+            break;
+        }
+        hex.push(ch);
+    }
+    if hex.is_empty() {
+        return None;
+    }
+    let v = u32::from_str_radix(hex.trim(), 16).ok()?;
+    char::from_u32(v)
 }
 
 fn parse_int_radix(lex: &mut Lexer<Tok>, radix: u32) -> Option<i64> {
@@ -303,16 +293,15 @@ pub fn lex(input: &str) -> Vec<Lexed<'_>> {
     };
     while let Some(res) = l.next() {
         let range = l.span();
-        if let Ok(tok) = res {
-            let (line, col) = line_col(range.start);
-            out.push(Lexed {
-                tok,
-                span: Span::new(range.start, range.len()),
-                text: &input[range.clone()],
-                line,
-                col,
-            });
-        }
+        let tok = res.unwrap_or(Tok::Error);
+        let (line, col) = line_col(range.start);
+        out.push(Lexed {
+            tok,
+            span: Span::new(range.start, range.len()),
+            text: &input[range.clone()],
+            line,
+            col,
+        });
     }
     out
 }

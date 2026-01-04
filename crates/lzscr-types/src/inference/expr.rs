@@ -686,7 +686,7 @@ pub(crate) fn infer_expr(
             }
             Ok((Type::Record(map), subst))
         }
-        ExprKind::ModeMap(fields) => {
+        ExprKind::ModeMap { fields, default } => {
             // ModeMap is like a record at the value level: map mode names to arm types.
             // Represent it as a `Type::Record` so `.Ident <modemap>` selection works
             // uniformly with record field selection (the runtime treats ModeMap
@@ -698,9 +698,16 @@ pub(crate) fn infer_expr(
                 subst = sv.compose(subst);
                 map.insert(f.name.clone(), (tv.apply(&subst), Some(f.name_span)));
             }
-            // Ensure ModeMap always carries a default arm; if parser didn't supply one,
-            // use `Unit` as the default per design. Mark parser-created maps as Explicit.
-            Ok((Type::ModeMap(map, Some(Box::new(Type::Unit)), ModeKind::Explicit), subst))
+            // Ensure ModeMap always carries a default arm; if source omitted it,
+            // use `Unit` as the default per design.
+            let default_ty = if let Some(d) = default.as_deref() {
+                let (td, sd) = infer_expr(ctx, d, allow_effects)?;
+                subst = sd.compose(subst);
+                td.apply(&subst)
+            } else {
+                Type::Unit
+            };
+            Ok((Type::ModeMap(map, Some(Box::new(default_ty)), ModeKind::Explicit), subst))
         }
         ExprKind::LetGroup { type_decls, bindings, body, .. } => {
             // Recursive let-group inference (Algorithm W style for letrec):
@@ -1243,6 +1250,6 @@ pub(crate) fn short_expr_kind(k: &ExprKind) -> &'static str {
         OrElse { .. } => "OrElse",
         Catch { .. } => "Catch",
         AltLambda { .. } => "AltLambda",
-        ModeMap(_) => "ModeMap",
+        ModeMap { .. } => "ModeMap",
     }
 }

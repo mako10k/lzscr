@@ -76,6 +76,21 @@ pub fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 print!("{{{}}}", inner);
                 Ok(Value::Unit)
             }
+            Value::ModeMap { fields: map, default } => {
+                let inner = map
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, to_str_like(env, v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                match default {
+                    Some(d) if inner.is_empty() => {
+                        print!(".{{; {}}}", to_str_like(env, d.as_ref()))
+                    }
+                    Some(d) => print!(".{{{}; {}}}", inner, to_str_like(env, d.as_ref())),
+                    None => print!(".{{{}}}", inner),
+                }
+                Ok(Value::Unit)
+            }
             Value::Native { .. } | Value::Closure { .. } => {
                 print!("<fun>");
                 Ok(Value::Unit)
@@ -157,6 +172,21 @@ pub fn eff_println(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                     .collect::<Vec<_>>()
                     .join(", ");
                 println!("{{{}}}", inner);
+                Ok(Value::Unit)
+            }
+            Value::ModeMap { fields: map, default } => {
+                let inner = map
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, to_str_like(env, v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                match default {
+                    Some(d) if inner.is_empty() => {
+                        println!(".{{; {}}}", to_str_like(env, d.as_ref()))
+                    }
+                    Some(d) => println!(".{{{}; {}}}", inner, to_str_like(env, d.as_ref())),
+                    None => println!(".{{{}}}", inner),
+                }
                 Ok(Value::Unit)
             }
             Value::Native { .. } | Value::Closure { .. } => {
