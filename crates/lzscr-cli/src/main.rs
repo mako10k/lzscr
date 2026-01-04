@@ -440,7 +440,7 @@ fn parse_ctor_arity_spec(spec: &str) -> (HashMap<String, usize>, Vec<String>) {
 #[command(name = "lzscr", version, about = "LazyScript reimplementation (skeleton)")]
 struct Opt {
     /// One-line program
-    #[arg(short = 'e', long = "eval")]
+    #[arg(short = 'e', long = "eval", allow_hyphen_values = true)]
     eval: Option<String>,
 
     /// Execute program from file

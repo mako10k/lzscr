@@ -60,6 +60,22 @@ fn dump_llvmir_outputs_basic_ir() {
     );
 }
 
+#[test]
+fn dump_llvmir_unary_minus() {
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args(["-e", "-1", "--dump-llvmir", "--no-stdlib"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("sub i64 0, 1"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
 fn have_build_toolchain() -> bool {
     // Prefer clang for determinism; skip the test if clang isn't available.
     Command::new("clang").arg("--version").output().is_ok()
