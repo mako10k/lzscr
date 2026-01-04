@@ -51,7 +51,9 @@ fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
         msg.push_str("\n");
         msg.push_str(&d);
     }
-    msg.push_str("\nSupported subset: Int literals and saturated (~add|~sub|~mul|~div) over i64.");
+    msg.push_str(
+        "\nSupported subset: Int literals, i64-only (~seq a b), and saturated (~add|~sub|~mul|~div) over i64.",
+    );
     msg.push_str("\nHint: run lzscr-cli with --dump-coreir to inspect the lowered term.");
     unsupported(msg)
 }
@@ -129,6 +131,11 @@ fn collect_apps<'a>(t: &'a Term) -> (&'a Term, Vec<&'a Term>) {
 fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerError> {
     match &t.op {
         Op::Int(n) => Ok(LlvmValue::ConstI64(*n)),
+        Op::Seq { first, second } => {
+            // Evaluate first for its effects (within the supported i64-only subset), then return second.
+            let _ = lower_expr_i64(em, first)?;
+            lower_expr_i64(em, second)
+        }
         Op::App { .. } => {
             let (head, args) = collect_apps(t);
             match (&head.op, args.as_slice()) {
@@ -162,8 +169,8 @@ fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerEr
 
 /// Lowers a CoreIR term into a minimal LLVM IR module.
 ///
-/// Current scope (int-only PoC): supports `Int` literals and saturated applications of
-/// `~add/~sub/~mul/~div` (as `Ref("add"|...)`) producing an `i64` `main` result.
+/// Current scope (int-only PoC): supports `Int` literals, i64-only `~seq`, and saturated
+/// applications of `~add/~sub/~mul/~div` (as `Ref("add"|...)`) producing an `i64` `main` result.
 pub fn lower_to_llvm_ir_text(term: &Term) -> Result<String, LlvmIrLowerError> {
     let mut em = Emitter::default();
     let v = lower_expr_i64(&mut em, term)?;
@@ -212,6 +219,26 @@ define i64 @main() {
 entry:
   %0 = mul i64 2, 3
   %1 = add i64 1, %0
+  ret i64 %1
+}
+"#;
+        assert_eq!(ir, expected);
+    }
+
+    #[test]
+    fn lowers_seq_i64_only() {
+        // (~seq ((~mul 2) 3) ((~add 10) 20))
+        let first = app(app(ref_("mul"), int_(2)), int_(3));
+        let second = app(app(ref_("add"), int_(10)), int_(20));
+        let t = Term::new(Op::Seq { first: Box::new(first), second: Box::new(second) });
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = mul i64 2, 3
+  %1 = add i64 10, 20
   ret i64 %1
 }
 "#;
