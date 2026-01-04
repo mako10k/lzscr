@@ -99,6 +99,31 @@ fn dump_llvmir_seq_i64_only() {
     assert!(s.contains("ret i64"), "llvm ir: {s}");
 }
 
+#[test]
+fn dump_llvmir_lt_i64_only() {
+    // Comparisons lower to icmp + zext (i64 0/1) in the current i64-only LLVM subset.
+    // Typecheck is disabled because the surface language type for lt is Bool.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "1 < 2",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp slt i64 1, 2"), "llvm ir: {s}");
+    assert!(s.contains("zext i1"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
 fn have_build_toolchain() -> bool {
     // Prefer clang for determinism; skip the test if clang isn't available.
     Command::new("clang").arg("--version").output().is_ok()
