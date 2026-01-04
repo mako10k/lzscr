@@ -49,7 +49,7 @@ fn unsupported(message: String) -> LlvmIrLowerError {
 fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
     let mut msg = format!("LLVM lowering does not support this CoreIR op yet: {}", op_summary(op));
     if let Some(d) = details {
-        msg.push_str("\n");
+        msg.push('\n');
         msg.push_str(&d);
     }
     msg.push_str(
