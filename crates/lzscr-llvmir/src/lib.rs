@@ -9,9 +9,8 @@ pub enum LlvmIrLowerError {
     Message(String),
 }
 
-const SUPPORTED_I64_BUILTINS: [&str; 10] = [
-    "add", "sub", "mul", "div", "eq", "ne", "lt", "le", "gt", "ge",
-];
+const SUPPORTED_I64_BUILTINS: [&str; 10] =
+    ["add", "sub", "mul", "div", "eq", "ne", "lt", "le", "gt", "ge"];
 
 fn op_summary(op: &Op) -> String {
     match op {
@@ -48,10 +47,7 @@ fn unsupported(message: String) -> LlvmIrLowerError {
 }
 
 fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
-    let mut msg = format!(
-        "LLVM lowering does not support this CoreIR op yet: {}",
-        op_summary(op)
-    );
+    let mut msg = format!("LLVM lowering does not support this CoreIR op yet: {}", op_summary(op));
     if let Some(d) = details {
         msg.push_str("\n");
         msg.push_str(&d);
@@ -134,7 +130,9 @@ impl Emitter {
 
     fn emit_instr(&mut self, s: String) -> Result<(), LlvmIrLowerError> {
         if self.cur_block_mut().terminator.is_some() {
-            return Err(unsupported("LLVM lowering internal error: instruction emitted after terminator".into()));
+            return Err(unsupported(
+                "LLVM lowering internal error: instruction emitted after terminator".into(),
+            ));
         }
         self.cur_block_mut().instrs.push(s);
         Ok(())
@@ -142,7 +140,9 @@ impl Emitter {
 
     fn emit_terminator(&mut self, s: String) -> Result<(), LlvmIrLowerError> {
         if self.cur_block_mut().terminator.is_some() {
-            return Err(unsupported("LLVM lowering internal error: terminator emitted twice".into()));
+            return Err(unsupported(
+                "LLVM lowering internal error: terminator emitted twice".into(),
+            ));
         }
         self.cur_block_mut().terminator = Some(s);
         Ok(())
@@ -319,10 +319,9 @@ fn lower_expr_i64(
         Op::Bool(b) => Ok(LlvmValue::ConstI64(if *b { 1 } else { 0 })),
         Op::Ctor(name) if name == "True" => Ok(LlvmValue::ConstI64(1)),
         Op::Ctor(name) if name == "False" => Ok(LlvmValue::ConstI64(0)),
-        Op::Ref(name) => env
-            .get(name)
-            .cloned()
-            .ok_or_else(|| unsupported_with_hint(&t.op, Some(format!("Unbound reference '{name}'")))),
+        Op::Ref(name) => env.get(name).cloned().ok_or_else(|| {
+            unsupported_with_hint(&t.op, Some(format!("Unbound reference '{name}'")))
+        }),
         Op::Seq { first, second } => {
             // Evaluate first for its effects (within the supported i64-only subset), then return second.
             let _ = lower_expr_i64(em, env, first)?;
@@ -361,17 +360,20 @@ fn lower_expr_i64(
                         hit
                     }
                     Op::App { func, arg } => {
-                        refs_forbidden(func, forbidden, bound) || refs_forbidden(arg, forbidden, bound)
+                        refs_forbidden(func, forbidden, bound)
+                            || refs_forbidden(arg, forbidden, bound)
                     }
                     Op::Seq { first, second }
                     | Op::Chain { first, second }
                     | Op::OrElse { left: first, right: second }
                     | Op::Alt { left: first, right: second }
                     | Op::Catch { left: first, right: second } => {
-                        refs_forbidden(first, forbidden, bound) || refs_forbidden(second, forbidden, bound)
+                        refs_forbidden(first, forbidden, bound)
+                            || refs_forbidden(second, forbidden, bound)
                     }
                     Op::Bind { value, cont } => {
-                        refs_forbidden(value, forbidden, bound) || refs_forbidden(cont, forbidden, bound)
+                        refs_forbidden(value, forbidden, bound)
+                            || refs_forbidden(cont, forbidden, bound)
                     }
                     Op::Raise { payload } => refs_forbidden(payload, forbidden, bound),
                     Op::LetRec { bindings, body } => {
@@ -398,9 +400,9 @@ fn lower_expr_i64(
                     Op::List { items } | Op::Tuple { items } => {
                         items.iter().any(|x| refs_forbidden(x, forbidden, bound))
                     }
-                    Op::Record { fields } | Op::ModeMap { fields, .. } => fields
-                        .iter()
-                        .any(|f| refs_forbidden(&f.value, forbidden, bound)),
+                    Op::Record { fields } | Op::ModeMap { fields, .. } => {
+                        fields.iter().any(|f| refs_forbidden(&f.value, forbidden, bound))
+                    }
                     Op::Select { target, .. } => refs_forbidden(target, forbidden, bound),
                     _ => false,
                 }
@@ -632,7 +634,9 @@ pub fn lower_to_llvm_ir_text(term: &Term) -> Result<String, LlvmIrLowerError> {
     let mut env: HashMap<String, LlvmValue> = HashMap::new();
     let v = lower_expr_i64(&mut em, &mut env, term)?;
     if v.ty() != LlvmTy::I64 {
-        return Err(unsupported("LLVM lowering produced a non-i64 result; only i64 is supported in this PoC.".into()));
+        return Err(unsupported(
+            "LLVM lowering produced a non-i64 result; only i64 is supported in this PoC.".into(),
+        ));
     }
 
     em.emit_ret_i64(v)?;
@@ -706,7 +710,6 @@ entry:
         assert_eq!(ir, expected);
     }
 
-
     #[test]
     fn lowers_lt_to_icmp_zext() {
         // ((~lt 1) 2)
@@ -763,18 +766,15 @@ entry:
         assert_eq!(ir, expected);
     }
 
-        #[test]
-        fn lowers_if_true_br_phi_i64_only() {
-                // CoreIR observed shape: (((if True) 1) 2)
-                let t = app(
-                        app(
-                                app(Term::new(Op::Ctor("if".into())), Term::new(Op::Ctor("True".into()))),
-                                int_(1),
-                        ),
-                        int_(2),
-                );
-                let ir = lower_to_llvm_ir_text(&t).expect("lower");
-                let expected = r#"; lzscr-llvmir (PoC)
+    #[test]
+    fn lowers_if_true_br_phi_i64_only() {
+        // CoreIR observed shape: (((if True) 1) 2)
+        let t = app(
+            app(app(Term::new(Op::Ctor("if".into())), Term::new(Op::Ctor("True".into()))), int_(1)),
+            int_(2),
+        );
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
@@ -790,22 +790,16 @@ merge2:
   ret i64 %1
 }
 "#;
-                assert_eq!(ir, expected);
-        }
+        assert_eq!(ir, expected);
+    }
 
-        #[test]
-        fn lowers_if_with_lt_condition_br_phi_i64_only() {
-                // (if (1 < 2) 10 20) with `lt` producing i64 0/1, then converted to i1 via `icmp ne`.
-                let cond = app(app(ref_("lt"), int_(1)), int_(2));
-                let t = app(
-                        app(
-                                app(Term::new(Op::Ctor("if".into())), cond),
-                                int_(10),
-                        ),
-                        int_(20),
-                );
-                let ir = lower_to_llvm_ir_text(&t).expect("lower");
-                let expected = r#"; lzscr-llvmir (PoC)
+    #[test]
+    fn lowers_if_with_lt_condition_br_phi_i64_only() {
+        // (if (1 < 2) 10 20) with `lt` producing i64 0/1, then converted to i1 via `icmp ne`.
+        let cond = app(app(ref_("lt"), int_(1)), int_(2));
+        let t = app(app(app(Term::new(Op::Ctor("if".into())), cond), int_(10)), int_(20));
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
@@ -823,21 +817,15 @@ merge2:
   ret i64 %3
 }
 "#;
-                assert_eq!(ir, expected);
-        }
+        assert_eq!(ir, expected);
+    }
 
-        #[test]
-        fn lowers_if_with_truthy_i64_condition_br_phi_i64_only() {
-                // (if 42 1 2): in i64-only subset we treat non-zero as true.
-                let t = app(
-                        app(
-                                app(Term::new(Op::Ctor("if".into())), int_(42)),
-                                int_(1),
-                        ),
-                        int_(2),
-                );
-                let ir = lower_to_llvm_ir_text(&t).expect("lower");
-                let expected = r#"; lzscr-llvmir (PoC)
+    #[test]
+    fn lowers_if_with_truthy_i64_condition_br_phi_i64_only() {
+        // (if 42 1 2): in i64-only subset we treat non-zero as true.
+        let t = app(app(app(Term::new(Op::Ctor("if".into())), int_(42)), int_(1)), int_(2));
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
@@ -853,21 +841,15 @@ merge2:
   ret i64 %1
 }
 "#;
-                assert_eq!(ir, expected);
-        }
+        assert_eq!(ir, expected);
+    }
 
-        #[test]
-        fn lowers_if_with_zero_condition_br_phi_i64_only() {
-                // (if 0 1 2): 0 is falsy (still lowered via icmp+br+phi, no constant-folding).
-                let t = app(
-                        app(
-                                app(Term::new(Op::Ctor("if".into())), int_(0)),
-                                int_(1),
-                        ),
-                        int_(2),
-                );
-                let ir = lower_to_llvm_ir_text(&t).expect("lower");
-                let expected = r#"; lzscr-llvmir (PoC)
+    #[test]
+    fn lowers_if_with_zero_condition_br_phi_i64_only() {
+        // (if 0 1 2): 0 is falsy (still lowered via icmp+br+phi, no constant-folding).
+        let t = app(app(app(Term::new(Op::Ctor("if".into())), int_(0)), int_(1)), int_(2));
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
@@ -883,21 +865,21 @@ merge2:
   ret i64 %1
 }
 "#;
-                assert_eq!(ir, expected);
-        }
+        assert_eq!(ir, expected);
+    }
 
-        #[test]
-        fn lowers_if_with_false_ctor_condition_br_phi_i64_only() {
-                // (if False 1 2): constructor False is lowered as i64 0.
-                let t = app(
-                        app(
-                                app(Term::new(Op::Ctor("if".into())), Term::new(Op::Ctor("False".into()))),
-                                int_(1),
-                        ),
-                        int_(2),
-                );
-                let ir = lower_to_llvm_ir_text(&t).expect("lower");
-                let expected = r#"; lzscr-llvmir (PoC)
+    #[test]
+    fn lowers_if_with_false_ctor_condition_br_phi_i64_only() {
+        // (if False 1 2): constructor False is lowered as i64 0.
+        let t = app(
+            app(
+                app(Term::new(Op::Ctor("if".into())), Term::new(Op::Ctor("False".into()))),
+                int_(1),
+            ),
+            int_(2),
+        );
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
@@ -913,30 +895,29 @@ merge2:
   ret i64 %1
 }
 "#;
-                assert_eq!(ir, expected);
-        }
+        assert_eq!(ir, expected);
+    }
 
-        #[test]
-        fn lowers_if_with_seq_and_chain_in_branches_i64_only() {
-                // (if True (~seq ((~mul 2) 3) ((~add 10) 20)) (~chain ((~mul 4) 5) ((~add 6) 7)))
-                let then_first = app(app(ref_("mul"), int_(2)), int_(3));
-                let then_second = app(app(ref_("add"), int_(10)), int_(20));
-                let then_ = Term::new(Op::Seq { first: Box::new(then_first), second: Box::new(then_second) });
+    #[test]
+    fn lowers_if_with_seq_and_chain_in_branches_i64_only() {
+        // (if True (~seq ((~mul 2) 3) ((~add 10) 20)) (~chain ((~mul 4) 5) ((~add 6) 7)))
+        let then_first = app(app(ref_("mul"), int_(2)), int_(3));
+        let then_second = app(app(ref_("add"), int_(10)), int_(20));
+        let then_ =
+            Term::new(Op::Seq { first: Box::new(then_first), second: Box::new(then_second) });
 
-                let else_first = app(app(ref_("mul"), int_(4)), int_(5));
-                let else_second = app(app(ref_("add"), int_(6)), int_(7));
-                let else_ = Term::new(Op::Chain { first: Box::new(else_first), second: Box::new(else_second) });
+        let else_first = app(app(ref_("mul"), int_(4)), int_(5));
+        let else_second = app(app(ref_("add"), int_(6)), int_(7));
+        let else_ =
+            Term::new(Op::Chain { first: Box::new(else_first), second: Box::new(else_second) });
 
-                let t = app(
-                        app(
-                                app(Term::new(Op::Ctor("if".into())), Term::new(Op::Ctor("True".into()))),
-                                then_,
-                        ),
-                        else_,
-                );
+        let t = app(
+            app(app(Term::new(Op::Ctor("if".into())), Term::new(Op::Ctor("True".into()))), then_),
+            else_,
+        );
 
-                let ir = lower_to_llvm_ir_text(&t).expect("lower");
-                let expected = r#"; lzscr-llvmir (PoC)
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
@@ -956,18 +937,15 @@ merge2:
   ret i64 %5
 }
 "#;
-                assert_eq!(ir, expected);
-        }
+        assert_eq!(ir, expected);
+    }
 
-        #[test]
-        fn lowers_and_short_circuit_i64_only() {
-                // (and 0 5) : short-circuit should route false branch to 0.
-                let t = app(
-                        app(Term::new(Op::Ctor("and".into())), int_(0)),
-                        int_(5),
-                );
-                let ir = lower_to_llvm_ir_text(&t).expect("lower");
-                let expected = r#"; lzscr-llvmir (PoC)
+    #[test]
+    fn lowers_and_short_circuit_i64_only() {
+        // (and 0 5) : short-circuit should route false branch to 0.
+        let t = app(app(Term::new(Op::Ctor("and".into())), int_(0)), int_(5));
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
@@ -985,18 +963,15 @@ merge2:
   ret i64 %3
 }
 "#;
-                assert_eq!(ir, expected);
-        }
+        assert_eq!(ir, expected);
+    }
 
-        #[test]
-        fn lowers_or_short_circuit_i64_only() {
-                // (or 7 0) : short-circuit should route true branch to 1.
-                let t = app(
-                        app(Term::new(Op::Ctor("or".into())), int_(7)),
-                        int_(0),
-                );
-                let ir = lower_to_llvm_ir_text(&t).expect("lower");
-                let expected = r#"; lzscr-llvmir (PoC)
+    #[test]
+    fn lowers_or_short_circuit_i64_only() {
+        // (or 7 0) : short-circuit should route true branch to 1.
+        let t = app(app(Term::new(Op::Ctor("or".into())), int_(7)), int_(0));
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
@@ -1014,77 +989,78 @@ merge2:
   ret i64 %3
 }
 "#;
-                assert_eq!(ir, expected);
-        }
+        assert_eq!(ir, expected);
+    }
 
-        #[test]
-        fn lowers_not_i64_only() {
-            // (not 0) => 1
-            let t = app(Term::new(Op::Ctor("not".into())), int_(0));
-            let ir = lower_to_llvm_ir_text(&t).expect("lower");
-            let expected = concat!(
-                r#"; lzscr-llvmir (PoC)
+    #[test]
+    fn lowers_not_i64_only() {
+        // (not 0) => 1
+        let t = app(Term::new(Op::Ctor("not".into())), int_(0));
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = concat!(
+            r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
 entry:
 "#,
-                "  %0 = icmp eq i64 0, 0\n",
-                "  %1 = zext i1 %0 to i64\n",
-                "  ret i64 %1\n",
-                "}\n",
-            );
-            assert_eq!(ir, expected);
-        }
+            "  %0 = icmp eq i64 0, 0\n",
+            "  %1 = zext i1 %0 to i64\n",
+            "  ret i64 %1\n",
+            "}\n",
+        );
+        assert_eq!(ir, expected);
+    }
 
-        #[test]
-        fn lowers_inline_lambda_application_i64_only() {
-                // ((\~x -> (~add ~x 1)) 5)
-                let body = app(app(ref_("add"), ref_("x")), int_(1));
-                let lam = lam_var("x", body);
-                let t = app(lam, int_(5));
-                let ir = lower_to_llvm_ir_text(&t).expect("lower");
-                let expected = concat!(
-                    r#"; lzscr-llvmir (PoC)
+    #[test]
+    fn lowers_inline_lambda_application_i64_only() {
+        // ((\~x -> (~add ~x 1)) 5)
+        let body = app(app(ref_("add"), ref_("x")), int_(1));
+        let lam = lam_var("x", body);
+        let t = app(lam, int_(5));
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = concat!(
+            r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
 entry:
 "#,
-                    "  %0 = add i64 5, 1\n",
-                    "  ret i64 %0\n",
-                    "}\n",
-                );
-                assert_eq!(ir, expected);
-        }
+            "  %0 = add i64 5, 1\n",
+            "  ret i64 %0\n",
+            "}\n",
+        );
+        assert_eq!(ir, expected);
+    }
 
-        #[test]
-        fn lowers_curried_lambda_application_i64_only() {
-                // (((\~x -> (\~y -> (~add ~x ~y))) 2) 3)
-                let inner = app(app(ref_("add"), ref_("x")), ref_("y"));
-                let lam_y = lam_var("y", inner);
-                let lam_x = lam_var("x", lam_y);
-                let t = app(app(lam_x, int_(2)), int_(3));
-                let ir = lower_to_llvm_ir_text(&t).expect("lower");
-                let expected = concat!(
-                    r#"; lzscr-llvmir (PoC)
+    #[test]
+    fn lowers_curried_lambda_application_i64_only() {
+        // (((\~x -> (\~y -> (~add ~x ~y))) 2) 3)
+        let inner = app(app(ref_("add"), ref_("x")), ref_("y"));
+        let lam_y = lam_var("y", inner);
+        let lam_x = lam_var("x", lam_y);
+        let t = app(app(lam_x, int_(2)), int_(3));
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = concat!(
+            r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
 
 define i64 @main() {
 entry:
 "#,
-                    "  %0 = add i64 2, 3\n",
-                    "  ret i64 %0\n",
-                    "}\n",
-                );
-                assert_eq!(ir, expected);
-        }
+            "  %0 = add i64 2, 3\n",
+            "  ret i64 %0\n",
+            "}\n",
+        );
+        assert_eq!(ir, expected);
+    }
 
     #[test]
     fn lowers_letrec_non_recursive_i64_only() {
         // letrec { x = 5 } in (~add x 2)
         let body = app(app(ref_("add"), ref_("x")), int_(2));
-        let t = Term::new(Op::LetRec { bindings: vec![("x".into(), int_(5))], body: Box::new(body) });
+        let t =
+            Term::new(Op::LetRec { bindings: vec![("x".into(), int_(5))], body: Box::new(body) });
         let ir = lower_to_llvm_ir_text(&t).expect("lower");
         let expected = r#"; lzscr-llvmir (PoC)
 target triple = "unknown-unknown-unknown"
