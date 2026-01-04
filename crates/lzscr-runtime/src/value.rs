@@ -16,6 +16,7 @@ pub enum Value {
     List(Vec<Value>),
     Tuple(Vec<Value>),
     Record(std::collections::BTreeMap<String, Value>),
+    ModeMap { fields: std::collections::BTreeMap<String, Value>, default: Option<Box<Value>> },
     Native { arity: usize, args: Vec<Value>, f: fn(&Env, &[Value]) -> Result<Value, EvalError> },
     Closure { param: Pattern, body: Expr, env: Env },
     Raised(Box<Value>),

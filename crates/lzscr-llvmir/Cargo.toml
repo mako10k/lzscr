@@ -1,0 +1,13 @@
+[package]
+name = "lzscr-llvmir"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+lzscr-coreir = { path = "../lzscr-coreir", version = "0.1.0" }
+lzscr-ast = { path = "../lzscr-ast", version = "0.1.0" }
+thiserror = "1"
+
+[dev-dependencies]
+pretty_assertions = "1"

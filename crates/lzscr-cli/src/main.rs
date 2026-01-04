@@ -11,10 +11,30 @@ use lzscr_runtime::{eval, Env, Value};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Instant;
 
 type TypeDeclsAndExprs = (Vec<TypeDecl>, Vec<(Pattern, Expr)>);
+
+fn stdout_write(s: &str) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    out.write_all(s.as_bytes())
+}
+
+fn stdout_writeln(s: &str) -> io::Result<()> {
+    stdout_write(s)?;
+    stdout_write("\n")
+}
+
+fn ignore_broken_pipe(result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(e),
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum StdlibMode {
@@ -34,6 +54,7 @@ struct SourceRegistry {
     primary_text: String,
     next_base: usize,
     modules: Vec<RegisteredSource>,
+    module_base: HashMap<String, usize>,
     // Optional mapping for primary buffer segments back to original sources
     prelude_name: Option<String>,
     prelude_text: Option<String>,
@@ -60,6 +81,7 @@ impl SourceRegistry {
             primary_text,
             next_base,
             modules: Vec::new(),
+            module_base: HashMap::new(),
             prelude_name: None,
             prelude_text: None,
             prelude_start: None,
@@ -90,12 +112,16 @@ impl SourceRegistry {
     }
 
     fn register_module(&mut self, name: String, text: String) -> usize {
+        if let Some(base) = self.module_base.get(&name).copied() {
+            return base;
+        }
         let base = self.next_base;
         // Advance next_base by aligned size of this module
         let align = 4096usize;
         let size = ((text.len() + align) / align) * align;
         self.next_base = base + size;
         self.modules.push(RegisteredSource { name, text, base });
+        self.module_base.insert(self.modules.last().unwrap().name.clone(), base);
         base
     }
 
@@ -414,7 +440,7 @@ fn parse_ctor_arity_spec(spec: &str) -> (HashMap<String, usize>, Vec<String>) {
 #[command(name = "lzscr", version, about = "LazyScript reimplementation (skeleton)")]
 struct Opt {
     /// One-line program
-    #[arg(short = 'e', long = "eval")]
+    #[arg(short = 'e', long = "eval", allow_hyphen_values = true)]
     eval: Option<String>,
 
     /// Execute program from file
@@ -440,6 +466,28 @@ struct Opt {
     /// Dump Core IR as JSON
     #[arg(long = "dump-coreir-json", default_value_t = false)]
     dump_coreir_json: bool,
+
+    /// Dump LLVM IR (text, PoC; lowers from Core IR subset)
+    #[arg(long = "dump-llvmir", default_value_t = false, conflicts_with = "build_exe")]
+    dump_llvmir: bool,
+
+    /// Build a native executable (PoC; requires clang or llc+cc)
+    #[arg(
+        long = "build-exe",
+        conflicts_with_all = [
+            "dump_coreir",
+            "dump_coreir_json",
+            "eval_coreir",
+            "dump_llvmir",
+            "analyze",
+            "format_code"
+        ]
+    )]
+    build_exe: Option<PathBuf>,
+
+    /// Allow overwriting the output path used by --build-exe
+    #[arg(long = "build-exe-overwrite", default_value_t = false, requires = "build_exe")]
+    build_exe_overwrite: bool,
 
     /// Evaluate via Core IR evaluator (PoC)
     #[arg(long = "eval-coreir", default_value_t = false)]
@@ -512,6 +560,147 @@ struct Opt {
     /// Print timing of analysis phases and sizes to stderr
     #[arg(long = "analyze-trace", default_value_t = false)]
     analyze_trace: bool,
+
+    /// Print full error messages (do not truncate large IR dumps)
+    #[arg(long = "verbose", default_value_t = false)]
+    verbose: bool,
+}
+
+fn clamp_char_boundary(s: &str, idx: usize) -> usize {
+    let mut i = idx.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+fn maybe_truncate_error(s: &str, verbose: bool) -> String {
+    if verbose {
+        return s.to_string();
+    }
+    // Keep this reasonably small for terminals and CI logs.
+    const MAX: usize = 8_000;
+    if s.len() <= MAX {
+        return s.to_string();
+    }
+    let head_len = (MAX * 2) / 3;
+    let tail_len = MAX - head_len;
+    let head_end = clamp_char_boundary(s, head_len);
+    let tail_start = clamp_char_boundary(s, s.len().saturating_sub(tail_len));
+    let omitted = s.len().saturating_sub(head_end + (s.len() - tail_start));
+    format!(
+        "{}\n...\n[truncated ~{} bytes; re-run with --verbose]\n...\n{}",
+        &s[..head_end],
+        omitted,
+        &s[tail_start..]
+    )
+}
+
+#[derive(Clone, Debug)]
+struct RequireFrame {
+    canon: String,
+    display: String,
+}
+
+fn tool_available(program: &str, args: &[&str]) -> bool {
+    Command::new(program).args(args).output().is_ok()
+}
+
+fn run_cmd(program: &str, args: &[String]) -> Result<(), String> {
+    let out = Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|e| format!("failed to spawn {program}: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    Err(format!(
+        "{program} failed (exit={:?})\nstdout:\n{}\nstderr:\n{}",
+        out.status.code(),
+        stdout,
+        stderr
+    ))
+}
+
+fn build_executable_from_coreir(
+    term: &lzscr_coreir::Term,
+    out_path: &Path,
+    overwrite: bool,
+) -> Result<(), String> {
+    if out_path.exists() && !overwrite {
+        return Err(format!(
+            "output already exists: {} (use --build-exe-overwrite to replace)",
+            out_path.display()
+        ));
+    }
+
+    let ir = lzscr_llvmir::lower_to_llvm_ir_text(term).map_err(|e| e.to_string())?;
+
+    if let Some(parent) = out_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("failed to create output dir {}: {e}", parent.display()))?;
+        }
+    }
+
+    let tmp_dir = std::env::temp_dir();
+    let nonce = format!(
+        "lzscr_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
+    let ll_path = tmp_dir.join(format!("{nonce}.ll"));
+    fs::write(&ll_path, ir).map_err(|e| format!("failed to write {}: {e}", ll_path.display()))?;
+
+    let out_str = out_path.to_string_lossy().to_string();
+    let ll_str = ll_path.to_string_lossy().to_string();
+
+    // Prefer clang: it can compile LLVM IR directly.
+    let clang_ok = tool_available("clang", &["--version"]);
+    if clang_ok {
+        let args = vec![
+            "-O0".to_string(),
+            "-x".to_string(),
+            "ir".to_string(),
+            ll_str,
+            "-o".to_string(),
+            out_str,
+        ];
+        let res = run_cmd("clang", &args);
+        let _ = fs::remove_file(&ll_path);
+        return res;
+    }
+
+    // Fallback: llc -> object, then link with cc.
+    let llc_ok = tool_available("llc", &["--version"]);
+    let cc_ok = tool_available("cc", &["--version"]);
+    if llc_ok && cc_ok {
+        let obj_path = tmp_dir.join(format!("{nonce}.o"));
+        let obj_str = obj_path.to_string_lossy().to_string();
+
+        let llc_args = vec![
+            "-filetype=obj".to_string(),
+            ll_path.to_string_lossy().to_string(),
+            "-o".to_string(),
+            obj_str.clone(),
+        ];
+        run_cmd("llc", &llc_args)?;
+
+        let cc_args = vec![obj_str, "-o".to_string(), out_path.to_string_lossy().to_string()];
+        let res = run_cmd("cc", &cc_args);
+
+        let _ = fs::remove_file(&ll_path);
+        let _ = fs::remove_file(&obj_path);
+        return res;
+    }
+
+    let _ = fs::remove_file(&ll_path);
+    Err("no LLVM toolchain found: install 'clang' (recommended) or provide 'llc' + 'cc'".into())
 }
 
 /// Display a type error using structured diagnostic information.
@@ -616,7 +805,7 @@ fn handle_format_mode(
     };
     match out {
         Ok(s) => {
-            println!("{}", s);
+            ignore_broken_pipe(stdout_writeln(&s))?;
             Ok(())
         }
         Err(e) => {
@@ -969,7 +1158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ) {
         Ok(x) => x,
         Err(e) => {
-            eprintln!("require error: {}", e);
+            eprintln!("require error: {}", maybe_truncate_error(&e, opt.verbose));
             std::process::exit(2);
         }
     };
@@ -987,7 +1176,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Block(inner) => 1 + count(inner),
                 List(xs) => 1 + xs.iter().map(count).sum::<usize>(),
                 Record(fs) => 1 + fs.iter().map(|f| count(&f.value)).sum::<usize>(),
-                ModeMap(fs) => 1 + fs.iter().map(|f| count(&f.value)).sum::<usize>(),
+                ModeMap { fields: fs, default } => {
+                    1 + fs.iter().map(|f| count(&f.value)).sum::<usize>()
+                        + default.as_ref().map(|d| count(d)).unwrap_or(0)
+                }
                 LetGroup { bindings, body, .. } => {
                     1 + count(body) + bindings.iter().map(|(_, ex)| count(ex)).sum::<usize>()
                 }
@@ -1002,20 +1194,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if opt.analyze_trace {
         eprintln!("trace: ast-nodes {}", ast_nodes);
     }
-    // Core IR dump/eval modes take precedence over analyze/execute
-    if opt.dump_coreir || opt.dump_coreir_json || opt.eval_coreir {
+    // Core IR / LLVM IR dump/eval/build modes take precedence over analyze/execute
+    if opt.dump_coreir
+        || opt.dump_coreir_json
+        || opt.eval_coreir
+        || opt.dump_llvmir
+        || opt.build_exe.is_some()
+    {
         let term = lower_expr_to_core(&ast);
         if opt.dump_coreir_json {
-            println!("{}", serde_json::to_string_pretty(&term)?);
+            let s = serde_json::to_string_pretty(&term)?;
+            ignore_broken_pipe(stdout_writeln(&s))?;
         } else if opt.dump_coreir {
-            println!("{}", print_term(&term));
+            let s = print_term(&term);
+            ignore_broken_pipe(stdout_writeln(&s))?;
         } else if opt.eval_coreir {
             match eval_term(&term) {
-                Ok(v) => println!("{}", print_ir_value(&v)),
+                Ok(v) => {
+                    let s = print_ir_value(&v);
+                    ignore_broken_pipe(stdout_writeln(&s))?;
+                }
                 Err(e) => {
                     eprintln!("coreir eval error: {}", e);
                     std::process::exit(2);
                 }
+            }
+        } else if opt.dump_llvmir {
+            match lzscr_llvmir::lower_to_llvm_ir_text(&term) {
+                Ok(s) => {
+                    ignore_broken_pipe(stdout_write(&s))?;
+                }
+                Err(e) => {
+                    let msg = maybe_truncate_error(&e.to_string(), opt.verbose);
+                    eprintln!("llvmir lower error: {}", msg);
+                    std::process::exit(2);
+                }
+            }
+        } else if let Some(out_path) = opt.build_exe {
+            if let Err(e) =
+                build_executable_from_coreir(&term, out_path.as_path(), opt.build_exe_overwrite)
+            {
+                let msg = maybe_truncate_error(&e, opt.verbose);
+                eprintln!("build-exe error: {msg}");
+                std::process::exit(2);
             }
         }
         return Ok(());
@@ -1128,7 +1349,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let_collisions: &lc,
                 ctor_arity: ca,
             };
-            println!("{}", serde_json::to_string_pretty(&out)?);
+            let s = serde_json::to_string_pretty(&out)?;
+            ignore_broken_pipe(stdout_writeln(&s))?;
         } else {
             for f in &dups {
                 eprintln!(
@@ -1221,7 +1443,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         struct TypeOut {
                             ty: String,
                         }
-                        println!("{}", serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?);
+                        let s = serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?;
+                        ignore_broken_pipe(stdout_writeln(&s))?;
                     } else if opt.types == "pretty" {
                         // Defer printing to combine with value on one line
                         inferred_type_pretty = Some(t.clone());
@@ -1231,7 +1454,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             &ast,
                             lzscr_types::api::InferOptions { pretty: false },
                         ) {
-                            Ok(raw) => println!("{}", raw),
+                            Ok(raw) => {
+                                ignore_broken_pipe(stdout_writeln(&raw))?;
+                            }
                             Err(e) => {
                                 eprintln!("type error: {}", e);
                                 std::process::exit(2);
@@ -1794,25 +2019,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .join(", ");
                 format!("{{{}}}", inner)
             }
+            Value::ModeMap { fields, default } => {
+                let inner = fields
+                    .iter()
+                    .map(|(k, v)| {
+                        let rendered = val_to_string(env, v);
+                        let needs_wrap = rendered.chars().any(|ch| ch.is_whitespace())
+                            || rendered.contains(',')
+                            || rendered.contains('{')
+                            || rendered.contains('[');
+                        let wrapped = if needs_wrap { format!("({})", rendered) } else { rendered };
+                        format!("{}: {}", k, wrapped)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                match default {
+                    Some(d) if inner.is_empty() => format!(".{{; {}}}", val_to_string(env, d)),
+                    Some(d) => format!(".{{{}; {}}}", inner, val_to_string(env, d)),
+                    None => format!(".{{{}}}", inner),
+                }
+            }
             Value::Native { .. } | Value::Closure { .. } => "<fun>".into(),
         }
     }
     let out = val_to_string(&env, &val);
     if opt.types == "pretty" {
         if let Some(tp) = inferred_type_pretty {
-            println!("{} {}", tp, out);
+            ignore_broken_pipe(stdout_writeln(&format!("{} {}", tp, out)))?;
         } else {
-            println!("{out}");
+            ignore_broken_pipe(stdout_writeln(&out))?;
         }
     } else {
-        println!("{out}");
+        ignore_broken_pipe(stdout_writeln(&out))?;
     }
     Ok(())
 } // end of main()
 
 // ---------- ~require expansion ----------
-
-use std::path::Path;
 fn build_module_search_paths(stdlib_dir: &Path, module_path: Option<&str>) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     // 1) current directory
@@ -1834,7 +2078,7 @@ fn build_module_search_paths(stdlib_dir: &Path, module_path: Option<&str>) -> Ve
 fn expand_requires_in_expr(
     e: &Expr,
     search_paths: &[PathBuf],
-    stack: &mut Vec<String>,
+    stack: &mut Vec<RequireFrame>,
     src_reg: &mut SourceRegistry,
     stdlib_mode: StdlibMode,
 ) -> Result<Expr, String> {
@@ -1853,19 +2097,28 @@ fn expand_requires_in_expr(
                 ));
             }
             let rel = segs.join("/") + ".lzscr";
-            let (path, content) = resolve_module_content(&rel, search_paths)?;
+            let (path, content) = match resolve_module_content(&rel, search_paths) {
+                Ok(x) => x,
+                Err(msg) => {
+                    let chain = format_require_chain(stack, Some(&rel));
+                    if chain.is_empty() {
+                        return Err(msg);
+                    }
+                    return Err(format!("{msg}\n{chain}"));
+                }
+            };
             let canon = match std::fs::canonicalize(&path) {
                 Ok(p) => p.display().to_string(),
                 Err(_) => path.display().to_string(),
             };
-            if stack.contains(&canon) {
-                return Err(format!(
-                    "cyclic require detected: {} -> ... -> {}",
-                    stack.first().cloned().unwrap_or_default(),
-                    canon
-                ));
+            if stack.iter().any(|f| f.canon == canon) {
+                let chain = format_require_chain(stack, Some(&rel));
+                if chain.is_empty() {
+                    return Err(format!("cyclic require detected: {}", rel));
+                }
+                return Err(format!("cyclic require detected\n{chain}"));
             }
-            stack.push(canon);
+            stack.push(RequireFrame { canon, display: rel.clone() });
             // Wrap like file rule: ( <content> )
             let wrapped = format!("({})", content);
             let parsed = match parse_expr(&wrapped) {
@@ -1877,7 +2130,18 @@ fn expand_requires_in_expr(
                             let // adjust for leading '('
                         adj_off = span_offset.saturating_sub(1);
                             let block = format_span_caret(&content, &rel, adj_off, span_len);
-                            format!("parse error in required module '{}': {}\n{}", rel, msg, block)
+                            let chain = format_require_chain(stack, Some(&rel));
+                            if chain.is_empty() {
+                                format!(
+                                    "parse error in required module '{}': {}\n{}",
+                                    rel, msg, block
+                                )
+                            } else {
+                                format!(
+                                    "parse error in required module '{}': {}\n{}\n{}",
+                                    rel, msg, chain, block
+                                )
+                            }
                         }
                         other => format!("parse error in required module '{}': {}", rel, other),
                     });
@@ -1966,8 +2230,9 @@ fn expand_requires_in_expr(
                 })
                 .collect::<Result<Vec<_>, String>>()?,
         ),
-        ModeMap(fs) => ModeMap(
-            fs.iter()
+        ModeMap { fields: fs, default } => {
+            let fields = fs
+                .iter()
                 .map(|f| {
                     Ok(ExprRecordField::new(
                         f.name.clone(),
@@ -1981,8 +2246,21 @@ fn expand_requires_in_expr(
                         )?,
                     ))
                 })
-                .collect::<Result<Vec<_>, String>>()?,
-        ),
+                .collect::<Result<Vec<_>, String>>()?;
+
+            let default = match default {
+                Some(d) => Some(Box::new(expand_requires_in_expr(
+                    d,
+                    search_paths,
+                    stack,
+                    src_reg,
+                    stdlib_mode,
+                )?)),
+                None => None,
+            };
+
+            ModeMap { fields, default }
+        }
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
             for (p, ex) in bindings.iter() {
@@ -2067,6 +2345,17 @@ fn expand_requires_in_expr(
     Ok(Expr { kind: k, span: e.span })
 }
 
+fn format_require_chain(stack: &[RequireFrame], leaf: Option<&str>) -> String {
+    let mut parts: Vec<String> = stack.iter().map(|f| f.display.clone()).collect();
+    if let Some(x) = leaf {
+        parts.push(x.to_string());
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!("require chain: {}", parts.join(" -> "))
+}
+
 fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
     use ExprKind::*;
     let map_expr = |x: &Expr| rebase_expr_spans_with_minus(x, add, minus);
@@ -2095,12 +2384,12 @@ fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
             }
             Record(new)
         }
-        ModeMap(fields) => {
+        ModeMap { fields, default } => {
             let mut new = Vec::with_capacity(fields.len());
             for f in fields.iter() {
                 new.push(ExprRecordField::new(f.name.clone(), f.name_span, map_expr(&f.value)));
             }
-            ModeMap(new)
+            ModeMap { fields: new, default: default.as_deref().map(map_box) }
         }
         LetGroup { bindings, body, .. } => {
             let mut new_bs = Vec::with_capacity(bindings.len());
@@ -2298,7 +2587,7 @@ fn node_kind_name(k: &ExprKind) -> &'static str {
         ExprKind::Block(_) => "Block",
         ExprKind::List(_) => "List",
         ExprKind::Record(_) => "Record",
-        ExprKind::ModeMap(_) => "ModeMap",
+        ExprKind::ModeMap { .. } => "ModeMap",
         ExprKind::LetGroup { .. } => "LetGroup",
         ExprKind::Raise(_) => "Raise",
         ExprKind::AltLambda { .. } => "AltLambda",

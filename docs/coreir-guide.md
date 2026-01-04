@@ -250,4 +250,4 @@ Planned improvements (see ROADMAP.md):
 - Lowering: `lower_expr_to_core` function
 - Evaluation: `eval_term` and `eval_term_with_env` functions
 - ROADMAP: `docs/ROADMAP.md` (lines 23-25)
-- Implementation Status: `docs/implementation-status.md`
+

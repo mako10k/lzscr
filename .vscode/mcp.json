@@ -3,6 +3,7 @@
 		"shell-server": {
 			"type": "stdio",
 			"command": "npx",
+			"cwd": "${workspaceFolder}",
 			"args": [
 				"@mako10k/mcp-shell-server"
 			]
@@ -10,6 +11,7 @@
 		"rca": {
 			"type": "stdio",
 			"command": "npx",
+			"cwd": "${workspaceFolder}",
 			"args": [
 				"mcp-rca"
 			]
@@ -17,23 +19,10 @@
 		"mdast": {
 			"type": "stdio",
 			"command": "npx",
+			"cwd": "${workspaceFolder}",
 			"args": [
 				"mcp-mdast"
 			]
-		},
-		"memory": {
-			"type": "stdio",
-			"command": "npx",
-			"args": [
-				"@mako10k/mcp-memo"
-			],
-			"env": {
-				"MEMORY_HTTP_URL": "https://mcp-memory-server.mako10k.workers.dev",
-				"NODE_EXTRA_CA_CERTS": "${userHome}/mcp-memo/certs/cloudflare-chain.pem",
-				"MEMORY_HTTP_BEARER_TOKEN": "${input:memory_api_token}",
-				"BUN_CERT": "${userHome}/mcp-memo/certs/cloudflare-chain.pem",
-				"MEMORY_NAMESPACE_DEFAULT": "lzscr"
-			}
 		},
 		"copilot-instructions": {
 			"type": "stdio",
@@ -48,11 +37,5 @@
 			"dev": {}
 		}
 	},
-	"inputs": [
-		{
-			"id": "memory_api_token",
-			"type": "promptString",
-			"description": "MCP Memory API Token"
-		}
-	]
+	"inputs": []
 }

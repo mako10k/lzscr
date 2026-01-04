@@ -7,6 +7,7 @@ fn format_tokens(src: &str) -> String {
     let mut out = String::new();
     for t in toks {
         let k = match t.tok {
+            Tok::Error => "Error",
             Tok::LBrace => "LBrace",
             Tok::RBrace => "RBrace",
             Tok::LParen => "LParen",

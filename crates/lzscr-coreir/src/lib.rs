@@ -7,8 +7,9 @@
 //! Source of truth: docs/ROADMAP.md
 
 use lzscr_ast::ast::*;
+use lzscr_ast::span::Span;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 // Core IR: deliberately small for PoC. Lambda-calculus-like with explicit refs and sequence.
 
@@ -27,21 +28,104 @@ pub enum Ty {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Op {
     // Builtins and ops as symbolic names for now
-    Ref(String),    // reference to name (pre-resolve)
-    Symbol(String), // bare symbol
+    Ref(String), // reference to name (pre-resolve)
+    /// Legacy (older dumps): ambiguous symbol/constructor.
+    ///
+    /// New lowering prefers `Ctor` and `AtomSymbol`.
+    Symbol(String),
+    /// Constructor value (curried via application).
+    Ctor(String),
+    /// Atomic symbol value (used for ModeMap labels, `.select`, etc).
+    AtomSymbol(String),
     Int(i64),
     Float(f64),
     Bool(bool),
     Str(String),
     Char(i32),
     Unit,
-    Lam { param: String, body: Box<Term> },
-    App { func: Box<Term>, arg: Box<Term> },
-    Seq { first: Box<Term>, second: Box<Term> },
-    Chain { first: Box<Term>, second: Box<Term> },
-    Bind { value: Box<Term>, cont: Box<Term> },
+    List {
+        items: Vec<Term>,
+    },
+    Tuple {
+        items: Vec<Term>,
+    },
+    Record {
+        fields: Vec<RecordFieldTerm>,
+    },
+    ModeMap {
+        fields: Vec<RecordFieldTerm>,
+        default: Option<Box<Term>>,
+    },
+    /// ModeMap selection: `.select .M e`.
+    ///
+    /// `label` is the raw symbol string such as `.Int`.
+    Select {
+        label: String,
+        label_span: Span,
+        target: Box<Term>,
+    },
+    Lam {
+        param: Pattern,
+        body: Box<Term>,
+    },
+    App {
+        func: Box<Term>,
+        arg: Box<Term>,
+    },
+    Seq {
+        first: Box<Term>,
+        second: Box<Term>,
+    },
+    Chain {
+        first: Box<Term>,
+        second: Box<Term>,
+    },
+    Bind {
+        value: Box<Term>,
+        cont: Box<Term>,
+    },
+    /// Raise an exception with payload.
+    ///
+    /// Mirrors AST `^(e)`.
+    Raise {
+        payload: Box<Term>,
+    },
+    /// Catch an exception: evaluate `left`; if it is raised, apply `right` to payload.
+    ///
+    /// Mirrors AST `(left ^| right)`.
+    Catch {
+        left: Box<Term>,
+        right: Box<Term>,
+    },
+    /// OrElse (discard LHS result): evaluate `left` (even if raised), then return `right`.
+    ///
+    /// Mirrors AST `(left || right)`.
+    OrElse {
+        left: Box<Term>,
+        right: Box<Term>,
+    },
+    /// Alternative lambdas (pattern-branching lambdas) chain.
+    ///
+    /// Mirrors AST `(left | right)`.
+    ///
+    /// Note: CoreIR evaluator does not implement pattern matching yet, so evaluation
+    /// of this op is currently unsupported.
+    Alt {
+        left: Box<Term>,
+        right: Box<Term>,
+    },
     // Recursive let-group to reflect lazy, mutually recursive semantics
-    LetRec { bindings: Vec<(String, Term)>, body: Box<Term> },
+    LetRec {
+        bindings: Vec<(String, Term)>,
+        body: Box<Term>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RecordFieldTerm {
+    pub name: String,
+    pub name_span: Span,
+    pub value: Term,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -75,8 +159,16 @@ impl Term {
     }
 
     /// Convenience constructor for lambda
-    pub fn lambda<S: Into<String>>(param: S, body: Term) -> Self {
-        Self::new(Op::Lam { param: param.into(), body: Box::new(body) })
+    pub fn lambda(param: Pattern, body: Term) -> Self {
+        Self::new(Op::Lam { param, body: Box::new(body) })
+    }
+
+    /// Convenience constructor for a simple variable lambda: `\~x -> body`.
+    pub fn lambda_var<S: Into<String>>(name: S, body: Term) -> Self {
+        Self::new(Op::Lam {
+            param: Pattern::new(PatternKind::Var(name.into()), lzscr_ast::span::Span::new(0, 0)),
+            body: Box::new(body),
+        })
     }
 
     /// Convenience constructor for function application
@@ -96,6 +188,16 @@ pub struct Module {
 }
 
 pub fn lower_expr_to_core(e: &Expr) -> Term {
+    fn is_tuple_tag_symbol(s: &str) -> bool {
+        // Matches runtime tuple tag encoding like `.,,` (dot then commas).
+        let mut chars = s.chars();
+        if chars.next() != Some('.') {
+            return false;
+        }
+        let rest: Vec<char> = chars.collect();
+        !rest.is_empty() && rest.iter().all(|c| *c == ',')
+    }
+
     fn print_type_expr(t: &TypeExpr) -> String {
         fn dotted(name: &str) -> String {
             let mut s = String::from(".");
@@ -168,51 +270,17 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
             }
         }
     }
-    fn print_pattern(p: &Pattern) -> String {
-        match &p.kind {
-            PatternKind::Wildcard => "_".into(),
-            PatternKind::Var(n) => format!("~{}", n),
-            PatternKind::Unit => "()".into(),
-            PatternKind::Tuple(xs) => {
-                format!("({})", xs.iter().map(print_pattern).collect::<Vec<_>>().join(", "))
-            }
-            PatternKind::List(xs) => {
-                format!("[{}]", xs.iter().map(print_pattern).collect::<Vec<_>>().join(", "))
-            }
-            PatternKind::TypeBind { pat, .. } => print_pattern(pat),
-            PatternKind::Ctor { name, args } => {
-                if args.is_empty() {
-                    name.clone()
-                } else {
-                    format!(
-                        "{} {}",
-                        name,
-                        args.iter().map(print_pattern).collect::<Vec<_>>().join(" ")
-                    )
-                }
-            }
-            PatternKind::Cons(h, t) => format!("{} : {}", print_pattern(h), print_pattern(t)),
-            PatternKind::Symbol(s) => s.clone(),
-            PatternKind::Int(n) => format!("{}", n),
-            PatternKind::Float(f) => format!("{}", f),
-            PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
-            PatternKind::Char(c) => {
-                let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
-                let mut tmp = String::new();
-                tmp.push(ch);
-                format!("'{}'", tmp.escape_default())
-            }
-            PatternKind::Record(fields) => {
-                let inner = fields
-                    .iter()
-                    .map(|f| format!("{}: {}", f.name, print_pattern(&f.pattern)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{{{}}}", inner)
-            }
-            PatternKind::As(a, b) => format!("{} @ {}", print_pattern(a), print_pattern(b)),
+
+    fn tuple_tag_arity(sym: &str) -> Option<usize> {
+        // Tuple tag encoding: `.` followed by one or more commas.
+        // Arity = comma_count + 1.
+        if !is_tuple_tag_symbol(sym) {
+            return None;
         }
+        let comma_count = sym.chars().skip(1).filter(|c| *c == ',').count();
+        Some(comma_count + 1)
     }
+    // Pattern printing is shared between lowering and pretty-print.
     match &e.kind {
         ExprKind::Annot { ty: _, expr } => lower_expr_to_core(expr),
         ExprKind::TypeVal(ty) => Term::new(Op::Str(print_type_expr(ty))),
@@ -222,96 +290,98 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
         ExprKind::Str(s) => Term::new(Op::Str(s.clone())),
         ExprKind::Char(c) => Term::new(Op::Char(*c)),
         ExprKind::Ref(n) => Term::new(Op::Ref(n.clone())),
-        ExprKind::Symbol(s) => Term::new(Op::Symbol(s.clone())),
-        ExprKind::Record(fields) => {
-            // Lower structurally to a synthetic Op::Record (if exists) else build associative nest.
-            // Since no dedicated Op currently, reuse a tagged symbol chain: start with Symbol("RECORD") then fold KV.
-            let mut acc = Term::new(Op::Symbol("RECORD".into()));
-            for f in fields {
-                let kv_sym = Term::new(Op::Symbol("KV".into()));
-                let key = Term::new(Op::Str(f.name.clone()));
-                let kv1 = Term::new(Op::App { func: Box::new(kv_sym), arg: Box::new(key) });
-                let kv2 = Term::new(Op::App {
-                    func: Box::new(kv1),
-                    arg: Box::new(lower_expr_to_core(&f.value)),
-                });
-                acc = Term::new(Op::App { func: Box::new(acc), arg: Box::new(kv2) });
+        ExprKind::Symbol(s) => {
+            // Disambiguate at lowering time:
+            // - tuple tags like `.,,` are constructors
+            // - dot-led names like `.Int` are atomic symbols
+            // - everything else is a constructor name (e.g. `Some`)
+            if is_tuple_tag_symbol(s) {
+                Term::new(Op::Ctor(s.clone()))
+            } else if s.starts_with('.') {
+                Term::new(Op::AtomSymbol(s.clone()))
+            } else {
+                Term::new(Op::Ctor(s.clone()))
             }
-            acc
         }
-        ExprKind::ModeMap(fields) => {
-            // ModeMap: similar structure to Record, but tagged as "MODEMAP"
-            // Will be desugared further in Type and Runtime phases
-            let mut acc = Term::new(Op::Symbol("MODEMAP".into()));
-            for f in fields {
-                let kv_sym = Term::new(Op::Symbol("KV".into()));
-                let key = Term::new(Op::Str(f.name.clone()));
-                let kv1 = Term::new(Op::App { func: Box::new(kv_sym), arg: Box::new(key) });
-                let kv2 = Term::new(Op::App {
-                    func: Box::new(kv1),
-                    arg: Box::new(lower_expr_to_core(&f.value)),
-                });
-                acc = Term::new(Op::App { func: Box::new(acc), arg: Box::new(kv2) });
-            }
-            acc
-        }
+        ExprKind::Record(fields) => Term::new(Op::Record {
+            fields: fields
+                .iter()
+                .map(|f| RecordFieldTerm {
+                    name: f.name.clone(),
+                    name_span: f.name_span,
+                    value: lower_expr_to_core(&f.value),
+                })
+                .collect(),
+        }),
+        ExprKind::ModeMap { fields, default } => Term::new(Op::ModeMap {
+            fields: fields
+                .iter()
+                .map(|f| RecordFieldTerm {
+                    name: f.name.clone(),
+                    name_span: f.name_span,
+                    value: lower_expr_to_core(&f.value),
+                })
+                .collect(),
+            default: default.as_deref().map(|d| Box::new(lower_expr_to_core(d))),
+        }),
         ExprKind::LetGroup { bindings, body, .. } => {
             let bs: Vec<(String, Term)> =
                 bindings.iter().map(|(p, ex)| (print_pattern(p), lower_expr_to_core(ex))).collect();
             Term::new(Op::LetRec { bindings: bs, body: Box::new(lower_expr_to_core(body)) })
         }
         ExprKind::List(xs) => {
-            // Lower to foldr cons []
-            let mut tail = Term::new(Op::Symbol("[]".into()));
-            for x in xs.iter().rev() {
-                let cons = Term::new(Op::Ref("cons".into()));
-                let app1 = Term::new(Op::App {
-                    func: Box::new(cons),
-                    arg: Box::new(lower_expr_to_core(x)),
-                });
-                tail = Term::new(Op::App { func: Box::new(app1), arg: Box::new(tail) });
-            }
-            tail
+            Term::new(Op::List { items: xs.iter().map(lower_expr_to_core).collect() })
         }
         ExprKind::Raise(inner) => {
-            // PoC: lower raise to an application of the symbol "RAISE" to its payload
-            let tag = Term::new(Op::Symbol("RAISE".into()));
-            Term::new(Op::App { func: Box::new(tag), arg: Box::new(lower_expr_to_core(inner)) })
+            Term::new(Op::Raise { payload: Box::new(lower_expr_to_core(inner)) })
         }
-        ExprKind::AltLambda { left, right } => {
-            // Lower to \x -> ((~alt left) right) x
-            let x = "x".to_string();
-            let alt = Term::new(Op::Ref("alt".into()));
-            let app1 =
-                Term::new(Op::App { func: Box::new(alt), arg: Box::new(lower_expr_to_core(left)) });
-            let app2 = Term::new(Op::App {
-                func: Box::new(app1),
-                arg: Box::new(lower_expr_to_core(right)),
-            });
-            let body = Term::new(Op::App {
-                func: Box::new(app2),
-                arg: Box::new(Term::new(Op::Ref(x.clone()))),
-            });
-            Term::new(Op::Lam { param: format!("~{}", x), body: Box::new(body) })
-        }
-        ExprKind::OrElse { left, right } => {
-            // Lower to app chain: Symbol("OR") left right
-            let or = Term::new(Op::Symbol("OR".into()));
-            let app_l =
-                Term::new(Op::App { func: Box::new(or), arg: Box::new(lower_expr_to_core(left)) });
-            Term::new(Op::App { func: Box::new(app_l), arg: Box::new(lower_expr_to_core(right)) })
-        }
-        ExprKind::Catch { left, right } => {
-            let cat = Term::new(Op::Symbol("CATCH".into()));
-            let app_l =
-                Term::new(Op::App { func: Box::new(cat), arg: Box::new(lower_expr_to_core(left)) });
-            Term::new(Op::App { func: Box::new(app_l), arg: Box::new(lower_expr_to_core(right)) })
-        }
+        ExprKind::AltLambda { left, right } => Term::new(Op::Alt {
+            left: Box::new(lower_expr_to_core(left)),
+            right: Box::new(lower_expr_to_core(right)),
+        }),
+        ExprKind::OrElse { left, right } => Term::new(Op::OrElse {
+            left: Box::new(lower_expr_to_core(left)),
+            right: Box::new(lower_expr_to_core(right)),
+        }),
+        ExprKind::Catch { left, right } => Term::new(Op::Catch {
+            left: Box::new(lower_expr_to_core(left)),
+            right: Box::new(lower_expr_to_core(right)),
+        }),
         ExprKind::Lambda { param, body } => {
-            let param_str = print_pattern(param);
-            Term::new(Op::Lam { param: param_str, body: Box::new(lower_expr_to_core(body)) })
+            Term::new(Op::Lam { param: param.clone(), body: Box::new(lower_expr_to_core(body)) })
         }
         ExprKind::Apply { func, arg } => {
+            // Desugar selection sugar: `(.M e)`.
+            // Note: surface `.select` remains a normal symbol; CoreIR `Select` is not directly
+            // expressible from surface syntax.
+            if let ExprKind::Symbol(sym) = &func.kind {
+                if sym.starts_with('.') && sym != ".select" && !is_tuple_tag_symbol(sym) {
+                    return Term::new(Op::Select {
+                        label: sym.clone(),
+                        label_span: func.span,
+                        target: Box::new(lower_expr_to_core(arg)),
+                    });
+                }
+            }
+
+            // Desugar tuple tags like `((., a) b)` into `Tuple { items: [a, b] }`.
+            // Only when fully saturated (arity matches).
+            // For partial applications, keep as normal App chain.
+            let mut args_rev: Vec<&Expr> = vec![arg];
+            let mut head = func.as_ref();
+            while let ExprKind::Apply { func: f, arg: a } = &head.kind {
+                args_rev.push(a);
+                head = f.as_ref();
+            }
+            if let ExprKind::Symbol(sym) = &head.kind {
+                if let Some(arity) = tuple_tag_arity(sym) {
+                    if args_rev.len() == arity {
+                        let items =
+                            args_rev.into_iter().rev().map(lower_expr_to_core).collect::<Vec<_>>();
+                        return Term::new(Op::Tuple { items });
+                    }
+                }
+            }
             // desugar (~seq a b) into Seq
             if let ExprKind::Apply { func: seq_ref_expr, arg: a_expr } = &func.kind {
                 if let ExprKind::Ref(seq_name) = &seq_ref_expr.kind {
@@ -354,6 +424,48 @@ pub fn lower_expr_to_core(e: &Expr) -> Term {
     }
 }
 
+fn print_pattern(p: &Pattern) -> String {
+    match &p.kind {
+        PatternKind::Wildcard => "_".into(),
+        PatternKind::Var(n) => format!("~{}", n),
+        PatternKind::Unit => "()".into(),
+        PatternKind::Tuple(xs) => {
+            format!("({})", xs.iter().map(print_pattern).collect::<Vec<_>>().join(", "))
+        }
+        PatternKind::List(xs) => {
+            format!("[{}]", xs.iter().map(print_pattern).collect::<Vec<_>>().join(", "))
+        }
+        PatternKind::TypeBind { pat, .. } => print_pattern(pat),
+        PatternKind::Ctor { name, args } => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                format!("{} {}", name, args.iter().map(print_pattern).collect::<Vec<_>>().join(" "))
+            }
+        }
+        PatternKind::Cons(h, t) => format!("{} : {}", print_pattern(h), print_pattern(t)),
+        PatternKind::Symbol(s) => s.clone(),
+        PatternKind::Int(n) => format!("{}", n),
+        PatternKind::Float(f) => format!("{}", f),
+        PatternKind::Str(s) => format!("\"{}\"", s.escape_default()),
+        PatternKind::Char(c) => {
+            let ch = char::from_u32(*c as u32).unwrap_or('\u{FFFD}');
+            let mut tmp = String::new();
+            tmp.push(ch);
+            format!("'{}'", tmp.escape_default())
+        }
+        PatternKind::Record(fields) => {
+            let inner = fields
+                .iter()
+                .map(|f| format!("{}: {}", f.name, print_pattern(&f.pattern)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{}}}", inner)
+        }
+        PatternKind::As(a, b) => format!("{} @ {}", print_pattern(a), print_pattern(b)),
+    }
+}
+
 pub fn print_term(t: &Term) -> String {
     match &t.op {
         Op::Unit => "()".into(),
@@ -368,14 +480,45 @@ pub fn print_term(t: &Term) -> String {
             format!("'{}'", tmp.escape_default())
         }
         Op::Ref(n) => format!("~{n}"),
-        Op::Symbol(s) => s.clone(),
-        Op::Lam { param, body } => format!("\\{} -> {}", param, print_term(body)),
+        Op::Symbol(s) | Op::Ctor(s) | Op::AtomSymbol(s) => s.clone(),
+        Op::List { items } => {
+            format!("[{}]", items.iter().map(print_term).collect::<Vec<_>>().join(", "))
+        }
+        Op::Tuple { items } => {
+            format!("({})", items.iter().map(print_term).collect::<Vec<_>>().join(", "))
+        }
+        Op::Record { fields } => {
+            let inner = fields
+                .iter()
+                .map(|f| format!("{}: {}", f.name, print_term(&f.value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{}}}", inner)
+        }
+        Op::ModeMap { fields, default } => {
+            let inner = fields
+                .iter()
+                .map(|f| format!("{}: {}", f.name, print_term(&f.value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            match default {
+                Some(d) if inner.is_empty() => format!(".{{; {}}}", print_term(d)),
+                Some(d) => format!(".{{{}; {}}}", inner, print_term(d)),
+                None => format!(".{{{}}}", inner),
+            }
+        }
+        Op::Select { label, target, .. } => format!("(.select {} {})", label, print_term(target)),
+        Op::Lam { param, body } => format!("\\{} -> {}", print_pattern(param), print_term(body)),
         Op::App { func, arg } => format!("({} {})", print_term(func), print_term(arg)),
         Op::Seq { first, second } => format!("(~seq {} {})", print_term(first), print_term(second)),
         Op::Chain { first, second } => {
             format!("(~chain {} {})", print_term(first), print_term(second))
         }
         Op::Bind { value, cont } => format!("(~bind {} {})", print_term(value), print_term(cont)),
+        Op::Raise { payload } => format!("^({})", print_term(payload)),
+        Op::Catch { left, right } => format!("({} ^| {})", print_term(left), print_term(right)),
+        Op::OrElse { left, right } => format!("({} || {})", print_term(left), print_term(right)),
+        Op::Alt { left, right } => format!("({} | {})", print_term(left), print_term(right)),
         Op::LetRec { bindings, body } => {
             let inner = bindings
                 .iter()
@@ -396,8 +539,40 @@ pub enum IrValue {
     Float(f64),
     Str(String),
     Char(i32),
-    Fun { param: String, body: Term, env: HashMap<String, IrValue> },
-    Builtin { name: String, args: Vec<IrValue> },
+    /// Constructor value, curried by application.
+    ///
+    /// Applying a constructor accumulates args: `Ctor(name, []) arg` => `Ctor(name, [arg])`.
+    Ctor {
+        name: String,
+        args: Vec<IrValue>,
+    },
+    /// Symbol value (distinct from constructors).
+    Symbol(String),
+    /// Concrete list value.
+    List(Vec<IrValue>),
+    /// Concrete tuple value.
+    Tuple(Vec<IrValue>),
+    /// Concrete record value.
+    Record(BTreeMap<String, IrValue>),
+    /// Concrete modemap value (record extension), with an optional default arm.
+    ModeMap {
+        fields: BTreeMap<String, IrValue>,
+        default: Option<Box<IrValue>>,
+    },
+    Raised(Box<IrValue>),
+    Fun {
+        param: Pattern,
+        body: Term,
+        env: HashMap<String, IrValue>,
+    },
+    Alt {
+        left: Box<IrValue>,
+        right: Box<IrValue>,
+    },
+    Builtin {
+        name: String,
+        args: Vec<IrValue>,
+    },
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -405,24 +580,195 @@ pub enum IrEvalError {
     #[error("unbound ref: {0}")]
     Unbound(String),
     #[error("not a function: {0:?}")]
-    NotFunction(IrValue),
+    NotFunction(Box<IrValue>),
+    #[error("select target is not a ModeMap: {0:?}")]
+    SelectNotModeMap(Box<IrValue>),
+    #[error("mode label not found: {0}")]
+    ModeLabelNotFound(String),
     #[error("unsupported pattern in lambda parameter: {0}")]
     UnsupportedParam(String),
+    #[error("unsupported pattern: {0}")]
+    UnsupportedPattern(String),
     #[error("arity error for builtin: {0}")]
     Arity(String),
+    #[error("unsupported coreir op: {0}")]
+    UnsupportedOp(String),
 }
 
-fn is_simple_var_param(p: &str) -> Option<String> {
-    // Accept param like "~x" only
-    if let Some(rest) = p.strip_prefix('~') {
-        if !rest.is_empty() && rest.chars().all(|c| c == '_' || c.is_alphanumeric()) {
-            return Some(rest.to_string());
+fn merge_bindings(
+    mut a: HashMap<String, IrValue>,
+    b: HashMap<String, IrValue>,
+) -> Option<HashMap<String, IrValue>> {
+    for (k, v) in b {
+        if let Some(prev) = a.get(&k) {
+            if prev != &v {
+                return None;
+            }
+        }
+        a.insert(k, v);
+    }
+    Some(a)
+}
+
+fn match_pattern(
+    p: &Pattern,
+    v: &IrValue,
+) -> Result<Option<HashMap<String, IrValue>>, IrEvalError> {
+    match &p.kind {
+        PatternKind::Wildcard => Ok(Some(HashMap::new())),
+        PatternKind::Var(name) => {
+            let mut m = HashMap::new();
+            m.insert(name.clone(), v.clone());
+            Ok(Some(m))
+        }
+        PatternKind::Unit => Ok(matches!(v, IrValue::Unit).then(HashMap::new)),
+        PatternKind::Int(n) => Ok(matches!(v, IrValue::Int(m) if m == n).then(HashMap::new)),
+        PatternKind::Float(f) => Ok(matches!(v, IrValue::Float(g) if g == f).then(HashMap::new)),
+        PatternKind::Str(s) => Ok(matches!(v, IrValue::Str(t) if t == s).then(HashMap::new)),
+        PatternKind::Char(c) => Ok(matches!(v, IrValue::Char(d) if d == c).then(HashMap::new)),
+        PatternKind::Symbol(s) => Ok(matches!(v, IrValue::Symbol(t) if t == s).then(HashMap::new)),
+        PatternKind::Ctor { name, args } => {
+            let IrValue::Ctor { name: got, args: got_args } = v else {
+                return Ok(None);
+            };
+            if got != name {
+                return Ok(None);
+            }
+            if got_args.len() != args.len() {
+                return Ok(None);
+            }
+            let mut acc = HashMap::new();
+            for (p, v) in args.iter().zip(got_args.iter()) {
+                let Some(b) = match_pattern(p, v)? else {
+                    return Ok(None);
+                };
+                let Some(next) = merge_bindings(acc, b) else {
+                    return Ok(None);
+                };
+                acc = next;
+            }
+            Ok(Some(acc))
+        }
+        PatternKind::Tuple(ps) => {
+            let IrValue::Tuple(vs) = v else {
+                return Ok(None);
+            };
+            if ps.len() != vs.len() {
+                return Ok(None);
+            }
+            let mut acc = HashMap::new();
+            for (p, v) in ps.iter().zip(vs.iter()) {
+                let Some(b) = match_pattern(p, v)? else {
+                    return Ok(None);
+                };
+                let Some(next) = merge_bindings(acc, b) else {
+                    return Ok(None);
+                };
+                acc = next;
+            }
+            Ok(Some(acc))
+        }
+        PatternKind::List(ps) => {
+            let IrValue::List(vs) = v else {
+                return Ok(None);
+            };
+            if ps.len() != vs.len() {
+                return Ok(None);
+            }
+            let mut acc = HashMap::new();
+            for (p, v) in ps.iter().zip(vs.iter()) {
+                let Some(b) = match_pattern(p, v)? else {
+                    return Ok(None);
+                };
+                let Some(next) = merge_bindings(acc, b) else {
+                    return Ok(None);
+                };
+                acc = next;
+            }
+            Ok(Some(acc))
+        }
+        PatternKind::Cons(h, t) => {
+            let IrValue::List(vs) = v else {
+                return Ok(None);
+            };
+            if vs.is_empty() {
+                return Ok(None);
+            }
+            let head = &vs[0];
+            let tail = IrValue::List(vs[1..].to_vec());
+            let Some(bh) = match_pattern(h, head)? else {
+                return Ok(None);
+            };
+            let Some(bt) = match_pattern(t, &tail)? else {
+                return Ok(None);
+            };
+            Ok(merge_bindings(bh, bt))
+        }
+        PatternKind::Record(fields) => {
+            let map = match v {
+                IrValue::Record(map) => map,
+                IrValue::ModeMap { fields: map, .. } => map,
+                _ => return Ok(None),
+            };
+            let mut acc = HashMap::new();
+            for f in fields {
+                let Some(vf) = map.get(&f.name) else {
+                    return Ok(None);
+                };
+                let Some(b) = match_pattern(&f.pattern, vf)? else {
+                    return Ok(None);
+                };
+                let Some(next) = merge_bindings(acc, b) else {
+                    return Ok(None);
+                };
+                acc = next;
+            }
+            Ok(Some(acc))
+        }
+        PatternKind::TypeBind { pat, .. } => match_pattern(pat, v),
+        PatternKind::As(a, b) => {
+            let Some(ba) = match_pattern(a, v)? else {
+                return Ok(None);
+            };
+            let Some(bb) = match_pattern(b, v)? else {
+                return Ok(None);
+            };
+            Ok(merge_bindings(ba, bb))
         }
     }
-    None
+}
+
+fn is_tuple_tag_symbol(s: &str) -> bool {
+    // Matches runtime tuple tag encoding like `.,,` (dot then commas).
+    let mut chars = s.chars();
+    if chars.next() != Some('.') {
+        return false;
+    }
+    let rest: Vec<char> = chars.collect();
+    !rest.is_empty() && rest.iter().all(|c| *c == ',')
+}
+
+fn mode_label_key(label: &str) -> &str {
+    label.strip_prefix('.').unwrap_or(label)
+}
+
+fn legacy_symbol_to_value(s: &str) -> IrValue {
+    // Legacy behavior for Op::Symbol in older dumps.
+    if s == "[]" {
+        return IrValue::List(vec![]);
+    }
+    if s.starts_with('.') && !is_tuple_tag_symbol(s) {
+        IrValue::Symbol(s.to_string())
+    } else {
+        IrValue::Ctor { name: s.to_string(), args: vec![] }
+    }
 }
 
 fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
+    fn bool_ctor(b: bool) -> IrValue {
+        IrValue::Ctor { name: if b { "True".into() } else { "False".into() }, args: vec![] }
+    }
+
     match (name, args) {
         ("add", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a + b)),
         ("sub", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a - b)),
@@ -431,6 +777,33 @@ fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
             Err(IrEvalError::Arity("div by zero".into()))
         }
         ("div", [IrValue::Int(a), IrValue::Int(b)]) => Ok(IrValue::Int(a / b)),
+
+        ("fadd", [IrValue::Float(a), IrValue::Float(b)]) => Ok(IrValue::Float(a + b)),
+        ("fsub", [IrValue::Float(a), IrValue::Float(b)]) => Ok(IrValue::Float(a - b)),
+        ("fmul", [IrValue::Float(a), IrValue::Float(b)]) => Ok(IrValue::Float(a * b)),
+        ("fdiv", [IrValue::Float(_), IrValue::Float(b)]) if *b == 0.0 => {
+            Err(IrEvalError::Arity("fdiv by zero".into()))
+        }
+        ("fdiv", [IrValue::Float(a), IrValue::Float(b)]) => Ok(IrValue::Float(a / b)),
+
+        ("eq", [a, b]) => Ok(bool_ctor(ir_equal(a, b))),
+        ("ne", [a, b]) => Ok(bool_ctor(!ir_equal(a, b))),
+        ("lt", [IrValue::Int(a), IrValue::Int(b)]) => Ok(bool_ctor(a < b)),
+        ("lt", [IrValue::Float(a), IrValue::Float(b)]) => Ok(bool_ctor(a < b)),
+        ("le", [IrValue::Int(a), IrValue::Int(b)]) => Ok(bool_ctor(a <= b)),
+        ("le", [IrValue::Float(a), IrValue::Float(b)]) => Ok(bool_ctor(a <= b)),
+        ("gt", [IrValue::Int(a), IrValue::Int(b)]) => Ok(bool_ctor(a > b)),
+        ("gt", [IrValue::Float(a), IrValue::Float(b)]) => Ok(bool_ctor(a > b)),
+        ("ge", [IrValue::Int(a), IrValue::Int(b)]) => Ok(bool_ctor(a >= b)),
+        ("ge", [IrValue::Float(a), IrValue::Float(b)]) => Ok(bool_ctor(a >= b)),
+
+        ("cons", [head, IrValue::List(tail)]) => {
+            let mut out = Vec::with_capacity(tail.len() + 1);
+            out.push(head.clone());
+            out.extend(tail.iter().cloned());
+            Ok(IrValue::List(out))
+        }
+
         ("to_str", [v]) => Ok(IrValue::Str(match v {
             IrValue::Unit => "()".into(),
             IrValue::Int(n) => n.to_string(),
@@ -442,16 +815,103 @@ fn eval_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, IrEvalError> {
                 tmp.push(ch);
                 format!("'{}'", tmp.escape_default())
             }
-            IrValue::Fun { .. } => "<fun>".into(),
-            IrValue::Builtin { .. } => "<fun>".into(),
+            IrValue::Ctor { name, args } => {
+                if args.is_empty() {
+                    name.clone()
+                } else {
+                    format!(
+                        "{} {}",
+                        name,
+                        args.iter().map(print_ir_value).collect::<Vec<_>>().join(" ")
+                    )
+                }
+            }
+            IrValue::Symbol(s) => s.clone(),
+            IrValue::List(xs) => {
+                format!("[{}]", xs.iter().map(print_ir_value).collect::<Vec<_>>().join(", "))
+            }
+            IrValue::Tuple(xs) => {
+                format!("({})", xs.iter().map(print_ir_value).collect::<Vec<_>>().join(", "))
+            }
+            IrValue::Record(map) => {
+                let inner = map
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, print_ir_value(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", inner)
+            }
+            IrValue::ModeMap { fields: map, default } => {
+                let inner = map
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, print_ir_value(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                match default {
+                    Some(d) if inner.is_empty() => format!(".{{; {}}}", print_ir_value(d)),
+                    Some(d) => format!(".{{{}; {}}}", inner, print_ir_value(d)),
+                    None => format!(".{{{}}}", inner),
+                }
+            }
+            IrValue::Raised(inner) => format!(
+                "^({})",
+                match &**inner {
+                    IrValue::Str(s) => s.clone(),
+                    other => print_ir_value(other),
+                }
+            ),
+            IrValue::Fun { .. } | IrValue::Alt { .. } | IrValue::Builtin { .. } => "<fun>".into(),
         })),
         _ => Err(IrEvalError::Arity(name.into())),
+    }
+}
+
+fn ir_equal(a: &IrValue, b: &IrValue) -> bool {
+    match (a, b) {
+        (IrValue::Unit, IrValue::Unit) => true,
+        (IrValue::Int(x), IrValue::Int(y)) => x == y,
+        (IrValue::Float(x), IrValue::Float(y)) => x == y,
+        (IrValue::Str(x), IrValue::Str(y)) => x == y,
+        (IrValue::Char(x), IrValue::Char(y)) => x == y,
+        (IrValue::Ctor { name: nx, args: ax }, IrValue::Ctor { name: ny, args: ay }) => {
+            nx == ny
+                && ax.len() == ay.len()
+                && ax.iter().zip(ay.iter()).all(|(x, y)| ir_equal(x, y))
+        }
+        (IrValue::Symbol(x), IrValue::Symbol(y)) => x == y,
+        (IrValue::List(x), IrValue::List(y)) => {
+            x.len() == y.len() && x.iter().zip(y.iter()).all(|(x, y)| ir_equal(x, y))
+        }
+        (IrValue::Tuple(x), IrValue::Tuple(y)) => {
+            x.len() == y.len() && x.iter().zip(y.iter()).all(|(x, y)| ir_equal(x, y))
+        }
+        (IrValue::Record(x), IrValue::Record(y)) => {
+            x.len() == y.len()
+                && x.iter().all(|(k, vx)| y.get(k).is_some_and(|vy| ir_equal(vx, vy)))
+        }
+        (
+            IrValue::ModeMap { fields: x, default: dx },
+            IrValue::ModeMap { fields: y, default: dy },
+        ) => {
+            x.len() == y.len()
+                && x.iter().all(|(k, vx)| y.get(k).is_some_and(|vy| ir_equal(vx, vy)))
+                && match (dx, dy) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => ir_equal(a, b),
+                    _ => false,
+                }
+        }
+        (IrValue::Raised(x), IrValue::Raised(y)) => ir_equal(x, y),
+        _ => false,
     }
 }
 
 fn builtin_arity(name: &str) -> Option<usize> {
     match name {
         "add" | "sub" | "mul" | "div" => Some(2),
+        "fadd" | "fsub" | "fmul" | "fdiv" => Some(2),
+        "eq" | "ne" | "lt" | "le" | "gt" | "ge" => Some(2),
+        "cons" => Some(2),
         "to_str" => Some(1),
         _ => None,
     }
@@ -459,9 +919,32 @@ fn builtin_arity(name: &str) -> Option<usize> {
 
 fn eval_app(func: IrValue, arg: IrValue) -> Result<IrValue, IrEvalError> {
     match func {
+        IrValue::Raised(_) => Ok(func),
+        IrValue::Ctor { name, mut args } => {
+            args.push(arg);
+            Ok(IrValue::Ctor { name, args })
+        }
         IrValue::Fun { param, body, mut env } => {
-            env.insert(param, arg);
+            let Some(bindings) = match_pattern(&param, &arg)? else {
+                return Ok(IrValue::Raised(Box::new(arg)));
+            };
+            for (k, v) in bindings {
+                env.insert(k, v);
+            }
             eval_term_with_env(&body, &mut env)
+        }
+        IrValue::Alt { left, right } => {
+            let input = arg;
+            match eval_app((*left).clone(), input.clone())? {
+                IrValue::Raised(payload) => {
+                    if ir_equal(payload.as_ref(), &input) {
+                        eval_app((*right).clone(), input)
+                    } else {
+                        Ok(IrValue::Raised(payload))
+                    }
+                }
+                other => Ok(other),
+            }
         }
         IrValue::Builtin { name, mut args } => {
             args.push(arg);
@@ -483,7 +966,7 @@ fn eval_app(func: IrValue, arg: IrValue) -> Result<IrValue, IrEvalError> {
                 Err(IrEvalError::Unbound(name))
             }
         }
-        other => Err(IrEvalError::NotFunction(other)),
+        other => Err(IrEvalError::NotFunction(Box::new(other))),
     }
 }
 
@@ -495,9 +978,82 @@ fn eval_term_with_env(
         Op::Unit => Ok(IrValue::Unit),
         Op::Int(n) => Ok(IrValue::Int(*n)),
         Op::Float(f) => Ok(IrValue::Float(*f)),
-        Op::Bool(b) => Ok(IrValue::Str(if *b { "True".into() } else { "False".into() })),
+        Op::Bool(b) => Ok(IrValue::Ctor {
+            name: if *b { "True".into() } else { "False".into() },
+            args: vec![],
+        }),
         Op::Str(s) => Ok(IrValue::Str(s.clone())),
         Op::Char(c) => Ok(IrValue::Char(*c)),
+        Op::List { items } => {
+            let mut vs = Vec::with_capacity(items.len());
+            for item in items {
+                let v = eval_term_with_env(item, env)?;
+                if let IrValue::Raised(_) = v {
+                    return Ok(v);
+                }
+                vs.push(v);
+            }
+            Ok(IrValue::List(vs))
+        }
+        Op::Tuple { items } => {
+            let mut vs = Vec::with_capacity(items.len());
+            for item in items {
+                let v = eval_term_with_env(item, env)?;
+                if let IrValue::Raised(_) = v {
+                    return Ok(v);
+                }
+                vs.push(v);
+            }
+            Ok(IrValue::Tuple(vs))
+        }
+        Op::Record { fields } => {
+            let mut map = BTreeMap::new();
+            for f in fields {
+                let v = eval_term_with_env(&f.value, env)?;
+                if let IrValue::Raised(_) = v {
+                    return Ok(v);
+                }
+                map.insert(f.name.clone(), v);
+            }
+            Ok(IrValue::Record(map))
+        }
+        Op::ModeMap { fields, default } => {
+            let mut map = BTreeMap::new();
+            for f in fields {
+                let v = eval_term_with_env(&f.value, env)?;
+                if let IrValue::Raised(_) = v {
+                    return Ok(v);
+                }
+                map.insert(f.name.clone(), v);
+            }
+            let default_v = match default {
+                None => None,
+                Some(d) => {
+                    let v = eval_term_with_env(d, env)?;
+                    if let IrValue::Raised(_) = v {
+                        return Ok(v);
+                    }
+                    Some(Box::new(v))
+                }
+            };
+            Ok(IrValue::ModeMap { fields: map, default: default_v })
+        }
+        Op::Select { label, target, .. } => {
+            let v = eval_term_with_env(target, env)?;
+            if let IrValue::Raised(_) = v {
+                return Ok(v);
+            }
+            let IrValue::ModeMap { fields: map, default } = v else {
+                return Err(IrEvalError::SelectNotModeMap(Box::new(v)));
+            };
+            let key = mode_label_key(label);
+            match map.get(key).cloned() {
+                Some(v) => Ok(v),
+                None => {
+                    default.map(|d| *d).ok_or_else(|| IrEvalError::ModeLabelNotFound(label.clone()))
+                }
+            }
+        }
         Op::Ref(n) => {
             if let Some(v) = env.get(n).cloned() {
                 return Ok(v);
@@ -508,25 +1064,71 @@ fn eval_term_with_env(
             }
             Err(IrEvalError::Unbound(n.clone()))
         }
-        Op::Symbol(s) => Ok(IrValue::Str(s.clone())), // minimal placeholder
+        Op::Symbol(s) => Ok(legacy_symbol_to_value(s)),
+        Op::Ctor(s) => Ok(IrValue::Ctor { name: s.clone(), args: vec![] }),
+        Op::AtomSymbol(s) => Ok(IrValue::Symbol(s.clone())),
+        Op::Raise { payload } => {
+            let v = eval_term_with_env(payload, env)?;
+            Ok(IrValue::Raised(Box::new(v)))
+        }
+        Op::OrElse { left, right } => {
+            // Spec: discard the result of LHS and return the result of RHS.
+            // Discard LHS even if it is Raised; if RHS is Raised, the whole is Raised.
+            let _ = eval_term_with_env(left, env)?;
+            eval_term_with_env(right, env)
+        }
+        Op::Catch { left, right } => {
+            let lv = eval_term_with_env(left, env)?;
+            match lv {
+                IrValue::Raised(payload) => {
+                    let rv = eval_term_with_env(right, env)?;
+                    eval_app(rv, *payload)
+                }
+                other => Ok(other),
+            }
+        }
+        Op::Alt { left, right } => {
+            let lv = eval_term_with_env(left, env)?;
+            if let IrValue::Raised(_) = lv {
+                return Ok(lv);
+            }
+            let rv = eval_term_with_env(right, env)?;
+            if let IrValue::Raised(_) = rv {
+                return Ok(rv);
+            }
+            Ok(IrValue::Alt { left: Box::new(lv), right: Box::new(rv) })
+        }
         Op::Lam { param, body } => {
-            let Some(vname) = is_simple_var_param(param) else {
-                return Err(IrEvalError::UnsupportedParam(param.clone()));
-            };
-            Ok(IrValue::Fun { param: vname, body: (*body.clone()), env: env.clone() })
+            // Keep full pattern for alt/catch semantics.
+            Ok(IrValue::Fun { param: param.clone(), body: (*body.clone()), env: env.clone() })
         }
         Op::App { func, arg } => {
             let f = eval_term_with_env(func, env)?;
             let a = eval_term_with_env(arg, env)?;
+            if let IrValue::Raised(_) = f {
+                return Ok(f);
+            }
+            if let IrValue::Raised(_) = a {
+                return Ok(a);
+            }
             eval_app(f, a)
         }
         Op::Seq { first, second } | Op::Chain { first, second } => {
-            let _ = eval_term_with_env(first, env)?;
+            let v1 = eval_term_with_env(first, env)?;
+            if let IrValue::Raised(_) = v1 {
+                return Ok(v1);
+            }
             eval_term_with_env(second, env)
         }
         Op::Bind { value, cont } => {
             let v = eval_term_with_env(value, env)?;
+            if let IrValue::Raised(_) = v {
+                return Ok(v);
+            }
             let k = eval_term_with_env(cont, env)?;
+            if let IrValue::Raised(_) = k {
+                return Ok(k);
+            }
             eval_app(k, v)
         }
         Op::LetRec { bindings, body } => {
@@ -544,6 +1146,9 @@ fn eval_term_with_env(
             // This allows later bindings to use earlier ones (left-to-right evaluation order)
             for (name, term) in bindings {
                 let value = eval_term_with_env(term, env)?;
+                if let IrValue::Raised(_) = value {
+                    return Ok(value);
+                }
                 env.insert(name.clone(), value);
             }
 
@@ -570,48 +1175,323 @@ pub fn print_ir_value(v: &IrValue) -> String {
             tmp.push(ch);
             format!("'{}'", tmp.escape_default())
         }
-        IrValue::Fun { .. } | IrValue::Builtin { .. } => "<fun>".into(),
+        IrValue::Ctor { name, args } => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                format!(
+                    "{} {}",
+                    name,
+                    args.iter().map(print_ir_value).collect::<Vec<_>>().join(" ")
+                )
+            }
+        }
+        IrValue::Symbol(s) => s.clone(),
+        IrValue::List(xs) => {
+            format!("[{}]", xs.iter().map(print_ir_value).collect::<Vec<_>>().join(", "))
+        }
+        IrValue::Tuple(xs) => {
+            format!("({})", xs.iter().map(print_ir_value).collect::<Vec<_>>().join(", "))
+        }
+        IrValue::Record(map) => {
+            let inner = map
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, print_ir_value(v)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{}}}", inner)
+        }
+        IrValue::ModeMap { fields: map, default } => {
+            let inner = map
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, print_ir_value(v)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            match default {
+                Some(d) if inner.is_empty() => format!(".{{; {}}}", print_ir_value(d)),
+                Some(d) => format!(".{{{}; {}}}", inner, print_ir_value(d)),
+                None => format!(".{{{}}}", inner),
+            }
+        }
+        IrValue::Raised(inner) => format!("^({})", print_ir_value(inner)),
+        IrValue::Fun { .. } | IrValue::Alt { .. } | IrValue::Builtin { .. } => "<fun>".into(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lzscr_ast::span::Span;
 
     fn int_expr(n: i64) -> Expr {
         Expr::new(ExprKind::Int(n), Span::new(0, 0))
     }
-    fn ref_expr(n: &str) -> Expr {
-        Expr::new(ExprKind::Ref(n.into()), Span::new(0, 0))
-    }
-    fn apply(f: Expr, a: Expr) -> Expr {
-        Expr::new(ExprKind::Apply { func: Box::new(f), arg: Box::new(a) }, Span::new(0, 0))
+
+    #[test]
+    fn lower_list_is_explicit_op_and_eval_is_list_value() {
+        let e =
+            Expr::new(ExprKind::List(vec![int_expr(1), int_expr(2), int_expr(3)]), Span::new(0, 0));
+        let t = lower_expr_to_core(&e);
+        match &t.op {
+            Op::List { items } => {
+                assert_eq!(items.len(), 3);
+            }
+            other => panic!("expected Op::List, got {:?}", other),
+        }
+        assert_eq!(print_term(&t), "[1, 2, 3]");
+        let v = eval_term(&t).expect("eval list");
+        assert_eq!(print_ir_value(&v), "[1, 2, 3]");
     }
 
     #[test]
-    fn lower_seq_special_form() {
-        // (~seq 1 (~add 2 3)) -> Seq(Int(1), App(Ref(add), 2) 3)
-        let seq = ref_expr("seq");
-        let one = int_expr(1);
-        let add = ref_expr("add");
-        let two = int_expr(2);
-        let three = int_expr(3);
-        let add2 = apply(add, two);
-        let add23 = apply(add2, three);
-        let seq1 = apply(seq, one);
-        let expr = apply(seq1, add23);
-        let t = lower_expr_to_core(&expr);
-        match t.op {
-            Op::Seq { .. } => {}
-            _ => panic!("expected Seq"),
+    fn eval_builtins_cons_cmp_and_float_ops() {
+        // ((~cons 1) [2,3]) => [1,2,3]
+        let cons = Term::new(Op::Ref("cons".into()));
+        let app1 =
+            Term::new(Op::App { func: Box::new(cons), arg: Box::new(Term::new(Op::Int(1))) });
+        let list =
+            Term::new(Op::List { items: vec![Term::new(Op::Int(2)), Term::new(Op::Int(3))] });
+        let app2 = Term::new(Op::App { func: Box::new(app1), arg: Box::new(list) });
+        let v = eval_term(&app2).expect("eval cons");
+        assert_eq!(print_ir_value(&v), "[1, 2, 3]");
+
+        // ((~lt 1) 2) => True
+        let lt = Term::new(Op::Ref("lt".into()));
+        let lt_app1 =
+            Term::new(Op::App { func: Box::new(lt), arg: Box::new(Term::new(Op::Int(1))) });
+        let lt_app2 =
+            Term::new(Op::App { func: Box::new(lt_app1), arg: Box::new(Term::new(Op::Int(2))) });
+        let v = eval_term(&lt_app2).expect("eval lt");
+        assert_eq!(print_ir_value(&v), "True");
+
+        // ((~eq 1) 1) => True, ((~ne 1) 1) => False
+        let eq = Term::new(Op::Ref("eq".into()));
+        let eq_app1 =
+            Term::new(Op::App { func: Box::new(eq), arg: Box::new(Term::new(Op::Int(1))) });
+        let eq_app2 =
+            Term::new(Op::App { func: Box::new(eq_app1), arg: Box::new(Term::new(Op::Int(1))) });
+        let v = eval_term(&eq_app2).expect("eval eq");
+        assert_eq!(print_ir_value(&v), "True");
+
+        let ne = Term::new(Op::Ref("ne".into()));
+        let ne_app1 =
+            Term::new(Op::App { func: Box::new(ne), arg: Box::new(Term::new(Op::Int(1))) });
+        let ne_app2 =
+            Term::new(Op::App { func: Box::new(ne_app1), arg: Box::new(Term::new(Op::Int(1))) });
+        let v = eval_term(&ne_app2).expect("eval ne");
+        assert_eq!(print_ir_value(&v), "False");
+
+        // ((~fadd 1.0) 2.0) => 3.0
+        let fadd = Term::new(Op::Ref("fadd".into()));
+        let fadd_app1 =
+            Term::new(Op::App { func: Box::new(fadd), arg: Box::new(Term::new(Op::Float(1.0))) });
+        let fadd_app2 = Term::new(Op::App {
+            func: Box::new(fadd_app1),
+            arg: Box::new(Term::new(Op::Float(2.0))),
+        });
+        let v = eval_term(&fadd_app2).expect("eval fadd");
+        assert_eq!(print_ir_value(&v), "3");
+    }
+
+    fn apply_expr(func: Expr, arg: Expr) -> Expr {
+        Expr::new(ExprKind::Apply { func: Box::new(func), arg: Box::new(arg) }, Span::new(0, 0))
+    }
+
+    #[test]
+    fn lower_tuple_tag_application_is_explicit_tuple_op() {
+        // ((., 1) 2)  == (1, 2)
+        let tag = Expr::new(ExprKind::Symbol(".,".into()), Span::new(0, 0));
+        let e = apply_expr(apply_expr(tag, int_expr(1)), int_expr(2));
+        let t = lower_expr_to_core(&e);
+        match &t.op {
+            Op::Tuple { items } => {
+                assert_eq!(items.len(), 2);
+            }
+            other => panic!("expected Tuple, got {other:?}"),
+        }
+        assert_eq!(print_term(&t), "(1, 2)");
+        let v = eval_term(&t).expect("eval tuple");
+        assert_eq!(print_ir_value(&v), "(1, 2)");
+    }
+
+    #[test]
+    fn lower_record_and_modemap_are_explicit_ops_and_preserve_name_spans() {
+        let a = ExprRecordField::new("a".into(), Span::new(10, 1), int_expr(1));
+        let b = ExprRecordField::new("b".into(), Span::new(20, 1), int_expr(2));
+
+        let rec = Expr::new(ExprKind::Record(vec![a.clone(), b.clone()]), Span::new(0, 0));
+        let t = lower_expr_to_core(&rec);
+        match &t.op {
+            Op::Record { fields } => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "a");
+                assert_eq!(fields[0].name_span, Span::new(10, 1));
+                assert_eq!(fields[1].name, "b");
+                assert_eq!(fields[1].name_span, Span::new(20, 1));
+            }
+            other => panic!("expected Op::Record, got {:?}", other),
+        }
+        assert_eq!(print_term(&t), "{a: 1, b: 2}");
+        let v = eval_term(&t).expect("eval record");
+        assert_eq!(print_ir_value(&v), "{a: 1, b: 2}");
+
+        let mm =
+            Expr::new(ExprKind::ModeMap { fields: vec![a, b], default: None }, Span::new(0, 0));
+        let t = lower_expr_to_core(&mm);
+        match &t.op {
+            Op::ModeMap { fields, default } => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "a");
+                assert_eq!(fields[0].name_span, Span::new(10, 1));
+                assert_eq!(fields[1].name, "b");
+                assert_eq!(fields[1].name_span, Span::new(20, 1));
+                assert!(default.is_none());
+            }
+            other => panic!("expected Op::ModeMap, got {:?}", other),
+        }
+        assert_eq!(print_term(&t), ".{a: 1, b: 2}");
+        let v = eval_term(&t).expect("eval modemap");
+        assert_eq!(print_ir_value(&v), ".{a: 1, b: 2}");
+    }
+
+    #[test]
+    fn lower_select_sugar_is_explicit_op_and_eval_selects_modemap_arm() {
+        let a = ExprRecordField::new("Int".into(), Span::new(10, 3), int_expr(1));
+        let b = ExprRecordField::new(
+            "Str".into(),
+            Span::new(20, 3),
+            Expr::new(ExprKind::Str("x".into()), Span::new(0, 0)),
+        );
+        let mm =
+            Expr::new(ExprKind::ModeMap { fields: vec![a, b], default: None }, Span::new(0, 0));
+
+        // .Int mm
+        let sugar = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(ExprKind::Symbol(".Int".into()), Span::new(1, 4))),
+                arg: Box::new(mm),
+            },
+            Span::new(0, 0),
+        );
+
+        let t = lower_expr_to_core(&sugar);
+        match &t.op {
+            Op::Select { label, label_span, .. } => {
+                assert_eq!(label, ".Int");
+                assert_eq!(*label_span, Span::new(1, 4));
+            }
+            other => panic!("expected Op::Select, got {other:?}"),
+        }
+        let v = eval_term(&t).expect("eval select");
+        assert_eq!(v, IrValue::Int(1));
+    }
+
+    #[test]
+    fn surface_select_is_not_a_special_form_in_coreir_lowering() {
+        let a = ExprRecordField::new("Int".into(), Span::new(10, 3), int_expr(1));
+        let mm = Expr::new(ExprKind::ModeMap { fields: vec![a], default: None }, Span::new(0, 0));
+
+        // (.select mm) should lower as a normal application, not Op::Select.
+        let app = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(ExprKind::Symbol(".select".into()), Span::new(0, 0))),
+                arg: Box::new(mm),
+            },
+            Span::new(0, 0),
+        );
+
+        let t = lower_expr_to_core(&app);
+        assert!(matches!(&t.op, Op::App { .. }));
+    }
+
+    #[test]
+    fn eval_select_missing_label_is_error() {
+        let mm = Expr::new(
+            ExprKind::ModeMap {
+                fields: vec![ExprRecordField::new("Int".into(), Span::new(0, 0), int_expr(1))],
+                default: None,
+            },
+            Span::new(0, 0),
+        );
+        // .Str mm
+        let sugar = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(ExprKind::Symbol(".Str".into()), Span::new(0, 0))),
+                arg: Box::new(mm),
+            },
+            Span::new(0, 0),
+        );
+        let t = lower_expr_to_core(&sugar);
+        let err = eval_term(&t).expect_err("missing label");
+        match err {
+            IrEvalError::ModeLabelNotFound(s) => assert_eq!(s, ".Str"),
+            other => panic!("expected ModeLabelNotFound, got {other:?}"),
         }
     }
 
     #[test]
-    fn lower_alt_lambda_to_alt_app_chain() {
-        use lzscr_ast::span::Span;
-        // (\~x -> ~x) | (\~y -> ~y)  ==>  \~x0 -> ((~alt (\~x -> ~x)) (\~y -> ~y)) ~x0
+    fn eval_select_missing_label_uses_modemap_default_when_present() {
+        let mm = Expr::new(
+            ExprKind::ModeMap {
+                fields: vec![ExprRecordField::new("Int".into(), Span::new(0, 0), int_expr(1))],
+                default: Some(Box::new(int_expr(999))),
+            },
+            Span::new(0, 0),
+        );
+        // .Str mm -> default (999)
+        let sugar = Expr::new(
+            ExprKind::Apply {
+                func: Box::new(Expr::new(ExprKind::Symbol(".Str".into()), Span::new(0, 0))),
+                arg: Box::new(mm),
+            },
+            Span::new(0, 0),
+        );
+        let t = lower_expr_to_core(&sugar);
+        let v = eval_term(&t).expect("select default");
+        assert_eq!(v, IrValue::Int(999));
+    }
+
+    #[test]
+    fn eval_ctor_pattern_match_success_and_mismatch_raises_input() {
+        let pat = Pattern::new(
+            PatternKind::Ctor {
+                name: "Foo".into(),
+                args: vec![Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0))],
+            },
+            Span::new(0, 0),
+        );
+        let lam = Term::lambda(pat, Term::var("x"));
+
+        let foo_42 = Term::app(Term::new(Op::Ctor("Foo".into())), Term::int(42));
+        let ok = Term::app(lam.clone(), foo_42);
+        let v = eval_term(&ok).expect("eval ctor match");
+        assert_eq!(v, IrValue::Int(42));
+
+        let bar_1 = Term::app(Term::new(Op::Ctor("Bar".into())), Term::int(1));
+        let bad = Term::app(lam, bar_1.clone());
+        let v = eval_term(&bad).expect("eval ctor mismatch");
+        match v {
+            IrValue::Raised(payload) => assert_eq!(*payload, eval_term(&bar_1).unwrap()),
+            other => panic!("expected Raised(arg), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lower_raise_is_explicit_op() {
+        let inner = int_expr(1);
+        let e = Expr::new(ExprKind::Raise(Box::new(inner)), Span::new(0, 0));
+        let t = lower_expr_to_core(&e);
+        match &t.op {
+            Op::Raise { payload } => match &payload.op {
+                Op::Int(1) => {}
+                other => panic!("expected payload Int(1), got {:?}", other),
+            },
+            other => panic!("expected Raise, got {:?}", other),
+        }
+        assert_eq!(print_term(&t), "^(1)");
+    }
+
+    #[test]
+    fn lower_alt_lambda_is_explicit_op() {
         let lam_l = Expr::new(
             ExprKind::Lambda {
                 param: Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
@@ -631,35 +1511,21 @@ mod tests {
             Span::new(0, 0),
         );
         let t = lower_expr_to_core(&alt);
-        match t.op {
-            Op::Lam { param, body } => {
-                assert!(param.starts_with("~"));
-                // body must be App(App(App(Ref("alt"), left), right), Ref(param))
-                if let Op::App { func, arg } = &body.op {
-                    // last arg is the parameter ref
-                    match &arg.op {
-                        Op::Ref(_pn) => {}
-                        other => panic!("expected Ref param, got {:?}", other),
-                    }
-                    // unroll the func side: ((Ref alt) left) right
-                    if let Op::App { func: f2, arg: _right } = &func.op {
-                        if let Op::App { func: f1, arg: _left } = &f2.op {
-                            match &f1.op {
-                                Op::Ref(name) => assert_eq!(name, "alt"),
-                                other => panic!("expected Ref(alt), got {:?}", other),
-                            }
-                        } else {
-                            panic!("expected App in f2.func");
-                        }
-                    } else {
-                        panic!("expected App in body.func");
-                    }
-                } else {
-                    panic!("expected App at body root");
+        match &t.op {
+            Op::Alt { left, right } => {
+                match &left.op {
+                    Op::Lam { .. } => {}
+                    other => panic!("expected Lam (left), got {:?}", other),
+                }
+                match &right.op {
+                    Op::Lam { .. } => {}
+                    other => panic!("expected Lam (right), got {:?}", other),
                 }
             }
-            other => panic!("expected Lam at top, got {:?}", other),
+            other => panic!("expected Alt, got {:?}", other),
         }
+        let s = print_term(&t);
+        assert!(s.contains(" | "));
     }
 
     #[test]
@@ -839,7 +1705,7 @@ mod tests {
         let bindings = vec![(
             "f".into(),
             Term::new(Op::Lam {
-                param: "~x".into(),
+                param: Pattern::new(PatternKind::Var("x".into()), Span::new(0, 0)),
                 body: Box::new(Term::new(Op::App {
                     func: Box::new(Term::new(Op::App {
                         func: Box::new(Term::new(Op::Ref("add".into()))),
@@ -891,7 +1757,7 @@ mod tests {
             (
                 "f".into(),
                 Term::new(Op::Lam {
-                    param: "~y".into(),
+                    param: Pattern::new(PatternKind::Var("y".into()), Span::new(0, 0)),
                     body: Box::new(Term::new(Op::App {
                         func: Box::new(Term::new(Op::App {
                             func: Box::new(Term::new(Op::Ref("add".into()))),
@@ -956,13 +1822,38 @@ mod tests {
     #[test]
     fn test_convenience_lambda() {
         // Test lambda convenience: (\x -> x + 1) 5
-        let lambda = Term::lambda(
-            "~x",
+        let lambda = Term::lambda_var(
+            "x",
             Term::app(Term::app(Term::var("add"), Term::var("x")), Term::int(1)),
         );
         let expr = Term::app(lambda, Term::int(5));
 
         let result = eval_term(&expr).expect("eval lambda with convenience constructors");
         assert_eq!(print_ir_value(&result), "6");
+    }
+
+    #[test]
+    fn eval_alt_fallback_on_pattern_mismatch_only() {
+        // Left matches only 1; right matches anything.
+        // Apply to 2 => left mismatches => ^(2) equals input => fallback => 20
+        let left = Term::lambda(Pattern::new(PatternKind::Int(1), Span::new(0, 0)), Term::int(10));
+        let right =
+            Term::lambda(Pattern::new(PatternKind::Wildcard, Span::new(0, 0)), Term::int(20));
+        let alt = Term::new(Op::Alt { left: Box::new(left), right: Box::new(right) });
+        let app = Term::app(alt, Term::int(2));
+        let v = eval_term(&app).expect("eval alt");
+        assert_eq!(print_ir_value(&v), "20");
+
+        // If left raises a payload not equal to input, it should NOT fallback.
+        let left2 = Term::lambda(
+            Pattern::new(PatternKind::Wildcard, Span::new(0, 0)),
+            Term::new(Op::Raise { payload: Box::new(Term::int(999)) }),
+        );
+        let right2 =
+            Term::lambda(Pattern::new(PatternKind::Wildcard, Span::new(0, 0)), Term::int(1));
+        let alt2 = Term::new(Op::Alt { left: Box::new(left2), right: Box::new(right2) });
+        let app2 = Term::app(alt2, Term::int(2));
+        let v2 = eval_term(&app2).expect("eval alt");
+        assert_eq!(print_ir_value(&v2), "^(999)");
     }
 }

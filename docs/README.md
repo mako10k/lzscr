@@ -13,6 +13,17 @@ This folder contains documentation for the lzscr PoC: language specs and tools, 
   - cli.md: CLI usage and key options
   - analyzer.md: static analysis (duplicates/unbound/shadowed/unused) and JSON output
 
+Other docs (maintainers/contributors):
+- coding-standards.md: coding standards, refactoring guidelines
+- coreir-guide.md: CoreIR developer guide
+- type-system.md: implemented type system snapshot
+- rca_instructions.md: RCA tool workflow (for repo incidents)
+
+Project policies and contributor guides live at the repo root:
+- ../AGENT.md
+- ../CONTRIBUTING.md
+- ../SECURITY.md
+
 Notes:
-- docs/lzscr.md is an early design note and contains future ideas (WIP). Do not treat it as a commitment. For the up-to-date, implementation-conformant spec, see the /spec set instead.
+- Roadmap/source of truth for prioritization: `ROADMAP.md`.
 - parser-letgroup-regression.md captures the November 2025 parser RCA (cause, fix, repro commands).

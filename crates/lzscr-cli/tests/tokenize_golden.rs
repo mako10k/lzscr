@@ -10,10 +10,10 @@ fn cli_cmd() -> Command {
 // Helper: run lzscr-cli with an inline program that imports stdlib/lex and tokenizes the given input string,
 // pretty-prints tokens as "kind:text:span(off,len)" one per line. The program is constructed in lzscr syntax.
 fn run_tokenize(input: &str) -> String {
-    // lzscr program: use stdlib prelude and lex.lzscr from stdlib via (~require .lex)
+    // lzscr program: use stdlib prelude and lex.lzscr from stdlib via (~require .pure .lex)
     // Build code that maps tokens to a printable line format.
     let code = format!(
-        "(\n  ~Lex = (~require .lex);\n  ~trim_ctor ~name = (~if ((~starts_with ~name \".\")) (~Str .slice ~name 1 ((~Str .len ~name) - 1)) ~name);\n  ~to_line ~t = (\n    ~k = (~t .kind);\n    ~x = (~t .text);\n    ~kind_text = (~trim_ctor (~to_str ~k));\n    (~Str .concat (~Str .concat ~kind_text \":\") ~x)\n  );\n  ~render ~xs = (\n    (\\[] -> \"\")\n    | \\(~h : ~t) -> (\n        ~line = (~to_line ~h);\n        ~rest = (~render ~t);\n        (~Str .concat (~Str .concat ~line \"\\n\") ~rest)\n      )\n  ) ~xs;\n  (~render (((~Lex .token) .tokenize) \"{}\"))\n)\n",
+        "(\n  ~Lex = (~require .pure .lex);\n  ~trim_ctor ~name = (~if ((~starts_with ~name \".\")) (~Str .slice ~name 1 ((~Str .len ~name) - 1)) ~name);\n  ~to_line ~t = (\n    ~k = (~t .kind);\n    ~x = (~t .text);\n    ~kind_text = (~trim_ctor (~to_str ~k));\n    (~Str .concat (~Str .concat ~kind_text \":\") ~x)\n  );\n  ~render ~xs = (\n    (\\[] -> \"\")\n    | \\(~h : ~t) -> (\n        ~line = (~to_line ~h);\n        ~rest = (~render ~t);\n        (~Str .concat (~Str .concat ~line \"\\n\") ~rest)\n      )\n  ) ~xs;\n  (~render (((~Lex .token) .tokenize) \"{}\"))\n)\n",
         input.replace('"', "\\\"")
     );
     // Compute absolute stdlib dir: <workspace_root>/stdlib

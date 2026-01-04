@@ -2,7 +2,7 @@ lzscr Language Specification (Consolidated, as of 2025-09)
 
 This document summarizes the currently implemented specification of lzscr, organized by layers (lexer → parser → semantics → file format → APIs). See the sibling files in this folder for details (tokenizer.md, syntax.md, semantics.md, modules.md, ast.md, ir.md).
 
-Note: For future ideas and broader roadmap (WIP, not commitments), see ../lzscr.md.
+Roadmap/source of truth for prioritization: see ../ROADMAP.md.
 
 - Character encoding: UTF-8
 - File extension: .lzscr (MIME: text/vnd.lzscr; charset=utf-8)
@@ -32,7 +32,7 @@ Lexing is implemented with logos (crates/lzscr-lexer). Representative tokens and
 - Literals:
   - Int: `[0-9]+` → Int(i64)
   - Float: `([0-9]+\.[0-9]*|\.[0-9]+)` → Float(f64)
-  - Str: `"([^"\\]|\\.)*"` (simple escapes)
+  - Str: `"([^"\\]|\\.)*"` (escapes; unknown escapes are errors; see syntax.md)
   - Char: `'(?:[^'\\]|\\u\{[0-9a-fA-F]+\}|\\.)'` → Unicode code point (i32)
 - Identifiers:
   - `Ident`: `[a-zA-Z_][a-zA-Z0-9_]*`
