@@ -297,6 +297,32 @@ fn dump_llvmir_if_with_false_ctor_condition_i64_only() {
     assert!(s.contains("ret i64"), "llvm ir: {s}");
 }
 
+#[test]
+fn dump_llvmir_if_with_seq_and_chain_branches_i64_only() {
+    // Ensure branch expressions can contain ~seq/~chain and still lower into blocks.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(if True (~seq (1 + 2 * 3) (4 + 5)) (~chain (6 + 7) (8 + 9)))",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("mul i64 2, 3"), "llvm ir: {s}");
+    assert!(s.contains("add i64 4, 5"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
 fn have_build_toolchain() -> bool {
     // Prefer clang for determinism; skip the test if clang isn't available.
     Command::new("clang").arg("--version").output().is_ok()
