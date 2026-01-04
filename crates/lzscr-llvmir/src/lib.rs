@@ -1,4 +1,7 @@
 use lzscr_coreir::{Op, Term};
+use std::collections::HashMap;
+
+use lzscr_ast::ast::PatternKind;
 
 #[derive(thiserror::Error, Debug)]
 pub enum LlvmIrLowerError {
@@ -54,7 +57,7 @@ fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
         msg.push_str(&d);
     }
     msg.push_str(
-        "\nSupported subset: Int literals, Bool literals (as i64 0/1), i64-only (~seq a b) and (~chain a b), and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
+        "\nSupported subset: Int literals, Bool literals (as i64 0/1), i64-only (~seq a b) and (~chain a b), i64-only inline lambda application ((\\~x -> body) arg ...) with ~x params only, and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
     );
     msg.push_str("\nHint: run lzscr-cli with --dump-coreir to inspect the lowered term.");
     unsupported(msg)
@@ -66,7 +69,7 @@ enum LlvmTy {
     I1,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum LlvmValue {
     ConstI64(i64),
     Reg { name: String, ty: LlvmTy },
@@ -163,26 +166,34 @@ fn collect_apps<'a>(t: &'a Term) -> (&'a Term, Vec<&'a Term>) {
     (head, args_rev)
 }
 
-fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerError> {
+fn lower_expr_i64(
+    em: &mut Emitter,
+    env: &mut HashMap<String, LlvmValue>,
+    t: &Term,
+) -> Result<LlvmValue, LlvmIrLowerError> {
     match &t.op {
         Op::Int(n) => Ok(LlvmValue::ConstI64(*n)),
         Op::Bool(b) => Ok(LlvmValue::ConstI64(if *b { 1 } else { 0 })),
+        Op::Ref(name) => env
+            .get(name)
+            .cloned()
+            .ok_or_else(|| unsupported_with_hint(&t.op, Some(format!("Unbound reference '{name}'")))),
         Op::Seq { first, second } => {
             // Evaluate first for its effects (within the supported i64-only subset), then return second.
-            let _ = lower_expr_i64(em, first)?;
-            lower_expr_i64(em, second)
+            let _ = lower_expr_i64(em, env, first)?;
+            lower_expr_i64(em, env, second)
         }
         Op::Chain { first, second } => {
             // Evaluate first in effect context (within the supported i64-only subset), then return second.
-            let _ = lower_expr_i64(em, first)?;
-            lower_expr_i64(em, second)
+            let _ = lower_expr_i64(em, env, first)?;
+            lower_expr_i64(em, env, second)
         }
         Op::App { .. } => {
             let (head, args) = collect_apps(t);
             match (&head.op, args.as_slice()) {
                 (Op::Ref(name), [a, b]) => {
-                    let av = lower_expr_i64(em, a)?;
-                    let bv = lower_expr_i64(em, b)?;
+                    let av = lower_expr_i64(em, env, a)?;
+                    let bv = lower_expr_i64(em, env, b)?;
                     match name.as_str() {
                         "add" => em.emit_binop_i64("add", av, bv),
                         "sub" => em.emit_binop_i64("sub", av, bv),
@@ -218,6 +229,50 @@ fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerEr
                         ))),
                     }
                 }
+                (Op::Lam { .. }, _) if !args.is_empty() => {
+                    // i64-only PoC: inline lambda applications (\~x -> body) a b ...
+                    // This supports curried lambdas by consuming args and stepping into nested `Lam`s.
+                    let mut func = head;
+                    let mut restore: Vec<(String, Option<LlvmValue>)> = vec![];
+
+                    for (idx, arg_term) in args.iter().enumerate() {
+                        let Op::Lam { param, body } = &func.op else {
+                            return Err(unsupported_with_hint(
+                                &func.op,
+                                Some(format!(
+                                    "Expected a lambda during curried application at arg #{}, got {}",
+                                    idx + 1,
+                                    op_summary(&func.op)
+                                )),
+                            ));
+                        };
+
+                        let PatternKind::Var(name) = &param.kind else {
+                            return Err(unsupported_with_hint(
+                                &func.op,
+                                Some("Only variable lambda params (~x) are supported in LLVM i64-only lowering.".into()),
+                            ));
+                        };
+
+                        let arg_val = lower_expr_i64(em, env, arg_term)?;
+                        let prev = env.insert(name.clone(), arg_val);
+                        restore.push((name.clone(), prev));
+                        func = body;
+                    }
+
+                    let result = lower_expr_i64(em, env, func);
+                    for (name, prev) in restore.into_iter().rev() {
+                        match prev {
+                            Some(v) => {
+                                env.insert(name, v);
+                            }
+                            None => {
+                                env.remove(&name);
+                            }
+                        }
+                    }
+                    result
+                }
                 _ => Err(unsupported_with_hint(
                     &t.op,
                     Some(format!(
@@ -238,7 +293,8 @@ fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerEr
 /// applications of `~add/~sub/~mul/~div/~eq/~ne/~lt/~le/~gt/~ge` (as `Ref("add"|...)`) producing an `i64` `main` result.
 pub fn lower_to_llvm_ir_text(term: &Term) -> Result<String, LlvmIrLowerError> {
     let mut em = Emitter::default();
-    let v = lower_expr_i64(&mut em, term)?;
+    let mut env: HashMap<String, LlvmValue> = HashMap::new();
+    let v = lower_expr_i64(&mut em, &mut env, term)?;
     if v.ty() != LlvmTy::I64 {
         return Err(unsupported("LLVM lowering produced a non-i64 result; only i64 is supported in this PoC.".into()));
     }
@@ -260,6 +316,8 @@ pub fn lower_to_llvm_ir_text(term: &Term) -> Result<String, LlvmIrLowerError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lzscr_ast::ast::Pattern;
+    use lzscr_ast::span::Span;
     use pretty_assertions::assert_eq;
 
     fn ref_(name: &str) -> Term {
@@ -270,6 +328,11 @@ mod tests {
     }
     fn app(f: Term, a: Term) -> Term {
         Term::new(Op::App { func: Box::new(f), arg: Box::new(a) })
+    }
+
+    fn lam_var(name: &str, body: Term) -> Term {
+        let param = Pattern::new(PatternKind::Var(name.into()), Span::new(0, 0));
+        Term::new(Op::Lam { param, body: Box::new(body) })
     }
 
     #[test]
@@ -366,4 +429,47 @@ entry:
 "#;
         assert_eq!(ir, expected);
     }
+
+        #[test]
+        fn lowers_inline_lambda_application_i64_only() {
+                // ((\~x -> (~add ~x 1)) 5)
+                let body = app(app(ref_("add"), ref_("x")), int_(1));
+                let lam = lam_var("x", body);
+                let t = app(lam, int_(5));
+                let ir = lower_to_llvm_ir_text(&t).expect("lower");
+                let expected = concat!(
+                    r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+"#,
+                    "  %0 = add i64 5, 1\n",
+                    "  ret i64 %0\n",
+                    "}\n",
+                );
+                assert_eq!(ir, expected);
+        }
+
+        #[test]
+        fn lowers_curried_lambda_application_i64_only() {
+                // (((\~x -> (\~y -> (~add ~x ~y))) 2) 3)
+                let inner = app(app(ref_("add"), ref_("x")), ref_("y"));
+                let lam_y = lam_var("y", inner);
+                let lam_x = lam_var("x", lam_y);
+                let t = app(app(lam_x, int_(2)), int_(3));
+                let ir = lower_to_llvm_ir_text(&t).expect("lower");
+                let expected = concat!(
+                    r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+"#,
+                    "  %0 = add i64 2, 3\n",
+                    "  ret i64 %0\n",
+                    "}\n",
+                );
+                assert_eq!(ir, expected);
+        }
 }

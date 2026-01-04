@@ -357,6 +357,7 @@ dependencies = [
 name = "lzscr-llvmir"
 version = "0.1.0"
 dependencies = [
+ "lzscr-ast",
  "lzscr-coreir",
  "pretty_assertions",
  "thiserror 1.0.69",

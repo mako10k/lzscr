@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 lzscr-coreir = { path = "../lzscr-coreir" }
+lzscr-ast = { path = "../lzscr-ast" }
 thiserror = "1"
 
 [dev-dependencies]
