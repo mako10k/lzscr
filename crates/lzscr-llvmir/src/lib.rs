@@ -1,5 +1,5 @@
 use lzscr_coreir::{Op, Term};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use lzscr_ast::ast::PatternKind;
 
@@ -57,7 +57,7 @@ fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
         msg.push_str(&d);
     }
     msg.push_str(
-        "\nSupported subset: Int literals, Bool literals (as i64 0/1), Ctor(True/False) (as i64 1/0), i64-only (if cond then else), i64-only (~seq a b) and (~chain a b), i64-only inline lambda application ((\\~x -> body) arg ...) with ~x params only, and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
+        "\nSupported subset: Int literals, Bool literals (as i64 0/1), Ctor(True/False) (as i64 1/0), i64-only (if cond then else), i64-only (and/or) with short-circuit, i64-only (~seq a b) and (~chain a b), i64-only inline lambda application ((\\~x -> body) arg ...) with ~x params only, and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
     );
     msg.push_str("\nHint: run lzscr-cli with --dump-coreir to inspect the lowered term.");
     unsupported(msg)
@@ -356,6 +356,48 @@ fn lower_expr_i64(
                     em.start_block(merge_label.clone());
                     em.emit_phi_i64(&then_label, then_val, &else_label, else_val)
                 }
+                (Op::Ctor(name), [left, right]) if name == "and" => {
+                    // i64-only Bool-like short-circuit: (and a b)
+                    // Evaluate `a`; if falsy return 0, else evaluate `b` and return bool(b).
+                    let then_label = em.fresh_block_label("then");
+                    let else_label = em.fresh_block_label("else");
+                    let merge_label = em.fresh_block_label("merge");
+
+                    let a_i1 = lower_cond_i1(em, env, left)?;
+                    em.emit_br_cond(a_i1, &then_label, &else_label)?;
+
+                    em.start_block(then_label.clone());
+                    let b_i1 = lower_cond_i1(em, env, right)?;
+                    let b_i64 = em.emit_zext_i1_to_i64(b_i1)?;
+                    em.emit_br_uncond(&merge_label)?;
+
+                    em.start_block(else_label.clone());
+                    em.emit_br_uncond(&merge_label)?;
+
+                    em.start_block(merge_label.clone());
+                    em.emit_phi_i64(&then_label, b_i64, &else_label, LlvmValue::ConstI64(0))
+                }
+                (Op::Ctor(name), [left, right]) if name == "or" => {
+                    // i64-only Bool-like short-circuit: (or a b)
+                    // Evaluate `a`; if truthy return 1, else evaluate `b` and return bool(b).
+                    let then_label = em.fresh_block_label("then");
+                    let else_label = em.fresh_block_label("else");
+                    let merge_label = em.fresh_block_label("merge");
+
+                    let a_i1 = lower_cond_i1(em, env, left)?;
+                    em.emit_br_cond(a_i1, &then_label, &else_label)?;
+
+                    em.start_block(then_label.clone());
+                    em.emit_br_uncond(&merge_label)?;
+
+                    em.start_block(else_label.clone());
+                    let b_i1 = lower_cond_i1(em, env, right)?;
+                    let b_i64 = em.emit_zext_i1_to_i64(b_i1)?;
+                    em.emit_br_uncond(&merge_label)?;
+
+                    em.start_block(merge_label.clone());
+                    em.emit_phi_i64(&then_label, LlvmValue::ConstI64(1), &else_label, b_i64)
+                }
                 (Op::Ref(name), [a, b]) => {
                     let av = lower_expr_i64(em, env, a)?;
                     let bv = lower_expr_i64(em, env, b)?;
@@ -454,7 +496,7 @@ fn lower_expr_i64(
 
 /// Lowers a CoreIR term into a minimal LLVM IR module.
 ///
-/// Current scope (int-only PoC): supports `Int` literals, Bool literals (as i64 0/1), constructor `True/False` (as i64 1/0), i64-only `if`, i64-only `~seq` and `~chain`, and saturated
+/// Current scope (int-only PoC): supports `Int` literals, Bool literals (as i64 0/1), constructor `True/False` (as i64 1/0), i64-only `if`, i64-only `and/or` (short-circuit), i64-only `~seq` and `~chain`, and saturated
 /// applications of `~add/~sub/~mul/~div/~eq/~ne/~lt/~le/~gt/~ge` (as `Ref("add"|...)`) producing an `i64` `main` result.
 pub fn lower_to_llvm_ir_text(term: &Term) -> Result<String, LlvmIrLowerError> {
     let mut em = Emitter::new();
@@ -783,6 +825,64 @@ else1:
 merge2:
   %5 = phi i64 [ %2, %then0 ], [ %4, %else1 ]
   ret i64 %5
+}
+"#;
+                assert_eq!(ir, expected);
+        }
+
+        #[test]
+        fn lowers_and_short_circuit_i64_only() {
+                // (and 0 5) : short-circuit should route false branch to 0.
+                let t = app(
+                        app(Term::new(Op::Ctor("and".into())), int_(0)),
+                        int_(5),
+                );
+                let ir = lower_to_llvm_ir_text(&t).expect("lower");
+                let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = icmp ne i64 0, 0
+  br i1 %0, label %then0, label %else1
+then0:
+  %1 = icmp ne i64 5, 0
+  %2 = zext i1 %1 to i64
+  br label %merge2
+else1:
+  br label %merge2
+merge2:
+  %3 = phi i64 [ %2, %then0 ], [ 0, %else1 ]
+  ret i64 %3
+}
+"#;
+                assert_eq!(ir, expected);
+        }
+
+        #[test]
+        fn lowers_or_short_circuit_i64_only() {
+                // (or 7 0) : short-circuit should route true branch to 1.
+                let t = app(
+                        app(Term::new(Op::Ctor("or".into())), int_(7)),
+                        int_(0),
+                );
+                let ir = lower_to_llvm_ir_text(&t).expect("lower");
+                let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = icmp ne i64 7, 0
+  br i1 %0, label %then0, label %else1
+then0:
+  br label %merge2
+else1:
+  %1 = icmp ne i64 0, 0
+  %2 = zext i1 %1 to i64
+  br label %merge2
+merge2:
+  %3 = phi i64 [ 1, %then0 ], [ %2, %else1 ]
+  ret i64 %3
 }
 "#;
                 assert_eq!(ir, expected);
