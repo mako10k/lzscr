@@ -323,6 +323,55 @@ fn dump_llvmir_if_with_seq_and_chain_branches_i64_only() {
     assert!(s.contains("ret i64"), "llvm ir: {s}");
 }
 
+#[test]
+fn dump_llvmir_and_short_circuit_i64_only() {
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(and 0 5)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 0, 0"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 5, 0"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_or_short_circuit_i64_only() {
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(or 7 0)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 7, 0"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
 fn have_build_toolchain() -> bool {
     // Prefer clang for determinism; skip the test if clang isn't available.
     Command::new("clang").arg("--version").output().is_ok()
