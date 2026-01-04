@@ -2,8 +2,58 @@ use lzscr_coreir::{Op, Term};
 
 #[derive(thiserror::Error, Debug)]
 pub enum LlvmIrLowerError {
-    #[error("unsupported CoreIR term: {0}")]
-    Unsupported(String),
+    #[error("{0}")]
+    Message(String),
+}
+
+const SUPPORTED_I64_BUILTINS: [&str; 4] = ["add", "sub", "mul", "div"];
+
+fn op_summary(op: &Op) -> String {
+    match op {
+        Op::Int(_) => "Int".into(),
+        Op::Float(_) => "Float".into(),
+        Op::Bool(_) => "Bool".into(),
+        Op::Str(_) => "Str".into(),
+        Op::Char(_) => "Char".into(),
+        Op::Unit => "Unit".into(),
+        Op::Ref(name) => format!("Ref({name})"),
+        Op::Symbol(_) => "Symbol".into(),
+        Op::Ctor(_) => "Ctor".into(),
+        Op::AtomSymbol(_) => "AtomSymbol".into(),
+        Op::List { .. } => "List".into(),
+        Op::Tuple { .. } => "Tuple".into(),
+        Op::Record { .. } => "Record".into(),
+        Op::ModeMap { .. } => "ModeMap".into(),
+        Op::Select { .. } => "Select".into(),
+        Op::Lam { .. } => "Lam".into(),
+        Op::App { .. } => "App".into(),
+        Op::Seq { .. } => "Seq".into(),
+        Op::Chain { .. } => "Chain".into(),
+        Op::Bind { .. } => "Bind".into(),
+        Op::Raise { .. } => "Raise".into(),
+        Op::Catch { .. } => "Catch".into(),
+        Op::OrElse { .. } => "OrElse".into(),
+        Op::Alt { .. } => "Alt".into(),
+        Op::LetRec { .. } => "LetRec".into(),
+    }
+}
+
+fn unsupported(message: String) -> LlvmIrLowerError {
+    LlvmIrLowerError::Message(message)
+}
+
+fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
+    let mut msg = format!(
+        "LLVM lowering does not support this CoreIR op yet: {}",
+        op_summary(op)
+    );
+    if let Some(d) = details {
+        msg.push_str("\n");
+        msg.push_str(&d);
+    }
+    msg.push_str("\nSupported subset: Int literals and saturated (~add|~sub|~mul|~div) over i64.");
+    msg.push_str("\nHint: run lzscr-cli with --dump-coreir to inspect the lowered term.");
+    unsupported(msg)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,8 +103,8 @@ impl Emitter {
         b: LlvmValue,
     ) -> Result<LlvmValue, LlvmIrLowerError> {
         if a.ty() != LlvmTy::I64 || b.ty() != LlvmTy::I64 {
-            return Err(LlvmIrLowerError::Unsupported(format!(
-                "type mismatch for {op}: got {:?} and {:?}",
+            return Err(unsupported(format!(
+                "LLVM lowering type mismatch for {op}: expected (i64, i64), got ({:?}, {:?})",
                 a.ty(),
                 b.ty()
             )));
@@ -90,18 +140,23 @@ fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerEr
                         "sub" => em.emit_binop_i64("sub", av, bv),
                         "mul" => em.emit_binop_i64("mul", av, bv),
                         "div" => em.emit_binop_i64("sdiv", av, bv),
-                        other => Err(LlvmIrLowerError::Unsupported(format!(
-                            "builtin '{other}' is not supported in LLVM lowering yet"
+                        other => Err(unsupported(format!(
+                            "LLVM lowering does not support builtin '{other}' yet. Supported builtins: {}",
+                            SUPPORTED_I64_BUILTINS.join("|")
                         ))),
                     }
                 }
-                _ => Err(LlvmIrLowerError::Unsupported(format!(
-                    "application form not supported: {:?}",
-                    t.op
-                ))),
+                _ => Err(unsupported_with_hint(
+                    &t.op,
+                    Some(format!(
+                        "Expected a fully-applied builtin call like (~add a b). Got head={} with {} arg(s).",
+                        op_summary(&head.op),
+                        args.len()
+                    )),
+                )),
             }
         }
-        other => Err(LlvmIrLowerError::Unsupported(format!("{:?}", other))),
+        other => Err(unsupported_with_hint(other, None)),
     }
 }
 
@@ -113,7 +168,7 @@ pub fn lower_to_llvm_ir_text(term: &Term) -> Result<String, LlvmIrLowerError> {
     let mut em = Emitter::default();
     let v = lower_expr_i64(&mut em, term)?;
     if v.ty() != LlvmTy::I64 {
-        return Err(LlvmIrLowerError::Unsupported("non-i64 result".into()));
+        return Err(unsupported("LLVM lowering produced a non-i64 result; only i64 is supported in this PoC.".into()));
     }
 
     let mut out = String::new();
