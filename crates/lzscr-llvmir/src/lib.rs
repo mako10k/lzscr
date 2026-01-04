@@ -57,7 +57,7 @@ fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
         msg.push_str(&d);
     }
     msg.push_str(
-        "\nSupported subset: Int literals, Bool literals (as i64 0/1), i64-only (~seq a b) and (~chain a b), i64-only inline lambda application ((\\~x -> body) arg ...) with ~x params only, and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
+        "\nSupported subset: Int literals, Bool literals (as i64 0/1), Ctor(True/False) (as i64 1/0), i64-only (if cond then else), i64-only (~seq a b) and (~chain a b), i64-only inline lambda application ((\\~x -> body) arg ...) with ~x params only, and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
     );
     msg.push_str("\nHint: run lzscr-cli with --dump-coreir to inspect the lowered term.");
     unsupported(msg)
@@ -94,14 +94,97 @@ impl LlvmValue {
 #[derive(Default)]
 struct Emitter {
     next_reg: usize,
+    next_block: usize,
+    blocks: Vec<Block>,
+    cur: usize,
+}
+
+#[derive(Default)]
+struct Block {
+    label: String,
     instrs: Vec<String>,
+    terminator: Option<String>,
 }
 
 impl Emitter {
-    fn fresh(&mut self) -> String {
+    fn new() -> Self {
+        Self {
+            next_reg: 0,
+            next_block: 0,
+            blocks: vec![Block { label: "entry".into(), ..Block::default() }],
+            cur: 0,
+        }
+    }
+
+    fn fresh_reg(&mut self) -> String {
         let name = format!("%{}", self.next_reg);
         self.next_reg += 1;
         name
+    }
+
+    fn fresh_block_label(&mut self, prefix: &str) -> String {
+        let name = format!("{}{}", prefix, self.next_block);
+        self.next_block += 1;
+        name
+    }
+
+    fn cur_block_mut(&mut self) -> &mut Block {
+        &mut self.blocks[self.cur]
+    }
+
+    fn emit_instr(&mut self, s: String) -> Result<(), LlvmIrLowerError> {
+        if self.cur_block_mut().terminator.is_some() {
+            return Err(unsupported("LLVM lowering internal error: instruction emitted after terminator".into()));
+        }
+        self.cur_block_mut().instrs.push(s);
+        Ok(())
+    }
+
+    fn emit_terminator(&mut self, s: String) -> Result<(), LlvmIrLowerError> {
+        if self.cur_block_mut().terminator.is_some() {
+            return Err(unsupported("LLVM lowering internal error: terminator emitted twice".into()));
+        }
+        self.cur_block_mut().terminator = Some(s);
+        Ok(())
+    }
+
+    fn start_block(&mut self, label: String) {
+        self.blocks.push(Block { label, ..Block::default() });
+        self.cur = self.blocks.len() - 1;
+    }
+
+    fn emit_ret_i64(&mut self, v: LlvmValue) -> Result<(), LlvmIrLowerError> {
+        if v.ty() != LlvmTy::I64 {
+            return Err(unsupported(format!(
+                "LLVM lowering type mismatch for ret: expected i64, got {:?}",
+                v.ty()
+            )));
+        }
+        self.emit_terminator(format!("  ret i64 {}", v.render()))
+    }
+
+    fn emit_br_uncond(&mut self, target: &str) -> Result<(), LlvmIrLowerError> {
+        self.emit_terminator(format!("  br label %{}", target))
+    }
+
+    fn emit_br_cond(
+        &mut self,
+        cond_i1: LlvmValue,
+        then_label: &str,
+        else_label: &str,
+    ) -> Result<(), LlvmIrLowerError> {
+        if cond_i1.ty() != LlvmTy::I1 {
+            return Err(unsupported(format!(
+                "LLVM lowering type mismatch for br: expected i1, got {:?}",
+                cond_i1.ty()
+            )));
+        }
+        self.emit_terminator(format!(
+            "  br i1 {}, label %{}, label %{}",
+            cond_i1.render(),
+            then_label,
+            else_label
+        ))
     }
 
     fn emit_binop_i64(
@@ -117,8 +200,8 @@ impl Emitter {
                 b.ty()
             )));
         }
-        let dst = self.fresh();
-        self.instrs.push(format!("  {dst} = {op} i64 {}, {}", a.render(), b.render()));
+        let dst = self.fresh_reg();
+        self.emit_instr(format!("  {dst} = {op} i64 {}, {}", a.render(), b.render()))?;
         Ok(LlvmValue::Reg { name: dst, ty: LlvmTy::I64 })
     }
 
@@ -135,9 +218,8 @@ impl Emitter {
                 b.ty()
             )));
         }
-        let dst = self.fresh();
-        self.instrs
-            .push(format!("  {dst} = icmp {pred} i64 {}, {}", a.render(), b.render()));
+        let dst = self.fresh_reg();
+        self.emit_instr(format!("  {dst} = icmp {pred} i64 {}, {}", a.render(), b.render()))?;
         Ok(LlvmValue::Reg { name: dst, ty: LlvmTy::I1 })
     }
 
@@ -148,10 +230,55 @@ impl Emitter {
                 v.ty()
             )));
         }
-        let dst = self.fresh();
-        self.instrs
-            .push(format!("  {dst} = zext i1 {} to i64", v.render()));
+        let dst = self.fresh_reg();
+        self.emit_instr(format!("  {dst} = zext i1 {} to i64", v.render()))?;
         Ok(LlvmValue::Reg { name: dst, ty: LlvmTy::I64 })
+    }
+
+    fn emit_phi_i64(
+        &mut self,
+        then_label: &str,
+        then_val: LlvmValue,
+        else_label: &str,
+        else_val: LlvmValue,
+    ) -> Result<LlvmValue, LlvmIrLowerError> {
+        if then_val.ty() != LlvmTy::I64 || else_val.ty() != LlvmTy::I64 {
+            return Err(unsupported(format!(
+                "LLVM lowering type mismatch for phi: expected (i64, i64), got ({:?}, {:?})",
+                then_val.ty(),
+                else_val.ty()
+            )));
+        }
+        let dst = self.fresh_reg();
+        self.emit_instr(format!(
+            "  {dst} = phi i64 [ {}, %{} ], [ {}, %{} ]",
+            then_val.render(),
+            then_label,
+            else_val.render(),
+            else_label
+        ))?;
+        Ok(LlvmValue::Reg { name: dst, ty: LlvmTy::I64 })
+    }
+
+    fn render_function_body(&self) -> Result<String, LlvmIrLowerError> {
+        let mut out = String::new();
+        for b in &self.blocks {
+            out.push_str(&format!("{}:\n", b.label));
+            for ins in &b.instrs {
+                out.push_str(ins);
+                out.push('\n');
+            }
+            if let Some(t) = &b.terminator {
+                out.push_str(t);
+                out.push('\n');
+            } else {
+                return Err(unsupported(format!(
+                    "LLVM lowering internal error: block '{}' has no terminator",
+                    b.label
+                )));
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -166,6 +293,22 @@ fn collect_apps<'a>(t: &'a Term) -> (&'a Term, Vec<&'a Term>) {
     (head, args_rev)
 }
 
+fn lower_cond_i1(
+    em: &mut Emitter,
+    env: &mut HashMap<String, LlvmValue>,
+    cond: &Term,
+) -> Result<LlvmValue, LlvmIrLowerError> {
+    // Bool-like: in i64-only subset we treat i64 0 as false, non-zero as true.
+    let cv = lower_expr_i64(em, env, cond)?;
+    if cv.ty() != LlvmTy::I64 {
+        return Err(unsupported(format!(
+            "LLVM lowering produced a non-i64 condition; expected i64 Bool-like, got {:?}",
+            cv.ty()
+        )));
+    }
+    em.emit_icmp_i64("ne", cv, LlvmValue::ConstI64(0))
+}
+
 fn lower_expr_i64(
     em: &mut Emitter,
     env: &mut HashMap<String, LlvmValue>,
@@ -174,6 +317,8 @@ fn lower_expr_i64(
     match &t.op {
         Op::Int(n) => Ok(LlvmValue::ConstI64(*n)),
         Op::Bool(b) => Ok(LlvmValue::ConstI64(if *b { 1 } else { 0 })),
+        Op::Ctor(name) if name == "True" => Ok(LlvmValue::ConstI64(1)),
+        Op::Ctor(name) if name == "False" => Ok(LlvmValue::ConstI64(0)),
         Op::Ref(name) => env
             .get(name)
             .cloned()
@@ -191,6 +336,26 @@ fn lower_expr_i64(
         Op::App { .. } => {
             let (head, args) = collect_apps(t);
             match (&head.op, args.as_slice()) {
+                (Op::Ctor(name), [cond, then_, else_]) if name == "if" => {
+                    // i64-only PoC: lower (if cond then else) as br+phi.
+                    let then_label = em.fresh_block_label("then");
+                    let else_label = em.fresh_block_label("else");
+                    let merge_label = em.fresh_block_label("merge");
+
+                    let cond_i1 = lower_cond_i1(em, env, cond)?;
+                    em.emit_br_cond(cond_i1, &then_label, &else_label)?;
+
+                    em.start_block(then_label.clone());
+                    let then_val = lower_expr_i64(em, env, then_)?;
+                    em.emit_br_uncond(&merge_label)?;
+
+                    em.start_block(else_label.clone());
+                    let else_val = lower_expr_i64(em, env, else_)?;
+                    em.emit_br_uncond(&merge_label)?;
+
+                    em.start_block(merge_label.clone());
+                    em.emit_phi_i64(&then_label, then_val, &else_label, else_val)
+                }
                 (Op::Ref(name), [a, b]) => {
                     let av = lower_expr_i64(em, env, a)?;
                     let bv = lower_expr_i64(em, env, b)?;
@@ -289,26 +454,23 @@ fn lower_expr_i64(
 
 /// Lowers a CoreIR term into a minimal LLVM IR module.
 ///
-/// Current scope (int-only PoC): supports `Int` literals, Bool literals (as i64 0/1), i64-only `~seq` and `~chain`, and saturated
+/// Current scope (int-only PoC): supports `Int` literals, Bool literals (as i64 0/1), constructor `True/False` (as i64 1/0), i64-only `if`, i64-only `~seq` and `~chain`, and saturated
 /// applications of `~add/~sub/~mul/~div/~eq/~ne/~lt/~le/~gt/~ge` (as `Ref("add"|...)`) producing an `i64` `main` result.
 pub fn lower_to_llvm_ir_text(term: &Term) -> Result<String, LlvmIrLowerError> {
-    let mut em = Emitter::default();
+    let mut em = Emitter::new();
     let mut env: HashMap<String, LlvmValue> = HashMap::new();
     let v = lower_expr_i64(&mut em, &mut env, term)?;
     if v.ty() != LlvmTy::I64 {
         return Err(unsupported("LLVM lowering produced a non-i64 result; only i64 is supported in this PoC.".into()));
     }
 
+    em.emit_ret_i64(v)?;
+
     let mut out = String::new();
     out.push_str("; lzscr-llvmir (PoC)\n");
     out.push_str("target triple = \"unknown-unknown-unknown\"\n\n");
     out.push_str("define i64 @main() {\n");
-    out.push_str("entry:\n");
-    for ins in em.instrs {
-        out.push_str(&ins);
-        out.push('\n');
-    }
-    out.push_str(&format!("  ret i64 {}\n", v.render()));
+    out.push_str(&em.render_function_body()?);
     out.push_str("}\n");
     Ok(out)
 }
@@ -429,6 +591,36 @@ entry:
 "#;
         assert_eq!(ir, expected);
     }
+
+        #[test]
+        fn lowers_if_true_br_phi_i64_only() {
+                // CoreIR observed shape: (((if True) 1) 2)
+                let t = app(
+                        app(
+                                app(Term::new(Op::Ctor("if".into())), Term::new(Op::Ctor("True".into()))),
+                                int_(1),
+                        ),
+                        int_(2),
+                );
+                let ir = lower_to_llvm_ir_text(&t).expect("lower");
+                let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = icmp ne i64 1, 0
+  br i1 %0, label %then0, label %else1
+then0:
+  br label %merge2
+else1:
+  br label %merge2
+merge2:
+  %1 = phi i64 [ 1, %then0 ], [ 2, %else1 ]
+  ret i64 %1
+}
+"#;
+                assert_eq!(ir, expected);
+        }
 
         #[test]
         fn lowers_inline_lambda_application_i64_only() {
