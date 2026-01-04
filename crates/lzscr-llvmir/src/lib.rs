@@ -54,7 +54,7 @@ fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
         msg.push_str(&d);
     }
     msg.push_str(
-        "\nSupported subset: Int literals, Bool literals (as i64 0/1), i64-only (~seq a b), and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
+        "\nSupported subset: Int literals, Bool literals (as i64 0/1), i64-only (~seq a b) and (~chain a b), and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
     );
     msg.push_str("\nHint: run lzscr-cli with --dump-coreir to inspect the lowered term.");
     unsupported(msg)
@@ -172,6 +172,11 @@ fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerEr
             let _ = lower_expr_i64(em, first)?;
             lower_expr_i64(em, second)
         }
+        Op::Chain { first, second } => {
+            // Evaluate first in effect context (within the supported i64-only subset), then return second.
+            let _ = lower_expr_i64(em, first)?;
+            lower_expr_i64(em, second)
+        }
         Op::App { .. } => {
             let (head, args) = collect_apps(t);
             match (&head.op, args.as_slice()) {
@@ -229,7 +234,7 @@ fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerEr
 
 /// Lowers a CoreIR term into a minimal LLVM IR module.
 ///
-/// Current scope (int-only PoC): supports `Int` literals, Bool literals (as i64 0/1), i64-only `~seq`, and saturated
+/// Current scope (int-only PoC): supports `Int` literals, Bool literals (as i64 0/1), i64-only `~seq` and `~chain`, and saturated
 /// applications of `~add/~sub/~mul/~div/~eq/~ne/~lt/~le/~gt/~ge` (as `Ref("add"|...)`) producing an `i64` `main` result.
 pub fn lower_to_llvm_ir_text(term: &Term) -> Result<String, LlvmIrLowerError> {
     let mut em = Emitter::default();
@@ -336,6 +341,26 @@ define i64 @main() {
 entry:
   %0 = icmp eq i64 42, 42
   %1 = zext i1 %0 to i64
+  ret i64 %1
+}
+"#;
+        assert_eq!(ir, expected);
+    }
+
+    #[test]
+    fn lowers_chain_i64_only() {
+        // (~chain ((~mul 2) 3) ((~add 10) 20))
+        let first = app(app(ref_("mul"), int_(2)), int_(3));
+        let second = app(app(ref_("add"), int_(10)), int_(20));
+        let t = Term::new(Op::Chain { first: Box::new(first), second: Box::new(second) });
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = mul i64 2, 3
+  %1 = add i64 10, 20
   ret i64 %1
 }
 "#;
