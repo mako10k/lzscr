@@ -686,6 +686,66 @@ merge2:
         }
 
         #[test]
+        fn lowers_if_with_zero_condition_br_phi_i64_only() {
+                // (if 0 1 2): 0 is falsy (still lowered via icmp+br+phi, no constant-folding).
+                let t = app(
+                        app(
+                                app(Term::new(Op::Ctor("if".into())), int_(0)),
+                                int_(1),
+                        ),
+                        int_(2),
+                );
+                let ir = lower_to_llvm_ir_text(&t).expect("lower");
+                let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = icmp ne i64 0, 0
+  br i1 %0, label %then0, label %else1
+then0:
+  br label %merge2
+else1:
+  br label %merge2
+merge2:
+  %1 = phi i64 [ 1, %then0 ], [ 2, %else1 ]
+  ret i64 %1
+}
+"#;
+                assert_eq!(ir, expected);
+        }
+
+        #[test]
+        fn lowers_if_with_false_ctor_condition_br_phi_i64_only() {
+                // (if False 1 2): constructor False is lowered as i64 0.
+                let t = app(
+                        app(
+                                app(Term::new(Op::Ctor("if".into())), Term::new(Op::Ctor("False".into()))),
+                                int_(1),
+                        ),
+                        int_(2),
+                );
+                let ir = lower_to_llvm_ir_text(&t).expect("lower");
+                let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = icmp ne i64 0, 0
+  br i1 %0, label %then0, label %else1
+then0:
+  br label %merge2
+else1:
+  br label %merge2
+merge2:
+  %1 = phi i64 [ 1, %then0 ], [ 2, %else1 ]
+  ret i64 %1
+}
+"#;
+                assert_eq!(ir, expected);
+        }
+
+        #[test]
         fn lowers_inline_lambda_application_i64_only() {
                 // ((\~x -> (~add ~x 1)) 5)
                 let body = app(app(ref_("add"), ref_("x")), int_(1));
