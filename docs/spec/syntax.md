@@ -102,6 +102,7 @@ Desugaring (to function application):
   - `a - b` → `(~sub a) b`
   - `a * b` → `(~mul a) b`
   - `a / b` → `(~div a) b` (error on 0)
+  - `-a` → `(~sub 0) a`
 - Float ops (separate symbols; mixed types are errors)
   - `a .+ b` → `(~fadd a) b`
   - `a .- b` → `(~fsub a) b`

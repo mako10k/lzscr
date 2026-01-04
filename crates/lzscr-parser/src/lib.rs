@@ -1406,6 +1406,23 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
     ) -> Result<Expr, ParseError> {
         let t = bump(i, toks).ok_or_else(|| ParseError::Generic("unexpected EOF".into()))?;
         Ok(match &t.tok {
+            // Prefix operator: unary minus
+            // Desugar: -E  ==>  (~sub 0) E
+            Tok::Minus => {
+                let rhs = parse_atom(i, toks)?;
+                let zero = Expr::new(ExprKind::Int(0), t.span);
+                let callee = Expr::new(ExprKind::Ref("sub".into()), t.span);
+
+                let span = Span::new(t.span.offset, rhs.span.offset + rhs.span.len - t.span.offset);
+                let app1 = Expr::new(
+                    ExprKind::Apply { func: Box::new(callee), arg: Box::new(zero) },
+                    span,
+                );
+                Expr::new(
+                    ExprKind::Apply { func: Box::new(app1), arg: Box::new(rhs) },
+                    span,
+                )
+            }
             // Check for mode map syntax: .{ Mode: expr, ... }
             Tok::Dot => {
                 // Bare dot; check if followed by {
@@ -3107,6 +3124,24 @@ mod tests {
                 assert!(msg.contains("lex error"), "unexpected msg: {}", msg)
             }
             other => panic!("expected Err(ParseError::WithSpan), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn unary_minus_desugars_to_sub_zero() {
+        let r = parse_expr("-1").unwrap();
+        match r.kind {
+            ExprKind::Apply { func, arg } => {
+                assert!(matches!(arg.kind, ExprKind::Int(1)));
+                match func.kind {
+                    ExprKind::Apply { func: f2, arg: a2 } => {
+                        assert!(matches!(a2.kind, ExprKind::Int(0)));
+                        assert!(matches!(f2.kind, ExprKind::Ref(ref n) if n == "sub"));
+                    }
+                    other => panic!("expected Apply(Ref(sub), 0), got {:?}", other),
+                }
+            }
+            other => panic!("expected Apply, got {:?}", other),
         }
     }
 }
