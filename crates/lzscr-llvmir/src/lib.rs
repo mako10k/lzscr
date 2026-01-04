@@ -57,7 +57,7 @@ fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
         msg.push_str(&d);
     }
     msg.push_str(
-        "\nSupported subset: Int literals, Bool literals (as i64 0/1), Ctor(True/False) (as i64 1/0), i64-only (if cond then else), i64-only (and/or) with short-circuit, i64-only (~seq a b) and (~chain a b), i64-only inline lambda application ((\\~x -> body) arg ...) with ~x params only, and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
+        "\nSupported subset: Int literals, Bool literals (as i64 0/1), Ctor(True/False) (as i64 1/0), i64-only (if cond then else), i64-only (and/or) with short-circuit, i64-only not, i64-only (~seq a b) and (~chain a b), i64-only inline lambda application ((\\~x -> body) arg ...) with ~x params only, and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
     );
     msg.push_str("\nHint: run lzscr-cli with --dump-coreir to inspect the lowered term.");
     unsupported(msg)
@@ -333,6 +333,123 @@ fn lower_expr_i64(
             let _ = lower_expr_i64(em, env, first)?;
             lower_expr_i64(em, env, second)
         }
+        Op::LetRec { bindings, body } => {
+            // i64-only PoC: support a restricted, non-recursive subset of letrec.
+            // Restriction: RHS must not reference any of the binding names (no self/mutual recursion).
+            fn normalize_binder_name(name: &str) -> &str {
+                name.strip_prefix('~').unwrap_or(name)
+            }
+
+            fn refs_forbidden(
+                t: &Term,
+                forbidden: &HashSet<String>,
+                bound: &mut HashSet<String>,
+            ) -> bool {
+                match &t.op {
+                    Op::Ref(name) => forbidden.contains(name) && !bound.contains(name),
+                    Op::Lam { param, body } => {
+                        let mut inserted: Option<String> = None;
+                        if let PatternKind::Var(name) = &param.kind {
+                            if bound.insert(name.clone()) {
+                                inserted = Some(name.clone());
+                            }
+                        }
+                        let hit = refs_forbidden(body, forbidden, bound);
+                        if let Some(n) = inserted {
+                            bound.remove(&n);
+                        }
+                        hit
+                    }
+                    Op::App { func, arg } => {
+                        refs_forbidden(func, forbidden, bound) || refs_forbidden(arg, forbidden, bound)
+                    }
+                    Op::Seq { first, second }
+                    | Op::Chain { first, second }
+                    | Op::OrElse { left: first, right: second }
+                    | Op::Alt { left: first, right: second }
+                    | Op::Catch { left: first, right: second } => {
+                        refs_forbidden(first, forbidden, bound) || refs_forbidden(second, forbidden, bound)
+                    }
+                    Op::Bind { value, cont } => {
+                        refs_forbidden(value, forbidden, bound) || refs_forbidden(cont, forbidden, bound)
+                    }
+                    Op::Raise { payload } => refs_forbidden(payload, forbidden, bound),
+                    Op::LetRec { bindings, body } => {
+                        // Treat inner letrec binders as shadowing.
+                        let inner_names: Vec<String> =
+                            bindings.iter().map(|(n, _)| n.clone()).collect();
+                        for n in &inner_names {
+                            bound.insert(n.clone());
+                            let nn = normalize_binder_name(n).to_string();
+                            bound.insert(nn);
+                        }
+                        let mut hit = false;
+                        for (_, rhs) in bindings {
+                            hit |= refs_forbidden(rhs, forbidden, bound);
+                        }
+                        hit |= refs_forbidden(body, forbidden, bound);
+                        for n in &inner_names {
+                            bound.remove(n);
+                            let nn = normalize_binder_name(n);
+                            bound.remove(nn);
+                        }
+                        hit
+                    }
+                    Op::List { items } | Op::Tuple { items } => {
+                        items.iter().any(|x| refs_forbidden(x, forbidden, bound))
+                    }
+                    Op::Record { fields } | Op::ModeMap { fields, .. } => fields
+                        .iter()
+                        .any(|f| refs_forbidden(&f.value, forbidden, bound)),
+                    Op::Select { target, .. } => refs_forbidden(target, forbidden, bound),
+                    _ => false,
+                }
+            }
+
+            let mut forbidden: HashSet<String> = HashSet::new();
+            for (n, _) in bindings {
+                forbidden.insert(n.clone());
+                forbidden.insert(normalize_binder_name(n).to_string());
+            }
+            for (name, rhs) in bindings {
+                let mut bound: HashSet<String> = HashSet::new();
+                if refs_forbidden(rhs, &forbidden, &mut bound) {
+                    return Err(unsupported_with_hint(
+                        &t.op,
+                        Some(format!(
+                            "LLVM i64-only lowering supports only non-recursive let bindings; RHS of '{}' must not reference any let-bound names.",
+                            name
+                        )),
+                    ));
+                }
+            }
+
+            let mut restore: Vec<(String, Option<LlvmValue>)> = vec![];
+            for (name, rhs) in bindings {
+                let v = lower_expr_i64(em, env, rhs)?;
+                let normalized_str = normalize_binder_name(name);
+                let normalized = normalized_str.to_string();
+                let prev = env.insert(normalized.clone(), v.clone());
+                restore.push((normalized, prev));
+                if name.as_str() != normalized_str {
+                    let prev = env.insert(name.clone(), v);
+                    restore.push((name.clone(), prev));
+                }
+            }
+
+            let result = lower_expr_i64(em, env, body);
+            for (name, prev) in restore.into_iter().rev() {
+                match prev {
+                    Some(v) => {
+                        env.insert(name, v);
+                    }
+                    None => {
+                        env.remove(&name);
+                    }
+                }
+            }
+            result
+        }
         Op::App { .. } => {
             let (head, args) = collect_apps(t);
             match (&head.op, args.as_slice()) {
@@ -397,6 +514,18 @@ fn lower_expr_i64(
 
                     em.start_block(merge_label.clone());
                     em.emit_phi_i64(&then_label, LlvmValue::ConstI64(1), &else_label, b_i64)
+                }
+                (Op::Ctor(name), [x]) if name == "not" => {
+                    // Bool-like negation: (not x) where x is i64 truthy.
+                    let xv = lower_expr_i64(em, env, x)?;
+                    if xv.ty() != LlvmTy::I64 {
+                        return Err(unsupported(format!(
+                            "LLVM lowering type mismatch for not: expected i64, got {:?}",
+                            xv.ty()
+                        )));
+                    }
+                    let c = em.emit_icmp_i64("eq", xv, LlvmValue::ConstI64(0))?;
+                    em.emit_zext_i1_to_i64(c)
                 }
                 (Op::Ref(name), [a, b]) => {
                     let av = lower_expr_i64(em, env, a)?;
@@ -496,7 +625,7 @@ fn lower_expr_i64(
 
 /// Lowers a CoreIR term into a minimal LLVM IR module.
 ///
-/// Current scope (int-only PoC): supports `Int` literals, Bool literals (as i64 0/1), constructor `True/False` (as i64 1/0), i64-only `if`, i64-only `and/or` (short-circuit), i64-only `~seq` and `~chain`, and saturated
+/// Current scope (int-only PoC): supports `Int` literals, Bool literals (as i64 0/1), constructor `True/False` (as i64 1/0), i64-only `if`, i64-only `and/or` (short-circuit), i64-only `not`, i64-only `~seq` and `~chain`, and saturated
 /// applications of `~add/~sub/~mul/~div/~eq/~ne/~lt/~le/~gt/~ge` (as `Ref("add"|...)`) producing an `i64` `main` result.
 pub fn lower_to_llvm_ir_text(term: &Term) -> Result<String, LlvmIrLowerError> {
     let mut em = Emitter::new();
@@ -889,6 +1018,26 @@ merge2:
         }
 
         #[test]
+        fn lowers_not_i64_only() {
+            // (not 0) => 1
+            let t = app(Term::new(Op::Ctor("not".into())), int_(0));
+            let ir = lower_to_llvm_ir_text(&t).expect("lower");
+            let expected = concat!(
+                r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+"#,
+                "  %0 = icmp eq i64 0, 0\n",
+                "  %1 = zext i1 %0 to i64\n",
+                "  ret i64 %1\n",
+                "}\n",
+            );
+            assert_eq!(ir, expected);
+        }
+
+        #[test]
         fn lowers_inline_lambda_application_i64_only() {
                 // ((\~x -> (~add ~x 1)) 5)
                 let body = app(app(ref_("add"), ref_("x")), int_(1));
@@ -930,4 +1079,34 @@ entry:
                 );
                 assert_eq!(ir, expected);
         }
+
+    #[test]
+    fn lowers_letrec_non_recursive_i64_only() {
+        // letrec { x = 5 } in (~add x 2)
+        let body = app(app(ref_("add"), ref_("x")), int_(2));
+        let t = Term::new(Op::LetRec { bindings: vec![("x".into(), int_(5))], body: Box::new(body) });
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = add i64 5, 2
+  ret i64 %0
+}
+"#;
+        assert_eq!(ir, expected);
+    }
+
+    #[test]
+    fn letrec_rejects_recursive_rhs_i64_only() {
+        // letrec { x = x } in x
+        let t = Term::new(Op::LetRec {
+            bindings: vec![("x".into(), ref_("x"))],
+            body: Box::new(ref_("x")),
+        });
+        let err = lower_to_llvm_ir_text(&t).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("non-recursive"), "error: {msg}");
+    }
 }
