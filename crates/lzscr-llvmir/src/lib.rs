@@ -6,7 +6,9 @@ pub enum LlvmIrLowerError {
     Message(String),
 }
 
-const SUPPORTED_I64_BUILTINS: [&str; 4] = ["add", "sub", "mul", "div"];
+const SUPPORTED_I64_BUILTINS: [&str; 10] = [
+    "add", "sub", "mul", "div", "eq", "ne", "lt", "le", "gt", "ge",
+];
 
 fn op_summary(op: &Op) -> String {
     match op {
@@ -52,7 +54,7 @@ fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
         msg.push_str(&d);
     }
     msg.push_str(
-        "\nSupported subset: Int literals, i64-only (~seq a b), and saturated (~add|~sub|~mul|~div) over i64.",
+        "\nSupported subset: Int literals, Bool literals (as i64 0/1), i64-only (~seq a b), and saturated (~add|~sub|~mul|~div|~eq|~ne|~lt|~le|~gt|~ge) over i64.",
     );
     msg.push_str("\nHint: run lzscr-cli with --dump-coreir to inspect the lowered term.");
     unsupported(msg)
@@ -61,6 +63,7 @@ fn unsupported_with_hint(op: &Op, details: Option<String>) -> LlvmIrLowerError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LlvmTy {
     I64,
+    I1,
 }
 
 #[derive(Debug)]
@@ -115,6 +118,38 @@ impl Emitter {
         self.instrs.push(format!("  {dst} = {op} i64 {}, {}", a.render(), b.render()));
         Ok(LlvmValue::Reg { name: dst, ty: LlvmTy::I64 })
     }
+
+    fn emit_icmp_i64(
+        &mut self,
+        pred: &str,
+        a: LlvmValue,
+        b: LlvmValue,
+    ) -> Result<LlvmValue, LlvmIrLowerError> {
+        if a.ty() != LlvmTy::I64 || b.ty() != LlvmTy::I64 {
+            return Err(unsupported(format!(
+                "LLVM lowering type mismatch for icmp {pred}: expected (i64, i64), got ({:?}, {:?})",
+                a.ty(),
+                b.ty()
+            )));
+        }
+        let dst = self.fresh();
+        self.instrs
+            .push(format!("  {dst} = icmp {pred} i64 {}, {}", a.render(), b.render()));
+        Ok(LlvmValue::Reg { name: dst, ty: LlvmTy::I1 })
+    }
+
+    fn emit_zext_i1_to_i64(&mut self, v: LlvmValue) -> Result<LlvmValue, LlvmIrLowerError> {
+        if v.ty() != LlvmTy::I1 {
+            return Err(unsupported(format!(
+                "LLVM lowering type mismatch for zext: expected i1, got {:?}",
+                v.ty()
+            )));
+        }
+        let dst = self.fresh();
+        self.instrs
+            .push(format!("  {dst} = zext i1 {} to i64", v.render()));
+        Ok(LlvmValue::Reg { name: dst, ty: LlvmTy::I64 })
+    }
 }
 
 fn collect_apps<'a>(t: &'a Term) -> (&'a Term, Vec<&'a Term>) {
@@ -131,6 +166,7 @@ fn collect_apps<'a>(t: &'a Term) -> (&'a Term, Vec<&'a Term>) {
 fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerError> {
     match &t.op {
         Op::Int(n) => Ok(LlvmValue::ConstI64(*n)),
+        Op::Bool(b) => Ok(LlvmValue::ConstI64(if *b { 1 } else { 0 })),
         Op::Seq { first, second } => {
             // Evaluate first for its effects (within the supported i64-only subset), then return second.
             let _ = lower_expr_i64(em, first)?;
@@ -147,6 +183,30 @@ fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerEr
                         "sub" => em.emit_binop_i64("sub", av, bv),
                         "mul" => em.emit_binop_i64("mul", av, bv),
                         "div" => em.emit_binop_i64("sdiv", av, bv),
+                        "eq" => {
+                            let c = em.emit_icmp_i64("eq", av, bv)?;
+                            em.emit_zext_i1_to_i64(c)
+                        }
+                        "ne" => {
+                            let c = em.emit_icmp_i64("ne", av, bv)?;
+                            em.emit_zext_i1_to_i64(c)
+                        }
+                        "lt" => {
+                            let c = em.emit_icmp_i64("slt", av, bv)?;
+                            em.emit_zext_i1_to_i64(c)
+                        }
+                        "le" => {
+                            let c = em.emit_icmp_i64("sle", av, bv)?;
+                            em.emit_zext_i1_to_i64(c)
+                        }
+                        "gt" => {
+                            let c = em.emit_icmp_i64("sgt", av, bv)?;
+                            em.emit_zext_i1_to_i64(c)
+                        }
+                        "ge" => {
+                            let c = em.emit_icmp_i64("sge", av, bv)?;
+                            em.emit_zext_i1_to_i64(c)
+                        }
                         other => Err(unsupported(format!(
                             "LLVM lowering does not support builtin '{other}' yet. Supported builtins: {}",
                             SUPPORTED_I64_BUILTINS.join("|")
@@ -169,8 +229,8 @@ fn lower_expr_i64(em: &mut Emitter, t: &Term) -> Result<LlvmValue, LlvmIrLowerEr
 
 /// Lowers a CoreIR term into a minimal LLVM IR module.
 ///
-/// Current scope (int-only PoC): supports `Int` literals, i64-only `~seq`, and saturated
-/// applications of `~add/~sub/~mul/~div` (as `Ref("add"|...)`) producing an `i64` `main` result.
+/// Current scope (int-only PoC): supports `Int` literals, Bool literals (as i64 0/1), i64-only `~seq`, and saturated
+/// applications of `~add/~sub/~mul/~div/~eq/~ne/~lt/~le/~gt/~ge` (as `Ref("add"|...)`) producing an `i64` `main` result.
 pub fn lower_to_llvm_ir_text(term: &Term) -> Result<String, LlvmIrLowerError> {
     let mut em = Emitter::default();
     let v = lower_expr_i64(&mut em, term)?;
@@ -239,6 +299,43 @@ define i64 @main() {
 entry:
   %0 = mul i64 2, 3
   %1 = add i64 10, 20
+  ret i64 %1
+}
+"#;
+        assert_eq!(ir, expected);
+    }
+
+
+    #[test]
+    fn lowers_lt_to_icmp_zext() {
+        // ((~lt 1) 2)
+        let t = app(app(ref_("lt"), int_(1)), int_(2));
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = icmp slt i64 1, 2
+  %1 = zext i1 %0 to i64
+  ret i64 %1
+}
+"#;
+        assert_eq!(ir, expected);
+    }
+
+    #[test]
+    fn lowers_eq_to_icmp_zext() {
+        // ((~eq 42) 42)
+        let t = app(app(ref_("eq"), int_(42)), int_(42));
+        let ir = lower_to_llvm_ir_text(&t).expect("lower");
+        let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = icmp eq i64 42, 42
+  %1 = zext i1 %0 to i64
   ret i64 %1
 }
 "#;
