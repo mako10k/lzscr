@@ -221,6 +221,32 @@ fn dump_llvmir_if_with_lt_condition_i64_only() {
     assert!(s.contains("ret i64"), "llvm ir: {s}");
 }
 
+#[test]
+fn dump_llvmir_if_with_truthy_i64_condition_i64_only() {
+    // Ensure `if` treats non-zero i64 as true in the current i64-only LLVM subset.
+    // Typecheck is disabled because surface `if` expects Bool-like.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(if 42 1 2)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 42, 0"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
 fn have_build_toolchain() -> bool {
     // Prefer clang for determinism; skip the test if clang isn't available.
     Command::new("clang").arg("--version").output().is_ok()
