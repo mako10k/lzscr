@@ -623,6 +623,39 @@ merge2:
         }
 
         #[test]
+        fn lowers_if_with_lt_condition_br_phi_i64_only() {
+                // (if (1 < 2) 10 20) with `lt` producing i64 0/1, then converted to i1 via `icmp ne`.
+                let cond = app(app(ref_("lt"), int_(1)), int_(2));
+                let t = app(
+                        app(
+                                app(Term::new(Op::Ctor("if".into())), cond),
+                                int_(10),
+                        ),
+                        int_(20),
+                );
+                let ir = lower_to_llvm_ir_text(&t).expect("lower");
+                let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = icmp slt i64 1, 2
+  %1 = zext i1 %0 to i64
+  %2 = icmp ne i64 %1, 0
+  br i1 %2, label %then0, label %else1
+then0:
+  br label %merge2
+else1:
+  br label %merge2
+merge2:
+  %3 = phi i64 [ 10, %then0 ], [ 20, %else1 ]
+  ret i64 %3
+}
+"#;
+                assert_eq!(ir, expected);
+        }
+
+        #[test]
         fn lowers_inline_lambda_application_i64_only() {
                 // ((\~x -> (~add ~x 1)) 5)
                 let body = app(app(ref_("add"), ref_("x")), int_(1));
