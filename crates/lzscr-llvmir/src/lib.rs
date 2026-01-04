@@ -746,6 +746,49 @@ merge2:
         }
 
         #[test]
+        fn lowers_if_with_seq_and_chain_in_branches_i64_only() {
+                // (if True (~seq ((~mul 2) 3) ((~add 10) 20)) (~chain ((~mul 4) 5) ((~add 6) 7)))
+                let then_first = app(app(ref_("mul"), int_(2)), int_(3));
+                let then_second = app(app(ref_("add"), int_(10)), int_(20));
+                let then_ = Term::new(Op::Seq { first: Box::new(then_first), second: Box::new(then_second) });
+
+                let else_first = app(app(ref_("mul"), int_(4)), int_(5));
+                let else_second = app(app(ref_("add"), int_(6)), int_(7));
+                let else_ = Term::new(Op::Chain { first: Box::new(else_first), second: Box::new(else_second) });
+
+                let t = app(
+                        app(
+                                app(Term::new(Op::Ctor("if".into())), Term::new(Op::Ctor("True".into()))),
+                                then_,
+                        ),
+                        else_,
+                );
+
+                let ir = lower_to_llvm_ir_text(&t).expect("lower");
+                let expected = r#"; lzscr-llvmir (PoC)
+target triple = "unknown-unknown-unknown"
+
+define i64 @main() {
+entry:
+  %0 = icmp ne i64 1, 0
+  br i1 %0, label %then0, label %else1
+then0:
+  %1 = mul i64 2, 3
+  %2 = add i64 10, 20
+  br label %merge2
+else1:
+  %3 = mul i64 4, 5
+  %4 = add i64 6, 7
+  br label %merge2
+merge2:
+  %5 = phi i64 [ %2, %then0 ], [ %4, %else1 ]
+  ret i64 %5
+}
+"#;
+                assert_eq!(ir, expected);
+        }
+
+        #[test]
         fn lowers_inline_lambda_application_i64_only() {
                 // ((\~x -> (~add ~x 1)) 5)
                 let body = app(app(ref_("add"), ref_("x")), int_(1));
