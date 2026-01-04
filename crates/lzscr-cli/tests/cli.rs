@@ -170,6 +170,28 @@ fn dump_llvmir_inline_lambda_application_i64_only() {
 }
 
 #[test]
+fn dump_llvmir_let_group_i64_only() {
+    // Ensure we can lower a non-recursive let-group (CoreIR LetRec) in the current i64-only LLVM subset.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(~x = 5; (~add ~x 2))",
+            "--dump-llvmir",
+            "--no-stdlib",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("add i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
 fn dump_llvmir_if_i64_only() {
     // Ensure we can lower `if` (as constructors in CoreIR) using br+phi.
     // Typecheck is disabled because the surface language type for if is polymorphic with Bool-like.
@@ -369,6 +391,29 @@ fn dump_llvmir_or_short_circuit_i64_only() {
     assert!(s.contains("icmp ne i64 7, 0"), "llvm ir: {s}");
     assert!(s.contains("br i1"), "llvm ir: {s}");
     assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_not_i64_only() {
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(not 0)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp eq i64 0, 0"), "llvm ir: {s}");
+    assert!(s.contains("zext i1"), "llvm ir: {s}");
     assert!(s.contains("ret i64"), "llvm ir: {s}");
 }
 
