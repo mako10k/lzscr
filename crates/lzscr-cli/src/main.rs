@@ -11,11 +11,30 @@ use lzscr_runtime::{eval, Env, Value};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
 type TypeDeclsAndExprs = (Vec<TypeDecl>, Vec<(Pattern, Expr)>);
+
+fn stdout_write(s: &str) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    out.write_all(s.as_bytes())
+}
+
+fn stdout_writeln(s: &str) -> io::Result<()> {
+    stdout_write(s)?;
+    stdout_write("\n")
+}
+
+fn ignore_broken_pipe(result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(e),
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 enum StdlibMode {
@@ -535,6 +554,40 @@ struct Opt {
     /// Print timing of analysis phases and sizes to stderr
     #[arg(long = "analyze-trace", default_value_t = false)]
     analyze_trace: bool,
+
+    /// Print full error messages (do not truncate large IR dumps)
+    #[arg(long = "verbose", default_value_t = false)]
+    verbose: bool,
+}
+
+fn clamp_char_boundary(s: &str, idx: usize) -> usize {
+    let mut i = idx.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+fn maybe_truncate_error(s: &str, verbose: bool) -> String {
+    if verbose {
+        return s.to_string();
+    }
+    // Keep this reasonably small for terminals and CI logs.
+    const MAX: usize = 8_000;
+    if s.len() <= MAX {
+        return s.to_string();
+    }
+    let head_len = (MAX * 2) / 3;
+    let tail_len = MAX - head_len;
+    let head_end = clamp_char_boundary(s, head_len);
+    let tail_start = clamp_char_boundary(s, s.len().saturating_sub(tail_len));
+    let omitted = s.len().saturating_sub(head_end + (s.len() - tail_start));
+    format!(
+        "{}\n...\n[truncated ~{} bytes; re-run with --verbose]\n...\n{}",
+        &s[..head_end],
+        omitted,
+        &s[tail_start..]
+    )
 }
 
 fn tool_available(program: &str, args: &[&str]) -> bool {
@@ -740,7 +793,7 @@ fn handle_format_mode(
     };
     match out {
         Ok(s) => {
-            println!("{}", s);
+            ignore_broken_pipe(stdout_writeln(&s))?;
             Ok(())
         }
         Err(e) => {
@@ -1138,12 +1191,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let term = lower_expr_to_core(&ast);
         if opt.dump_coreir_json {
-            println!("{}", serde_json::to_string_pretty(&term)?);
+            let s = serde_json::to_string_pretty(&term)?;
+            ignore_broken_pipe(stdout_writeln(&s))?;
         } else if opt.dump_coreir {
-            println!("{}", print_term(&term));
+            let s = print_term(&term);
+            ignore_broken_pipe(stdout_writeln(&s))?;
         } else if opt.eval_coreir {
             match eval_term(&term) {
-                Ok(v) => println!("{}", print_ir_value(&v)),
+                Ok(v) => {
+                    let s = print_ir_value(&v);
+                    ignore_broken_pipe(stdout_writeln(&s))?;
+                }
                 Err(e) => {
                     eprintln!("coreir eval error: {}", e);
                     std::process::exit(2);
@@ -1151,9 +1209,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         } else if opt.dump_llvmir {
             match lzscr_llvmir::lower_to_llvm_ir_text(&term) {
-                Ok(s) => print!("{}", s),
+                Ok(s) => {
+                    ignore_broken_pipe(stdout_write(&s))?;
+                }
                 Err(e) => {
-                    eprintln!("llvmir lower error: {}", e);
+                    let msg = maybe_truncate_error(&e.to_string(), opt.verbose);
+                    eprintln!("llvmir lower error: {}", msg);
                     std::process::exit(2);
                 }
             }
@@ -1161,7 +1222,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Err(e) =
                 build_executable_from_coreir(&term, out_path.as_path(), opt.build_exe_overwrite)
             {
-                eprintln!("build-exe error: {e}");
+                let msg = maybe_truncate_error(&e, opt.verbose);
+                eprintln!("build-exe error: {msg}");
                 std::process::exit(2);
             }
         }
@@ -1275,7 +1337,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let_collisions: &lc,
                 ctor_arity: ca,
             };
-            println!("{}", serde_json::to_string_pretty(&out)?);
+            let s = serde_json::to_string_pretty(&out)?;
+            ignore_broken_pipe(stdout_writeln(&s))?;
         } else {
             for f in &dups {
                 eprintln!(
@@ -1368,7 +1431,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         struct TypeOut {
                             ty: String,
                         }
-                        println!("{}", serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?);
+                        let s = serde_json::to_string_pretty(&TypeOut { ty: t.clone() })?;
+                        ignore_broken_pipe(stdout_writeln(&s))?;
                     } else if opt.types == "pretty" {
                         // Defer printing to combine with value on one line
                         inferred_type_pretty = Some(t.clone());
@@ -1378,7 +1442,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             &ast,
                             lzscr_types::api::InferOptions { pretty: false },
                         ) {
-                            Ok(raw) => println!("{}", raw),
+                            Ok(raw) => {
+                                ignore_broken_pipe(stdout_writeln(&raw))?;
+                            }
                             Err(e) => {
                                 eprintln!("type error: {}", e);
                                 std::process::exit(2);
@@ -1968,12 +2034,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = val_to_string(&env, &val);
     if opt.types == "pretty" {
         if let Some(tp) = inferred_type_pretty {
-            println!("{} {}", tp, out);
+            ignore_broken_pipe(stdout_writeln(&format!("{} {}", tp, out)))?;
         } else {
-            println!("{out}");
+            ignore_broken_pipe(stdout_writeln(&out))?;
         }
     } else {
-        println!("{out}");
+        ignore_broken_pipe(stdout_writeln(&out))?;
     }
     Ok(())
 } // end of main()
