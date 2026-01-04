@@ -3,6 +3,7 @@
 		"shell-server": {
 			"type": "stdio",
 			"command": "npx",
+			"cwd": "${workspaceFolder}",
 			"args": [
 				"@mako10k/mcp-shell-server"
 			]
@@ -10,6 +11,7 @@
 		"rca": {
 			"type": "stdio",
 			"command": "npx",
+			"cwd": "${workspaceFolder}",
 			"args": [
 				"mcp-rca"
 			]
@@ -17,6 +19,7 @@
 		"mdast": {
 			"type": "stdio",
 			"command": "npx",
+			"cwd": "${workspaceFolder}",
 			"args": [
 				"mcp-mdast"
 			]
