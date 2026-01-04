@@ -54,6 +54,7 @@ struct SourceRegistry {
     primary_text: String,
     next_base: usize,
     modules: Vec<RegisteredSource>,
+    module_base: HashMap<String, usize>,
     // Optional mapping for primary buffer segments back to original sources
     prelude_name: Option<String>,
     prelude_text: Option<String>,
@@ -80,6 +81,7 @@ impl SourceRegistry {
             primary_text,
             next_base,
             modules: Vec::new(),
+            module_base: HashMap::new(),
             prelude_name: None,
             prelude_text: None,
             prelude_start: None,
@@ -110,12 +112,16 @@ impl SourceRegistry {
     }
 
     fn register_module(&mut self, name: String, text: String) -> usize {
+        if let Some(base) = self.module_base.get(&name).copied() {
+            return base;
+        }
         let base = self.next_base;
         // Advance next_base by aligned size of this module
         let align = 4096usize;
         let size = ((text.len() + align) / align) * align;
         self.next_base = base + size;
         self.modules.push(RegisteredSource { name, text, base });
+        self.module_base.insert(self.modules.last().unwrap().name.clone(), base);
         base
     }
 
@@ -588,6 +594,12 @@ fn maybe_truncate_error(s: &str, verbose: bool) -> String {
         omitted,
         &s[tail_start..]
     )
+}
+
+#[derive(Clone, Debug)]
+struct RequireFrame {
+    canon: String,
+    display: String,
 }
 
 fn tool_available(program: &str, args: &[&str]) -> bool {
@@ -1146,7 +1158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ) {
         Ok(x) => x,
         Err(e) => {
-            eprintln!("require error: {}", e);
+            eprintln!("require error: {}", maybe_truncate_error(&e, opt.verbose));
             std::process::exit(2);
         }
     };
@@ -2066,7 +2078,7 @@ fn build_module_search_paths(stdlib_dir: &Path, module_path: Option<&str>) -> Ve
 fn expand_requires_in_expr(
     e: &Expr,
     search_paths: &[PathBuf],
-    stack: &mut Vec<String>,
+    stack: &mut Vec<RequireFrame>,
     src_reg: &mut SourceRegistry,
     stdlib_mode: StdlibMode,
 ) -> Result<Expr, String> {
@@ -2085,19 +2097,28 @@ fn expand_requires_in_expr(
                 ));
             }
             let rel = segs.join("/") + ".lzscr";
-            let (path, content) = resolve_module_content(&rel, search_paths)?;
+            let (path, content) = match resolve_module_content(&rel, search_paths) {
+                Ok(x) => x,
+                Err(msg) => {
+                    let chain = format_require_chain(stack, Some(&rel));
+                    if chain.is_empty() {
+                        return Err(msg);
+                    }
+                    return Err(format!("{msg}\n{chain}"));
+                }
+            };
             let canon = match std::fs::canonicalize(&path) {
                 Ok(p) => p.display().to_string(),
                 Err(_) => path.display().to_string(),
             };
-            if stack.contains(&canon) {
-                return Err(format!(
-                    "cyclic require detected: {} -> ... -> {}",
-                    stack.first().cloned().unwrap_or_default(),
-                    canon
-                ));
+            if stack.iter().any(|f| f.canon == canon) {
+                let chain = format_require_chain(stack, Some(&rel));
+                if chain.is_empty() {
+                    return Err(format!("cyclic require detected: {}", rel));
+                }
+                return Err(format!("cyclic require detected\n{chain}"));
             }
-            stack.push(canon);
+            stack.push(RequireFrame { canon, display: rel.clone() });
             // Wrap like file rule: ( <content> )
             let wrapped = format!("({})", content);
             let parsed = match parse_expr(&wrapped) {
@@ -2109,7 +2130,18 @@ fn expand_requires_in_expr(
                             let // adjust for leading '('
                         adj_off = span_offset.saturating_sub(1);
                             let block = format_span_caret(&content, &rel, adj_off, span_len);
-                            format!("parse error in required module '{}': {}\n{}", rel, msg, block)
+                            let chain = format_require_chain(stack, Some(&rel));
+                            if chain.is_empty() {
+                                format!(
+                                    "parse error in required module '{}': {}\n{}",
+                                    rel, msg, block
+                                )
+                            } else {
+                                format!(
+                                    "parse error in required module '{}': {}\n{}\n{}",
+                                    rel, msg, chain, block
+                                )
+                            }
                         }
                         other => format!("parse error in required module '{}': {}", rel, other),
                     });
@@ -2311,6 +2343,17 @@ fn expand_requires_in_expr(
         },
     };
     Ok(Expr { kind: k, span: e.span })
+}
+
+fn format_require_chain(stack: &[RequireFrame], leaf: Option<&str>) -> String {
+    let mut parts: Vec<String> = stack.iter().map(|f| f.display.clone()).collect();
+    if let Some(x) = leaf {
+        parts.push(x.to_string());
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!("require chain: {}", parts.join(" -> "))
 }
 
 fn rebase_expr_spans_with_minus(e: &Expr, add: usize, minus: usize) -> Expr {
