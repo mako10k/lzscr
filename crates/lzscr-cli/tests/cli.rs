@@ -247,6 +247,56 @@ fn dump_llvmir_if_with_truthy_i64_condition_i64_only() {
     assert!(s.contains("ret i64"), "llvm ir: {s}");
 }
 
+#[test]
+fn dump_llvmir_if_with_zero_condition_i64_only() {
+    // Ensure `if` treats i64 0 as false in the current i64-only LLVM subset.
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(if 0 1 2)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 0, 0"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
+#[test]
+fn dump_llvmir_if_with_false_ctor_condition_i64_only() {
+    // Ensure `if` works when condition is the constructor `False` (CoreIR ctor).
+    let out = Command::cargo_bin("lzscr-cli")
+        .unwrap()
+        .args([
+            "-e",
+            "(if False 1 2)",
+            "--dump-llvmir",
+            "--no-stdlib",
+            "--no-typecheck",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8_lossy(&out);
+    assert!(s.contains("define i64 @main()"), "llvm ir: {s}");
+    assert!(s.contains("icmp ne i64 0, 0"), "llvm ir: {s}");
+    assert!(s.contains("br i1"), "llvm ir: {s}");
+    assert!(s.contains("phi i64"), "llvm ir: {s}");
+    assert!(s.contains("ret i64"), "llvm ir: {s}");
+}
+
 fn have_build_toolchain() -> bool {
     // Prefer clang for determinism; skip the test if clang isn't available.
     Command::new("clang").arg("--version").output().is_ok()
