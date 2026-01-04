@@ -1418,10 +1418,7 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                     ExprKind::Apply { func: Box::new(callee), arg: Box::new(zero) },
                     span,
                 );
-                Expr::new(
-                    ExprKind::Apply { func: Box::new(app1), arg: Box::new(rhs) },
-                    span,
-                )
+                Expr::new(ExprKind::Apply { func: Box::new(app1), arg: Box::new(rhs) }, span)
             }
             // Check for mode map syntax: .{ Mode: expr, ... }
             Tok::Dot => {

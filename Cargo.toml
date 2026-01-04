@@ -12,6 +12,7 @@ members = [
   "crates/lzscr-preast",
   "crates/lzscr-llvmir",
   "crates/lzscr-jsonrpc",
+  "crates/lzscr-mcp",
 ]
 resolver = "2"
 

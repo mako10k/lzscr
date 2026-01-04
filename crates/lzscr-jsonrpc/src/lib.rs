@@ -74,9 +74,7 @@ pub enum Message {
 }
 
 pub fn parse_message(v: Value) -> Result<Message, Error> {
-    let obj = v
-        .as_object()
-        .ok_or_else(|| Error::InvalidMessage("expected JSON object".into()))?;
+    let obj = v.as_object().ok_or_else(|| Error::InvalidMessage("expected JSON object".into()))?;
 
     // method present => request or notification
     if let Some(method) = obj.get("method") {
@@ -85,29 +83,16 @@ pub fn parse_message(v: Value) -> Result<Message, Error> {
             .ok_or_else(|| Error::InvalidMessage("method must be string".into()))?
             .to_string();
 
-        let jsonrpc = obj
-            .get("jsonrpc")
-            .and_then(|x| x.as_str())
-            .unwrap_or("2.0")
-            .to_string();
+        let jsonrpc = obj.get("jsonrpc").and_then(|x| x.as_str()).unwrap_or("2.0").to_string();
 
         let params = obj.get("params").cloned();
 
         if obj.contains_key("id") {
             let id: Id = serde_json::from_value(obj.get("id").cloned().unwrap_or(Value::Null))?;
-            return Ok(Message::Request(Request {
-                jsonrpc,
-                id,
-                method,
-                params,
-            }));
+            return Ok(Message::Request(Request { jsonrpc, id, method, params }));
         }
 
-        return Ok(Message::Notification(Notification {
-            jsonrpc,
-            method,
-            params,
-        }));
+        return Ok(Message::Notification(Notification { jsonrpc, method, params }));
     }
 
     // otherwise: response
@@ -116,9 +101,7 @@ pub fn parse_message(v: Value) -> Result<Message, Error> {
         return Ok(Message::Response(resp));
     }
 
-    Err(Error::InvalidMessage(
-        "expected JSON-RPC message (request/notification/response)".into(),
-    ))
+    Err(Error::InvalidMessage("expected JSON-RPC message (request/notification/response)".into()))
 }
 
 /// JSON-RPC 2.0 framing compatible with MCP/LSP-style stdio.
@@ -155,7 +138,8 @@ pub mod stdio {
             }
         }
 
-        let len = content_length.ok_or_else(|| Error::InvalidFrame("missing Content-Length".into()))?;
+        let len =
+            content_length.ok_or_else(|| Error::InvalidFrame("missing Content-Length".into()))?;
         let mut buf = vec![0u8; len];
         r.read_exact(&mut buf)?;
         Ok(serde_json::from_slice(&buf)?)
@@ -211,11 +195,7 @@ pub mod stdio {
             jsonrpc: "2.0".into(),
             id,
             payload: ResponsePayload::Error {
-                error: ErrorObject {
-                    code,
-                    message: message.into(),
-                    data: None,
-                },
+                error: ErrorObject { code, message: message.into(), data: None },
             },
         })
     }

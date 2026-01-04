@@ -31,6 +31,8 @@ core namespaces from the runtime `Builtins` plus foundational list/string/option
 | `pure/result.lzscr` | Pure | Mirrors `option` style—map/and_then/or_else without side effects. | Same as above. |
 | `pure/list.lzscr` | Pure | Collection helpers over in-memory lists only. | Keep dependency graph flowing into effect tree only (if ever needed). |
 | `pure/lex.lzscr` | Pure (tooling) | Helper predicates for characters; current usage is deterministic and effect-free. | Re-evaluate classification if lexer helpers start performing IO. |
+| `pure/json.lzscr` | Pure | Minimal JSON AST + parser/printer (Int-only numbers; limited escapes). | Expand number/string escape coverage as needed. |
+| `pure/jsonrpc.lzscr` | Pure | JSON-RPC 2.0 helpers built atop `pure/json` (message builders + classifier). | Add stricter validation and streaming framing once IO/bytes APIs exist. |
 | `pure/data/map.lzscr` | Pure | Persistent BST-backed map structure; operates only on in-memory data. | Consider adding balancing/rotation utilities once performance becomes an issue. |
 | `pure/data/set.lzscr` | Pure | BST-backed set utilities layered on `tree.lzscr`. | Same balancing story as `pure/data/map.lzscr`. |
 | `pure/data/tree.lzscr` | Pure | Fundamental tree operations (insert/find/fold) with no side effects. | Potential future: add self-balancing variants. |

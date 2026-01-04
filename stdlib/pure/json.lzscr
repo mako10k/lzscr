@@ -1,0 +1,422 @@
+# stdlib/pure/json.lzscr
+# JSON (最小) のパーサ/プリンタ。
+#
+# 重要:
+# - 現状の実装では「和型の明示宣言」と ctor の紐付けが不安定なため、
+#   JSON 値は「固定形状レコード」で表現する。
+
+~B                             = ~Builtins;
+~Char                          = ~B .char;
+(
+  ~parse_string ~sc0             = (
+    ~open = (~try_consume_char ('"') ~sc0);
+    ((
+        \True -> (
+          ~sc_open = (~open .sc);
+          ~loop ~sc ~acc = ((
+              \True -> (~err_at "unterminated string" ~sc)
+              | \False -> (
+                ~peek = (~Scan .peek ~sc);
+                (
+                  \(Some ~c) -> (
+                    ((
+                        \True -> (Ok (~acc, (~advance ~sc)))
+                        | \False -> (
+                          ((
+                              \True -> (
+                                ~sc1 = (~advance ~sc);
+                                ~esc = (~Scan .peek ~sc1);
+                                (
+                                  \(Some ~e) -> (
+                                    ~mapped = ((
+                                        \True -> (Some "\"")
+                                        | \False -> ((
+                                            \True -> (Some "\\")
+                                            | \False -> ((
+                                                \True -> (Some "\n")
+                                                | \False -> ((
+                                                    \True -> (Some "\r")
+                                                    | \False -> ((
+                                                        \True -> (Some "\t")
+                                                        | \False -> None
+                                                      ) (~e == ('t')))
+                                                  ) (~e == ('r')))
+                                              ) (~e == ('n')))
+                                          ) (~e == ('\\')))
+                                      ) (~e == ('"')));
+                                    (
+                                      \(Some ~s) -> (~loop (~advance ~sc1) (~Str .concat ~acc ~s))
+                                      | \_ -> (~err_at "unsupported escape (only \\\" \\\\ \\n \\r \\t)" ~sc1)
+                                    ) ~mapped
+                                  )
+                                  | \_ -> (~err_at "unterminated escape" ~sc1)
+                                ) ~esc
+                              )
+                              | \False -> (
+                                ~pos = (~Scan .pos ~sc);
+                                ~chunk = (~Scan .slice_span ~sc ~pos (~pos + 1));
+                                (~loop (~advance ~sc) (~Str .concat ~acc ~chunk))
+                              )
+                            ) (~c == ('\\')))
+                        )
+                      ) (~c == ('"')))
+                  )
+                  | \_ -> (~err_at "unterminated string" ~sc)
+                ) ~peek
+              )
+            ) (~Scan .eof ~sc));
+          (~loop ~sc_open "")
+        )
+        | \False -> (~err_at "expected opening quote" ~sc0)
+      ) ((~open .hit) == 1))
+  );
+
+  ~parse_number ~sc0             = (
+    ~start = (~Scan .pos ~sc0);
+    ~peek0 = (~Scan .peek ~sc0);
+    ~sc1 = (
+      \(Some ~c0) -> ((
+          \True -> (~advance ~sc0)
+          | \False -> ~sc0
+        ) (~c0 == ('-')))
+      | \_ -> ~sc0
+    ) ~peek0;
+    ~digits_start = (~Scan .pos ~sc1);
+    ~loop_digits ~sc = ((
+        \True -> ~sc
+        | \False -> (
+          ~p = (~Scan .peek ~sc);
+          (
+            \(Some ~c) -> ((
+                \True -> (~loop_digits (~advance ~sc))
+                | \False -> ~sc
+              ) (~Char .is_digit ~c))
+            | \_ -> ~sc
+          ) ~p
+        )
+      ) (~Scan .eof ~sc));
+    ~sc2 = (~loop_digits ~sc1);
+    ~end = (~Scan .pos ~sc2);
+    ((
+        \True -> (~err_at "expected digits" ~sc1)
+        | \False -> (
+          ~raw = (~Scan .slice_span ~sc0 ~start ~end);
+          ~nopt = (~str_to_int ~raw);
+          (
+            \(Some ~n) -> Ok ((~j_num ~n), ~sc2)
+            | \_ -> (~err_at "invalid int" ~sc0)
+          ) ~nopt
+        )
+      ) (~end == ~digits_start))
+  );
+
+  ~parse_value ~sc0              = (
+    ~sc1 = (~skip_ws ~sc0);
+    ~peek = (~Scan .peek ~sc1);
+    (
+      \(Some ~c) -> (
+        (
+          \('n') -> (
+            ~m = (~match_str "null" ~sc1);
+            ((
+                \True -> Ok (~j_null, (~m .sc))
+                | \False -> (~err_at "expected 'null'" ~sc1)
+              ) ((~m .hit) == 1))
+          )
+          | \('t') -> (
+            ~m = (~match_str "true" ~sc1);
+            ((
+                \True -> Ok ((~j_bool 1), (~m .sc))
+                | \False -> (~err_at "expected 'true'" ~sc1)
+              ) ((~m .hit) == 1))
+          )
+          | \('f') -> (
+            ~m = (~match_str "false" ~sc1);
+            ((
+                \True -> Ok ((~j_bool 0), (~m .sc))
+                | \False -> (~err_at "expected 'false'" ~sc1)
+              ) ((~m .hit) == 1))
+          )
+          | \('"') -> (
+            ~r = (~parse_string ~sc1);
+            (
+              \(Ok (~s, ~sc2)) -> Ok ((~j_str ~s), ~sc2)
+              | \(Err ~e) -> Err ~e
+            ) ~r
+          )
+          | \('[') -> (~parse_array ~sc1)
+          | \('{') -> (~parse_object ~sc1)
+          | \_ -> ((
+              \True -> (~parse_number ~sc1)
+              | \False -> (~err_at "unexpected token" ~sc1)
+            ) ((~c == ('-')) || (~Char .is_digit ~c)))
+        ) ~c
+      )
+      | \_ -> (~err_at "unexpected EOF" ~sc1)
+    ) ~peek
+  );
+
+  ~parse_array ~sc0              = (
+    ~open = (~try_consume_char ('[') ~sc0);
+    ((
+        \True -> (
+          ~sc_open = (~open .sc);
+          ~sc1 = (~skip_ws ~sc_open);
+          ~close0 = (~try_consume_char (']') ~sc1);
+          ((
+              \True -> (Ok ((~j_arr []), (~close0 .sc)))
+              | \False -> (
+                ~parse_elems ~acc ~sc = (
+                  ~r = (~parse_value ~sc);
+                  (
+                    \(Ok (~v, ~s_after_v)) -> (
+                      ~s1 = (~skip_ws ~s_after_v);
+                      ~comma = (~try_consume_char (',') ~s1);
+                      ((
+                          \True -> (
+                            ~s2 = (~skip_ws (~comma .sc));
+                            (~parse_elems (~cons ~v ~acc) ~s2)
+                          )
+                          | \False -> (
+                            ~end = (~try_consume_char (']') ~s1);
+                            ((
+                                \True -> (Ok ((~j_arr (~reverse (~cons ~v ~acc))), (~end .sc)))
+                                | \False -> (~err_at "expected ',' or ']'" ~s1)
+                              ) ((~end .hit) == 1))
+                          )
+                        ) ((~comma .hit) == 1))
+                    )
+                    | \(Err ~e) -> Err ~e
+                  ) ~r
+                );
+                (~parse_elems [] ~sc1)
+              )
+            ) ((~close0 .hit) == 1))
+        )
+        | \False -> (~err_at "expected '['" ~sc0)
+      ) ((~open .hit) == 1))
+  );
+
+  ~parse_object ~sc0             = (
+    ~open = (~try_consume_char ('{') ~sc0);
+    ((
+        \True -> (
+          ~sc_open = (~open .sc);
+          ~sc1 = (~skip_ws ~sc_open);
+          ~close0 = (~try_consume_char ('}') ~sc1);
+          ((
+              \True -> (Ok ((~j_obj []), (~close0 .sc)))
+              | \False -> (
+                ~parse_members ~acc ~sc = (
+                  ~kres = (~parse_string ~sc);
+                  (
+                    \(Ok (~k, ~s_after_k)) -> (
+                      ~s1 = (~skip_ws ~s_after_k);
+                      ~colon = (~try_consume_char (':') ~s1);
+                      ((
+                          \True -> (
+                            ~s2 = (~skip_ws (~colon .sc));
+                            ~vres = (~parse_value ~s2);
+                            (
+                              \(Ok (~v, ~s_after_v)) -> (
+                                ~s3 = (~skip_ws ~s_after_v);
+                                ~comma = (~try_consume_char (',') ~s3);
+                                ((
+                                    \True -> (
+                                      ~s4 = (~skip_ws (~comma .sc));
+                                      (~parse_members (~cons ({key: ~k, value: ~v}) ~acc) ~s4)
+                                    )
+                                    | \False -> (
+                                      ~end = (~try_consume_char ('}') ~s3);
+                                      ((
+                                          \True -> (Ok ((~j_obj (~reverse (~cons ({key: ~k, value: ~v}) ~acc))), (~end .sc)))
+                                          | \False -> (~err_at "expected ',' or '}'" ~s3)
+                                        ) ((~end .hit) == 1))
+                                    )
+                                  ) ((~comma .hit) == 1))
+                              )
+                              | \(Err ~e) -> Err ~e
+                            ) ~vres
+                          )
+                          | \False -> (~err_at "expected ':'" ~s1)
+                        ) ((~colon .hit) == 1))
+                    )
+                    | \(Err ~e) -> Err ~e
+                  ) ~kres
+                );
+                (~parse_members [] ~sc1)
+              )
+            ) ((~close0 .hit) == 1))
+        )
+        | \False -> (~err_at "expected '{'" ~sc0)
+      ) ((~open .hit) == 1))
+  );
+
+  ~parse ~s                       = (
+    ~sc0 = (~Scan .new ~s);
+    ~r = (~parse_value ~sc0);
+    (
+      \(Ok (~v, ~sc1)) -> (
+        ~sc2 = (~skip_ws ~sc1);
+        ((
+            \True -> (Ok ~v)
+            | \False -> (~err_at "trailing input" ~sc2)
+          ) (~Scan .eof ~sc2))
+      )
+      | \(Err ~e) -> Err ~e
+    ) ~r
+  );
+
+  {
+    parse     : ~parse,
+    stringify : ~stringify,
+    null      : ~j_null,
+    bool      : ~j_bool,
+    num       : ~j_num,
+    str       : ~j_str,
+    arr       : ~j_arr,
+    obj       : ~j_obj
+  }
+)
+                (
+                  \(Ok (~s, ~sc2)) -> Ok ((~j_str ~s), ~sc2)
+                  | \(Err ~e) -> Err ~e
+                ) ~r
+              ))
+              (\() -> (~if_ ((~c == ('[')))
+                (\() -> (~parse_array ~sc1))
+                (\() -> (~if_ ((~c == ('{')))
+                  (\() -> (~parse_object ~sc1))
+                  (\() -> (~if_ (((~c == ('-')) || (~Char .is_digit ~c)))
+                    (\() -> (~parse_number ~sc1))
+                    (\() -> (~err_at "unexpected token" ~sc1))
+                  ))
+                ))
+              ))
+            ))
+          ))
+        ))
+      ))
+    )
+    | \_ -> (~err_at "unexpected EOF" ~sc1)
+  ) ~peek
+);
+
+~parse_array ~sc0              = (
+  ~open = (~try_consume_char ('[') ~sc0);
+  (~if (((~open .hit) == 1))
+    (
+      ~sc_open = (~open .sc);
+      ~sc1 = (~skip_ws ~sc_open);
+      ~close0 = (~try_consume_char (']') ~sc1);
+      (~if (((~close0 .hit) == 1))
+        (Ok ((~j_arr []), (~close0 .sc)))
+        (
+          ~parse_elems ~acc ~sc = (
+            ~r = (~parse_value ~sc);
+            (
+              \(Ok (~v, ~s_after_v)) -> (
+                ~s1 = (~skip_ws ~s_after_v);
+                ~comma = (~try_consume_char (',') ~s1);
+                (~if (((~comma .hit) == 1))
+                  (
+                    ~s2 = (~skip_ws (~comma .sc));
+                    (~parse_elems (~cons ~v ~acc) ~s2)
+                  )
+                  (
+                    ~end = (~try_consume_char (']') ~s1);
+                    (~if (((~end .hit) == 1))
+                      (Ok ((~j_arr (~reverse (~cons ~v ~acc))), (~end .sc)))
+                      (~err_at "expected ',' or ']'" ~s1)
+                    )
+                  )
+                )
+              )
+              | \(Err ~e) -> Err ~e
+            ) ~r
+          );
+          (~parse_elems [] ~sc1)
+        )
+      )
+    )
+    (~err_at "expected '['" ~sc0)
+  )
+);
+
+~parse_object ~sc0             = (
+  ~open = (~try_consume_char ('{') ~sc0);
+  (~if (((~open .hit) == 1))
+    (
+      ~sc_open = (~open .sc);
+      ~sc1 = (~skip_ws ~sc_open);
+      ~close0 = (~try_consume_char ('}') ~sc1);
+      (~if (((~close0 .hit) == 1))
+        (Ok ((~j_obj []), (~close0 .sc)))
+        (
+          ~parse_members ~acc ~sc = (
+            ~kres = (~parse_string ~sc);
+            (
+              \(Ok (~k, ~s_after_k)) -> (
+                ~s1 = (~skip_ws ~s_after_k);
+                ~colon = (~try_consume_char (':') ~s1);
+                (~if (((~colon .hit) == 1))
+                  (
+                    ~s2 = (~skip_ws (~colon .sc));
+                    ~vres = (~parse_value ~s2);
+                    (
+                      \(Ok (~v, ~s_after_v)) -> (
+                        ~s3 = (~skip_ws ~s_after_v);
+                        ~comma = (~try_consume_char (',') ~s3);
+                        (~if (((~comma .hit) == 1))
+                          (
+                            ~s4 = (~skip_ws (~comma .sc));
+                            (~parse_members (~cons ({key: ~k, value: ~v}) ~acc) ~s4)
+                          )
+                          (
+                            ~end = (~try_consume_char ('}') ~s3);
+                            (~if (((~end .hit) == 1))
+                              (Ok ((~j_obj (~reverse (~cons ({key: ~k, value: ~v}) ~acc))), (~end .sc)))
+                              (~err_at "expected ',' or '}'" ~s3)
+                            )
+                          )
+                        )
+                      )
+                      | \(Err ~e) -> Err ~e
+                    ) ~vres
+                  )
+                  (~err_at "expected ':'" ~s1)
+                )
+              )
+              | \(Err ~e) -> Err ~e
+            ) ~kres
+          );
+          (~parse_members [] ~sc1)
+        )
+      )
+    )
+    (~err_at "expected '{'" ~sc0)
+  )
+);
+
+~parse ~s                       = (
+  ~sc0 = (~Scan .new ~s);
+  ~r = (~parse_value ~sc0);
+  (
+    \(Ok (~v, ~sc1)) -> (
+      ~sc2 = (~skip_ws ~sc1);
+      (~if (~Scan .eof ~sc2) (Ok ~v) (~err_at "trailing input" ~sc2))
+    )
+    | \(Err ~e) -> Err ~e
+  ) ~r
+);
+
+{
+  parse     : ~parse,
+  stringify : ~stringify,
+  null      : ~j_null,
+  bool      : ~j_bool,
+  num       : ~j_num,
+  str       : ~j_str,
+  arr       : ~j_arr,
+  obj       : ~j_obj
+}

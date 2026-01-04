@@ -1,0 +1,160 @@
+# stdlib/pure/jsonrpc.lzscr
+# JSON-RPC 2.0 (MVP) ヘルパ。
+#
+# 目的:
+# - JSON-RPCの request/notification/response を JSON(AST) として組み立てる
+# - JSON文字列から JSON-RPC メッセージを「分類」する（完全なスキーマ検証はしない）
+#
+# 依存:
+# - pure/json の JSON(AST) + parse/stringify
+
+~Json                          = (~require .pure .json);
+
+# ---- JSON(AST) ヘルパ ----------------------------------------------------
+
+~obj_get ~key ~kvs             = (
+  \[] -> None
+  | \(~kv: ~rest) -> (~if ((~kv .key) == ~key) (Some (~kv .value)) (~obj_get ~key ~rest))
+) ~kvs;
+
+~as_str ~j                     = (~if ((~j .tag) == "str") (Some (~j .str)) None);
+
+~as_int ~j                     = (~if ((~j .tag) == "num") (Some (~j .int)) None);
+
+~as_obj ~j                     = (~if ((~j .tag) == "obj") (Some (~j .entries)) None);
+
+# ---- JSON-RPC 生成 -------------------------------------------------------
+
+~id_num ~n                     = (~Json .num ~n);
+~id_str ~s                     = (~Json .str ~s);
+~id_null                       = (~Json .null);
+
+~with_params ~base ~params_opt = (
+  \(Some ~p) -> (
+      ~kvs = (~base .entries);
+      (~Json .obj (~append ~kvs [{key: "params", value: ~p}]))
+    ) ~base
+  | \None -> ~base
+) ~params_opt;
+
+~request ~id ~method ~params   = (~base = (~Json .obj [
+    {key: "jsonrpc", value: (~Json .str "2.0")},
+    {key: "id", value: ~id},
+    {key: "method", value: (~Json .str ~method)}
+  ]);
+  (~with_params ~base ~params)
+);
+
+~notification ~method ~params  = (~base = (~Json .obj [
+    {key: "jsonrpc", value: (~Json .str "2.0")},
+    {key: "method", value: (~Json .str ~method)}
+  ]);
+  (~with_params ~base ~params)
+);
+
+~response_ok ~id ~result       = (~Json .obj [
+  {key: "jsonrpc", value: (~Json .str "2.0")},
+  {key: "id", value: ~id},
+  {key: "result", value: ~result}
+]);
+
+~response_err ~id ~code ~msg ~data_opt = (~err_obj = (
+    \(Some ~d) -> (~Json .obj [
+        {key: "code", value: (~Json .num ~code)},
+        {key: "message", value: (~Json .str ~msg)},
+        {key: "data", value: ~d}
+      ])
+    | \None -> (~Json .obj [
+        {key: "code", value: (~Json .num ~code)},
+        {key: "message", value: (~Json .str ~msg)}
+      ])
+  ) ~data_opt;
+  (~Json .obj [
+    {key: "jsonrpc", value: (~Json .str "2.0")},
+    {key: "id", value: ~id},
+    {key: "error", value: ~err_obj}
+  ])
+);
+
+# Content-Length framing (ASCII前提; Str.len がバイト長と一致するケース)
+~frame_ascii ~payload          = (~n = (~Str .len ~payload);
+  (~Str .concat "Content-Length: " (~Str .concat (~to_str ~n) (~Str .concat "\r\n\r\n" ~payload)))
+);
+
+# ---- JSON-RPC 分類 -------------------------------------------------------
+
+%JsonRpcKind                   = %{RpcRequest | RpcNotification | RpcResponseOk | RpcResponseErr};
+
+# classify : Json -> Result {kind, id, method, params, result, error} JsonError
+# - parseエラーは pure/json の JsonError をそのまま返す
+# - schema検証は最小限（存在しない場合は None で返す）
+~classify ~j                   = (
+  (~if ((~j .tag) == "obj") (
+      ~kvs = (~j .entries);
+      ~method_opt              = (~obj_get "method" ~kvs);
+      ~id_opt                  = (~obj_get "id" ~kvs);
+      ~params_opt              = (~obj_get "params" ~kvs);
+      ~result_opt              = (~obj_get "result" ~kvs);
+      ~error_opt               = (~obj_get "error" ~kvs);
+
+      # request/notification
+      (
+        \(Some ~mjson) -> (
+          ~mopt                = (~as_str ~mjson);
+          (
+            \(Some ~m) -> (
+              (
+                \(Some ~idjson) -> Ok {kind: (RpcRequest), id: (Some ~idjson), method: (Some ~m), params: ~params_opt, result: None, error: None}
+                | \None -> Ok {kind: (RpcNotification), id: None, method: (Some ~m), params: ~params_opt, result: None, error: None}
+              ) ~id_opt
+            )
+            | \None -> Err (JsonError ({msg: "method must be string", pos: 0}))
+          ) ~mopt
+        )
+        | \None -> (
+            # response
+            (
+              \(Some ~idjson) -> (
+                (
+                  \(Some ~r) -> Ok {kind: (RpcResponseOk), id: (Some ~idjson), method: None, params: None, result: (Some ~r), error: None}
+                  | \None -> (
+                        (\(Some ~e) -> Ok {kind: (RpcResponseErr), id: (Some ~idjson), method: None, params: None, result: None, error: (Some ~e)}
+                        | \None -> Err (JsonError ({msg: "response must have result or error", pos: 0}))
+                      ) ~error_opt
+                    )
+                ) ~result_opt
+              )
+              | \None -> Err (JsonError ({msg: "missing id", pos: 0}))
+            ) ~id_opt
+          )
+      ) ~method_opt
+    )
+    (Err (JsonError ({msg: "expected object", pos: 0})))
+  )
+) ~j;
+
+~parse_message ~s              = (
+  ~r                            = (~Json .parse ~s);
+  (
+    \(Ok ~j) -> (~classify ~j)
+    | \(Err ~e) -> Err ~e
+  ) ~r
+);
+
+~stringify_message ~j          = (~Json .stringify ~j);
+
+{
+  id: {
+    num : ~id_num,
+    str : ~id_str,
+    null: ~id_null
+  },
+  request        : ~request,
+  notification   : ~notification,
+  response_ok    : ~response_ok,
+  response_err   : ~response_err,
+  classify       : ~classify,
+  parse_message  : ~parse_message,
+  stringify      : ~stringify_message,
+  frame_ascii    : ~frame_ascii
+}
