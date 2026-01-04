@@ -346,6 +346,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lzscr-jsonrpc"
+version = "0.1.0"
+dependencies = [
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "lzscr-lexer"
 version = "0.1.0"
 dependencies = [
