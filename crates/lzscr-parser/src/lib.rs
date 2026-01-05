@@ -1840,9 +1840,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         }
                     }
                 }
-                let nxt = bump(i, toks).ok_or_else(|| {
-                    ParseError::Generic("expected ident or .member after !".into())
-                })?;
+                let nxt = bump(i, toks)
+                    .ok_or_else(|| ParseError::Generic("expected ident or .member after !".into()))?;
                 let func = Expr::new(
                     ExprKind::Ref("effects".into()),
                     Span::new(t.span.offset, t.span.len),
@@ -1856,6 +1855,8 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                 };
                 let span_all =
                     Span::new(t.span.offset, nxt.span.offset + nxt.span.len - t.span.offset);
+
+                // (!sym) => (~effects .sym)
                 Expr::new(ExprKind::Apply { func: Box::new(func), arg: Box::new(member) }, span_all)
             }
             Tok::Backslash => {

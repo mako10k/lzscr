@@ -551,14 +551,14 @@ fn effect_fs_open_read_write_close_allowed_with_flag() {
     let tmp = NamedTempFile::new().unwrap();
     let path_literal = format!("{:?}", tmp.path().to_str().unwrap());
     let program = format!(
-                "(~Fs = (~require .effect .fs); \
+        "(~Fs = (~require .effect .fs); \
                     (~Fs .open_with_result {} (\\~h -> \
                         (~chain \
                             (~Fs .write_result ~h \"hello\") \
                             (~chain \
                                 (~Fs .seek_result ~h 0) \
                                 (~Fs .read_result ~h 5))))))",
-                path_literal
+        path_literal
     );
 
     let mut cmd = cli_cmd();
@@ -575,7 +575,7 @@ fn effect_fs_open_read_write_close_allowed_with_flag() {
 
 #[test]
 fn effect_fs_stdout_handle_writes_payload() {
-        let program = "(~Fs = (~require .effect .fs); \
+    let program = "(~Fs = (~require .effect .fs); \
             (~r = (~Fs .stdout_result ()); \
                 ((\\(Ok ~h) -> (~Fs .write_result ~h \"hi\")) \
                     | \\(Err ~e) -> (Err ~e)) \

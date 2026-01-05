@@ -324,9 +324,9 @@ pub fn eff_fs_read(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
             }
         }
-        FsHandle::Stdout | FsHandle::Stderr => Ok(result_err(Value::Str(
-            env.intern_string("handle is not readable"),
-        ))),
+        FsHandle::Stdout | FsHandle::Stderr => {
+            Ok(result_err(Value::Str(env.intern_string("handle is not readable"))))
+        }
     }
 }
 
@@ -370,9 +370,7 @@ pub fn eff_fs_write(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
                 Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
             }
         }
-        FsHandle::Stdin => Ok(result_err(Value::Str(
-            env.intern_string("handle is not writable"),
-        ))),
+        FsHandle::Stdin => Ok(result_err(Value::Str(env.intern_string("handle is not writable")))),
     }
 }
 
@@ -391,9 +389,9 @@ pub fn eff_fs_close(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
         return Ok(result_err(Value::Str(env.intern_string("invalid handle"))));
     };
     match slot {
-        Some(FsHandle::Stdin) | Some(FsHandle::Stdout) | Some(FsHandle::Stderr) => Ok(result_err(
-            Value::Str(env.intern_string("cannot close stdio")),
-        )),
+        Some(FsHandle::Stdin) | Some(FsHandle::Stdout) | Some(FsHandle::Stderr) => {
+            Ok(result_err(Value::Str(env.intern_string("cannot close stdio"))))
+        }
         Some(FsHandle::File(_)) => {
             slot.take();
             Ok(result_ok(Value::Unit))
