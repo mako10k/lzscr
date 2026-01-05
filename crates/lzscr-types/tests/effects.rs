@@ -93,6 +93,78 @@ fn fs_metadata_types_as_result() {
 }
 
 #[test]
+fn fs_open_types_as_result_handle() {
+    let src = "(~seq () (!fs.open \"foo.txt\"))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(ty == "(Ok Int | Err Str)" || ty == "(Err Str | Ok Int)", "unexpected type: {ty}");
+}
+
+#[test]
+fn fs_stdin_types_as_result_handle() {
+    let src = "(~seq () (!fs.stdin ()))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(ty == "(Ok Int | Err Str)" || ty == "(Err Str | Ok Int)", "unexpected type: {ty}");
+}
+
+#[test]
+fn fs_stdout_types_as_result_handle() {
+    let src = "(~seq () (!fs.stdout ()))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(ty == "(Ok Int | Err Str)" || ty == "(Err Str | Ok Int)", "unexpected type: {ty}");
+}
+
+#[test]
+fn fs_stderr_types_as_result_handle() {
+    let src = "(~seq () (!fs.stderr ()))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(ty == "(Ok Int | Err Str)" || ty == "(Err Str | Ok Int)", "unexpected type: {ty}");
+}
+
+#[test]
+fn fs_read_types_as_result_str() {
+    let src = "(~seq () (!fs.read 0 10))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(ty == "(Ok Str | Err Str)" || ty == "(Err Str | Ok Str)", "unexpected type: {ty}");
+}
+
+#[test]
+fn fs_write_types_as_result_int() {
+    let src = "(~seq () (!fs.write 0 \"payload\"))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(ty == "(Ok Int | Err Str)" || ty == "(Err Str | Ok Int)", "unexpected type: {ty}");
+}
+
+#[test]
+fn fs_close_types_as_result_unit() {
+    let src = "(~seq () (!fs.close 0))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(ty == "(Ok Unit | Err Str)" || ty == "(Err Str | Ok Unit)", "unexpected type: {ty}");
+}
+
+#[test]
+fn fs_seek_types_as_result_int() {
+    let src = "(~seq () (!fs.seek 0 0))";
+    let got = infer_program(src);
+    assert!(got.is_ok(), "unexpected error: {}", pretty(got));
+    let ty = got.unwrap();
+    assert!(ty == "(Ok Int | Err Str)" || ty == "(Err Str | Ok Int)", "unexpected type: {ty}");
+}
+
+#[test]
 fn io_print_types_as_unit() {
     let src = "(~seq () (!print \"msg\"))";
     let got = infer_program(src);

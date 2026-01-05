@@ -3,6 +3,16 @@ use crate::helpers::{
     bool_ctor, char_literal_string, eff_guard, option_value, result_err, result_ok, to_str_like,
 };
 use crate::{Env, EvalError, Value};
+use std::io::{Read as _, Seek as _, Write as _};
+use std::sync::Arc;
+
+#[derive(Debug)]
+pub enum FsHandle {
+    File(std::fs::File),
+    Stdin,
+    Stdout,
+    Stderr,
+}
 pub fn eff_print(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
     eff_guard(env)?;
     let v0 = force_value(env, &args[0])?;
@@ -213,6 +223,243 @@ pub fn eff_fs_read_text(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
         Ok(contents) => Ok(result_ok(Value::Str(env.intern_string(contents)))),
         Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
     }
+}
+
+fn handle_from_value(env: &Env, v: &Value) -> Result<usize, Value> {
+    match force_value(env, v) {
+        Ok(Value::Int(n)) if n >= 0 => Ok(n as usize),
+        _ => Err(result_err(Value::Str(env.intern_string("invalid handle")))),
+    }
+}
+
+fn size_from_value(env: &Env, v: &Value) -> Result<usize, Value> {
+    match force_value(env, v) {
+        Ok(Value::Int(n)) if n >= 0 => Ok(n as usize),
+        _ => Err(result_err(Value::Str(env.intern_string("invalid size")))),
+    }
+}
+
+fn pos_from_value(env: &Env, v: &Value) -> Result<u64, Value> {
+    match force_value(env, v) {
+        Ok(Value::Int(n)) if n >= 0 => match u64::try_from(n) {
+            Ok(p) => Ok(p),
+            Err(_) => Err(result_err(Value::Str(env.intern_string("invalid position")))),
+        },
+        _ => Err(result_err(Value::Str(env.intern_string("invalid position")))),
+    }
+}
+
+pub fn eff_fs_open(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 1 {
+        return Err(EvalError::TypeError);
+    }
+    let path_val = force_value(env, &args[0])?;
+    let path = match path_val {
+        Value::Str(s) => String::from_utf8_lossy(s.as_bytes()).to_string(),
+        _ => return Err(EvalError::TypeError),
+    };
+
+    let file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(&path);
+    match file {
+        Ok(f) => {
+            let mut table = env.file_handles.borrow_mut();
+            // reuse empty slot if possible
+            let mut idx: Option<usize> = None;
+            for (i, slot) in table.iter().enumerate() {
+                if slot.is_none() {
+                    idx = Some(i);
+                    break;
+                }
+            }
+            let i = idx.unwrap_or_else(|| {
+                table.push(None);
+                table.len() - 1
+            });
+            table[i] = Some(FsHandle::File(f));
+            Ok(result_ok(Value::Int(i as i64)))
+        }
+        Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+    }
+}
+
+pub fn eff_fs_read(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 2 {
+        return Err(EvalError::TypeError);
+    }
+
+    let handle = match handle_from_value(env, &args[0]) {
+        Ok(h) => h,
+        Err(v) => return Ok(v),
+    };
+    let size = match size_from_value(env, &args[1]) {
+        Ok(n) => n,
+        Err(v) => return Ok(v),
+    };
+
+    let mut table = env.file_handles.borrow_mut();
+    let Some(Some(h)) = table.get_mut(handle) else {
+        return Ok(result_err(Value::Str(env.intern_string("invalid handle"))));
+    };
+
+    let mut buf = vec![0u8; size];
+    match h {
+        FsHandle::File(file) => match file.read(&mut buf) {
+            Ok(n) => {
+                buf.truncate(n);
+                let data = Arc::new(buf);
+                Ok(result_ok(Value::Str(crate::RtStr { data, start: 0, len: n })))
+            }
+            Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+        },
+        FsHandle::Stdin => {
+            drop(table);
+            match std::io::stdin().lock().read(&mut buf) {
+                Ok(n) => {
+                    buf.truncate(n);
+                    let data = Arc::new(buf);
+                    Ok(result_ok(Value::Str(crate::RtStr { data, start: 0, len: n })))
+                }
+                Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+            }
+        }
+        FsHandle::Stdout | FsHandle::Stderr => Ok(result_err(Value::Str(
+            env.intern_string("handle is not readable"),
+        ))),
+    }
+}
+
+pub fn eff_fs_write(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 2 {
+        return Err(EvalError::TypeError);
+    }
+
+    let handle = match handle_from_value(env, &args[0]) {
+        Ok(h) => h,
+        Err(v) => return Ok(v),
+    };
+    let payload_val = force_value(env, &args[1])?;
+    let payload = match payload_val {
+        Value::Str(s) => s,
+        _ => return Err(EvalError::TypeError),
+    };
+
+    let mut table = env.file_handles.borrow_mut();
+    let Some(Some(h)) = table.get_mut(handle) else {
+        return Ok(result_err(Value::Str(env.intern_string("invalid handle"))));
+    };
+
+    match h {
+        FsHandle::File(file) => match file.write_all(payload.as_bytes()) {
+            Ok(()) => Ok(result_ok(Value::Int(payload.len as i64))),
+            Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+        },
+        FsHandle::Stdout => {
+            drop(table);
+            match std::io::stdout().lock().write_all(payload.as_bytes()) {
+                Ok(()) => Ok(result_ok(Value::Int(payload.len as i64))),
+                Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+            }
+        }
+        FsHandle::Stderr => {
+            drop(table);
+            match std::io::stderr().lock().write_all(payload.as_bytes()) {
+                Ok(()) => Ok(result_ok(Value::Int(payload.len as i64))),
+                Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+            }
+        }
+        FsHandle::Stdin => Ok(result_err(Value::Str(
+            env.intern_string("handle is not writable"),
+        ))),
+    }
+}
+
+pub fn eff_fs_close(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 1 {
+        return Err(EvalError::TypeError);
+    }
+    let handle = match handle_from_value(env, &args[0]) {
+        Ok(h) => h,
+        Err(v) => return Ok(v),
+    };
+
+    let mut table = env.file_handles.borrow_mut();
+    let Some(slot) = table.get_mut(handle) else {
+        return Ok(result_err(Value::Str(env.intern_string("invalid handle"))));
+    };
+    match slot {
+        Some(FsHandle::Stdin) | Some(FsHandle::Stdout) | Some(FsHandle::Stderr) => Ok(result_err(
+            Value::Str(env.intern_string("cannot close stdio")),
+        )),
+        Some(FsHandle::File(_)) => {
+            slot.take();
+            Ok(result_ok(Value::Unit))
+        }
+        None => Ok(result_err(Value::Str(env.intern_string("invalid handle")))),
+    }
+}
+
+pub fn eff_fs_seek(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 2 {
+        return Err(EvalError::TypeError);
+    }
+
+    let handle = match handle_from_value(env, &args[0]) {
+        Ok(h) => h,
+        Err(v) => return Ok(v),
+    };
+    let pos = match pos_from_value(env, &args[1]) {
+        Ok(p) => p,
+        Err(v) => return Ok(v),
+    };
+
+    let mut table = env.file_handles.borrow_mut();
+    let Some(Some(h)) = table.get_mut(handle) else {
+        return Ok(result_err(Value::Str(env.intern_string("invalid handle"))));
+    };
+
+    let FsHandle::File(file) = h else {
+        return Ok(result_err(Value::Str(env.intern_string("handle is not seekable"))));
+    };
+
+    match file.seek(std::io::SeekFrom::Start(pos)) {
+        Ok(new_pos) => {
+            if new_pos > i64::MAX as u64 {
+                Ok(result_err(Value::Str(env.intern_string("position too large"))))
+            } else {
+                Ok(result_ok(Value::Int(new_pos as i64)))
+            }
+        }
+        Err(err) => Ok(result_err(Value::Str(env.intern_string(err.to_string())))),
+    }
+}
+
+pub fn eff_fs_stdin(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 1 {
+        return Err(EvalError::TypeError);
+    }
+    Ok(result_ok(Value::Int(0)))
+}
+
+pub fn eff_fs_stdout(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 1 {
+        return Err(EvalError::TypeError);
+    }
+    Ok(result_ok(Value::Int(1)))
+}
+
+pub fn eff_fs_stderr(env: &Env, args: &[Value]) -> Result<Value, EvalError> {
+    eff_guard(env)?;
+    if args.len() != 1 {
+        return Err(EvalError::TypeError);
+    }
+    Ok(result_ok(Value::Int(2)))
 }
 
 pub fn eff_fs_write_text(env: &Env, args: &[Value]) -> Result<Value, EvalError> {

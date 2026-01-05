@@ -55,6 +55,13 @@ pub fn result_list_str_type() -> Type {
     ])
 }
 
+/// Construct a Result type variant: `Ok(Int) | Err(Str)`.
+///
+/// Used for operations returning an integer (e.g. file handles, bytes-written).
+pub fn result_int_str_type() -> Type {
+    Type::SumCtor(vec![("Ok".into(), vec![Type::Int]), ("Err".into(), vec![Type::Str])])
+}
+
 /// Construct the filesystem metadata record type.
 ///
 /// Fields:
@@ -95,6 +102,33 @@ pub fn result_metadata_type() -> Type {
 /// - `metadata`: Str -> Result<Metadata, Str>
 pub fn fs_effects_record_type() -> Type {
     let mut fields = BTreeMap::new();
+    // handle-based IO (MVP)
+    // - open: Str -> Result<Int, Str>  (Ok handle)
+    // - stdin: Result<Int, Str>  (Ok handle=0)
+    // - stdout: Result<Int, Str> (Ok handle=1)
+    // - stderr: Result<Int, Str> (Ok handle=2)
+    // - read: Int -> Int -> Result<Str, Str>  (handle, size)
+    // - write: Int -> Str -> Result<Int, Str> (handle, payload; Ok bytes written)
+    // - close: Int -> Result<Unit, Str>
+    // - seek: Int -> Int -> Result<Int, Str> (handle, absolute pos; Ok new pos)
+    fields.insert("open".into(), (Type::fun(Type::Str, result_int_str_type()), None));
+    fields.insert("stdin".into(), (Type::fun(Type::Unit, result_int_str_type()), None));
+    fields.insert("stdout".into(), (Type::fun(Type::Unit, result_int_str_type()), None));
+    fields.insert("stderr".into(), (Type::fun(Type::Unit, result_int_str_type()), None));
+    fields.insert(
+        "read".into(),
+        (Type::fun(Type::Int, Type::fun(Type::Int, result_str_str_type())), None),
+    );
+    fields.insert(
+        "write".into(),
+        (Type::fun(Type::Int, Type::fun(Type::Str, result_int_str_type())), None),
+    );
+    fields.insert("close".into(), (Type::fun(Type::Int, result_unit_str_type()), None));
+    fields.insert(
+        "seek".into(),
+        (Type::fun(Type::Int, Type::fun(Type::Int, result_int_str_type())), None),
+    );
+
     fields.insert("read_text".into(), (Type::fun(Type::Str, result_str_str_type()), None));
     fields.insert(
         "write_text".into(),

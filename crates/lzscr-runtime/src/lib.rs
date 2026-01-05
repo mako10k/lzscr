@@ -24,6 +24,7 @@ pub struct Env {
     pub sym_rev: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
     pub str_intern:
         std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, Arc<Vec<u8>>>>>,
+    pub file_handles: std::rc::Rc<std::cell::RefCell<Vec<Option<FsHandle>>>>,
 }
 
 impl Env {
@@ -69,6 +70,19 @@ impl Env {
 
     pub fn with_builtins() -> Self {
         let mut e = Env::new();
+
+        // Reserve stable stdio handles:
+        // - 0: stdin
+        // - 1: stdout
+        // - 2: stderr
+        {
+            let mut table = e.file_handles.borrow_mut();
+            if table.is_empty() {
+                table.push(Some(FsHandle::Stdin));
+                table.push(Some(FsHandle::Stdout));
+                table.push(Some(FsHandle::Stderr));
+            }
+        }
 
         // Arithmetic and comparisons
         e.vars.insert(
@@ -314,6 +328,38 @@ impl Env {
                         ".fs" => {
                             let mut fs_fields: std::collections::BTreeMap<String, Value> =
                                 std::collections::BTreeMap::new();
+                            fs_fields.insert(
+                                "open".into(),
+                                Value::Native { arity: 1, args: vec![], f: eff_fs_open },
+                            );
+                            fs_fields.insert(
+                                "stdin".into(),
+                                Value::Native { arity: 1, args: vec![], f: eff_fs_stdin },
+                            );
+                            fs_fields.insert(
+                                "stdout".into(),
+                                Value::Native { arity: 1, args: vec![], f: eff_fs_stdout },
+                            );
+                            fs_fields.insert(
+                                "stderr".into(),
+                                Value::Native { arity: 1, args: vec![], f: eff_fs_stderr },
+                            );
+                            fs_fields.insert(
+                                "read".into(),
+                                Value::Native { arity: 2, args: vec![], f: eff_fs_read },
+                            );
+                            fs_fields.insert(
+                                "write".into(),
+                                Value::Native { arity: 2, args: vec![], f: eff_fs_write },
+                            );
+                            fs_fields.insert(
+                                "close".into(),
+                                Value::Native { arity: 1, args: vec![], f: eff_fs_close },
+                            );
+                            fs_fields.insert(
+                                "seek".into(),
+                                Value::Native { arity: 2, args: vec![], f: eff_fs_seek },
+                            );
                             fs_fields.insert(
                                 "read_text".into(),
                                 Value::Native { arity: 1, args: vec![], f: eff_fs_read_text },

@@ -36,6 +36,67 @@
 ~metadata_result ~path              = !{
   !fs .metadata ~path
 };
+
+# --- handle-based IO (MVP) ----------------------------------------------
+
+# open_result: open a file and return (Ok handle | Err msg)
+# - handle is Int (opaque index managed by runtime)
+~open_result ~path                  = !{
+  !fs .open ~path
+};
+
+# stdin_result: get stdin handle (Ok 0 | Err msg)
+~stdin_result ~_                    = !{
+  !fs.stdin ()
+};
+
+# stdout_result: get stdout handle (Ok 1 | Err msg)
+~stdout_result ~_                   = !{
+  !fs.stdout ()
+};
+
+# stderr_result: get stderr handle (Ok 2 | Err msg)
+~stderr_result ~_                   = !{
+  !fs.stderr ()
+};
+
+# read_result: read up to N bytes from handle
+~read_result ~handle ~size          = !{
+  !fs .read ~handle ~size
+};
+
+# write_result: write bytes from payload to handle; returns bytes written
+~write_result ~handle ~payload      = !{
+  !fs .write ~handle ~payload
+};
+
+# close_result: close handle
+~close_result ~handle               = !{
+  !fs .close ~handle
+};
+
+# seek_result: set handle position to absolute byte offset; returns new position
+~seek_result ~handle ~pos           = !{
+  !fs .seek ~handle ~pos
+};
+
+# open_with_result: open file, run body with handle, then close.
+# - If close fails, returns Err(close_error)
+# - If body fails (Err), still attempts close and returns close error if any
+~open_with_result ~path ~body       = !{
+  ~open_r <- (!fs .open ~path);
+  (
+    \(Ok ~h) -> !{
+      ~body_r <- (~body ~h);
+      ~close_r <- (!fs .close ~h);
+      (
+        \(Ok ()) -> ~body_r
+        | \(Err ~e) -> (Err ~e)
+      ) ~close_r
+    }
+    | \(Err ~e) -> (Err ~e)
+  ) ~open_r
+};
 {
   read_text_result  : ~read_text_result,
   write_text_result : ~write_text_result,
@@ -43,5 +104,15 @@
   list_dir_result   : ~list_dir_result,
   remove_file_result: ~remove_file_result,
   create_dir_result : ~create_dir_result,
-  metadata_result   : ~metadata_result
+  metadata_result   : ~metadata_result,
+
+  open_result       : ~open_result,
+  stdin_result      : ~stdin_result,
+  stdout_result     : ~stdout_result,
+  stderr_result     : ~stderr_result,
+  read_result       : ~read_result,
+  write_result      : ~write_result,
+  close_result      : ~close_result,
+  seek_result       : ~seek_result,
+  open_with_result  : ~open_with_result
 }
