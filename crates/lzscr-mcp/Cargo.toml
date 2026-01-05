@@ -6,4 +6,3 @@ license = "MIT"
 
 [dependencies]
 lzscr-jsonrpc = { path = "../lzscr-jsonrpc", version = "0.1.0" }
-
