@@ -378,10 +378,6 @@ name = "lzscr-mcp"
 version = "0.1.0"
 dependencies = [
  "lzscr-jsonrpc",
- "pretty_assertions",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
 ]
 
 [[package]]

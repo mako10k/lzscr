@@ -6,9 +6,4 @@ license = "MIT"
 
 [dependencies]
 lzscr-jsonrpc = { path = "../lzscr-jsonrpc", version = "0.1.0" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "1"
 
-[dev-dependencies]
-pretty_assertions = "1"
