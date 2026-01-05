@@ -1840,8 +1840,9 @@ pub fn parse_expr(src: &str) -> Result<Expr, ParseError> {
                         }
                     }
                 }
-                let nxt = bump(i, toks)
-                    .ok_or_else(|| ParseError::Generic("expected ident or .member after !".into()))?;
+                let nxt = bump(i, toks).ok_or_else(|| {
+                    ParseError::Generic("expected ident or .member after !".into())
+                })?;
                 let func = Expr::new(
                     ExprKind::Ref("effects".into()),
                     Span::new(t.span.offset, t.span.len),
