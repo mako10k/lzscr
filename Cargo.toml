@@ -10,6 +10,7 @@ members = [
   "crates/lzscr-types",
   "crates/lzscr-format",
   "crates/lzscr-preast",
+  "crates/lzscr-llvmir",
 ]
 resolver = "2"
 

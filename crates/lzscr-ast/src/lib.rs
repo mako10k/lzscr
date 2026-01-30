@@ -149,7 +149,7 @@ pub mod ast {
         Record(Vec<ExprRecordField>),
         // Mode map: .{ Mode: expr, ... } for polymorphic function selection
         // Maps mode names (Pure, Strict, etc.) to implementations
-        ModeMap(Vec<ExprRecordField>),
+        ModeMap { fields: Vec<ExprRecordField>, default: Option<Box<Expr>> },
         // Type annotation: %{T} e (identity)
         Annot { ty: TypeExpr, expr: Box<Expr> },
         // First-class type value: %{T}
@@ -256,13 +256,17 @@ pub mod pretty {
                     .join(", ");
                 format!("{{ {inner} }}")
             }
-            ExprKind::ModeMap(fields) => {
+            ExprKind::ModeMap { fields, default } => {
                 let inner = fields
                     .iter()
                     .map(|f| format!("{}: {}", f.name, print_expr(&f.value)))
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!(".{{ {inner} }}")
+                match default {
+                    Some(d) if inner.is_empty() => format!(".{{ ; {} }}", print_expr(d)),
+                    Some(d) => format!(".{{ {inner}; {} }}", print_expr(d)),
+                    None => format!(".{{ {inner} }}"),
+                }
             }
             ExprKind::Annot { ty, expr } => {
                 format!("%{{{}}} {}", print_type(ty), print_expr(expr))

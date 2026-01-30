@@ -29,6 +29,24 @@ pub fn v_equal(_env: &Env, a: &Value, b: &Value) -> bool {
             }
             xm.iter().zip(ym.iter()).all(|((kx, vx), (ky, vy))| kx == ky && v_equal(_env, vx, vy))
         }
+        (
+            Value::ModeMap { fields: xm, default: dx },
+            Value::ModeMap { fields: ym, default: dy },
+        ) => {
+            if xm.len() != ym.len() {
+                return false;
+            }
+            let fields_ok = xm
+                .iter()
+                .zip(ym.iter())
+                .all(|((kx, vx), (ky, vy))| kx == ky && v_equal(_env, vx, vy));
+            let default_ok = match (dx, dy) {
+                (None, None) => true,
+                (Some(a), Some(b)) => v_equal(_env, a, b),
+                _ => false,
+            };
+            fields_ok && default_ok
+        }
         // Functions are not comparable structurally in this simple eq
         (Value::Native { .. }, Value::Native { .. }) => false,
         (Value::Closure { .. }, Value::Closure { .. }) => false,
@@ -112,6 +130,15 @@ pub fn match_pattern(
         PatternKind::Record(fields) => match &v {
             Value::Record(map) => {
                 // all fields in pattern must exist in value
+                let mut acc = HashMap::new();
+                for f in fields {
+                    let vv = map.get(&f.name)?;
+                    let bi = match_pattern(env, &f.pattern, vv)?;
+                    acc = merge(acc, bi)?;
+                }
+                Some(acc)
+            }
+            Value::ModeMap { fields: map, .. } => {
                 let mut acc = HashMap::new();
                 for f in fields {
                     let vv = map.get(&f.name)?;
@@ -235,6 +262,24 @@ pub fn apply_value(env: &Env, fval: Value, aval: Value) -> Result<Value, EvalErr
             // Special internal tuple pack constructor '.,', '.,,', ... accepts any arity; collect progressively.
             if name.starts_with('.') && name.chars().skip(1).all(|c| c == ',') {
                 Ok(Value::Ctor { name, args: vec![aval] })
+            } else if name.starts_with('.') {
+                // ModeMap selection sugar: `.Ident ModedValue` ≡ `.select .Ident ModedValue`.
+                match aval {
+                    Value::ModeMap { mut fields, default } => {
+                        let key = name.strip_prefix('.').unwrap_or(&name).to_string();
+                        if let Some(v) = fields.remove(&key) {
+                            Ok(v)
+                        } else if let Some(d) = default {
+                            Ok(*d)
+                        } else {
+                            Err(EvalError::TypeError)
+                        }
+                    }
+                    _ => Err(EvalError::NotApplicable(format!(
+                        "symbol '{}' (symbols have arity 0)",
+                        env.symbol_name(id)
+                    ))),
+                }
             } else {
                 // Symbols have arity 0 and cannot be applied
                 Err(EvalError::NotApplicable(format!("symbol '{}' (symbols have arity 0)", name)))
@@ -773,9 +818,9 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
             }
         }
         ExprKind::Block(inner) => eval(env, inner),
-        ExprKind::ModeMap(fields) => {
-            // Evaluate each field expression and collect into a record-like structure
-            // Store as Value::Record for consistency with record evaluation
+        ExprKind::ModeMap { fields, default } => {
+            // Evaluate each field expression and collect into a ModeMap structure.
+            // ModeMap is distinct from Record because it participates in selection sugar `.Ident mm`.
             let mut result_fields: std::collections::BTreeMap<String, Value> =
                 std::collections::BTreeMap::new();
             for f in fields {
@@ -785,7 +830,17 @@ pub fn eval(env: &Env, e: &Expr) -> Result<Value, EvalError> {
                 }
                 result_fields.insert(f.name.clone(), v);
             }
-            Ok(Value::Record(result_fields))
+            let default_v = match default.as_deref() {
+                None => None,
+                Some(d) => {
+                    let v = eval(env, d)?;
+                    if let Value::Raised(_) = v {
+                        return Ok(v);
+                    }
+                    Some(Box::new(v))
+                }
+            };
+            Ok(Value::ModeMap { fields: result_fields, default: default_v })
         }
         ExprKind::AltLambda { left, right } => {
             // Desugar to closure: \x -> (~alt left right x)

@@ -12,6 +12,7 @@ lzscr-lexer = { path = "../lzscr-lexer", version = "0.1.0" }
 lzscr-runtime = { path = "../lzscr-runtime", version = "0.1.0" }
 lzscr-analyzer = { path = "../lzscr-analyzer", version = "0.1.0" }
 lzscr-coreir = { path = "../lzscr-coreir", version = "0.1.0" }
+lzscr-llvmir = { path = "../lzscr-llvmir", version = "0.1.0" }
 lzscr-types = { path = "../lzscr-types", version = "0.1.0" }
 lzscr-format = { path = "../lzscr-format", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
